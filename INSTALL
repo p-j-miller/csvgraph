@@ -1,0 +1,16 @@
+Cvsgraph is a portable program which does not need installation.
+Copy the file csvgraph.exe to any location on your computer (or run it from a USB-stick or similar).
+A shortcut on your desktop makes it simple to execute csvgraph.
+See the file LICENSE for details but csvgraph is free for both commercial and non-commercial use.
+
+csvgraph.exe runs on Windows (10 32 or 64 bit - it will possibly run on earlier versions of Windows back to Vista but this is untested) as it does not require any installation.
+It will probably also run on Linux under Wine, but this is also untested on recent versions of csvgraph.
+
+
+The source code was compiled with Embarcadero® C++Builder 10.2 - a suitable project file is included in the archive. It should compile with no errors or warnings.
+It should be easy to move to a more recent version of C++Builder (at least for a 32 bit Windows target), but equally it would not be very hard to revert to earlier versions (back to Builder C++ V5) if necessary. 
+
+Many parts of the source code could be of interest if you don't use C++Builder - for example atof.c is part of ya-sprintf see https://github.com/p-j-miller/ya-sprintf
+expr-code.cpp contains many routines that are generally useful (and most of this file is pure C) - including a fast general expression evaluator for expressions stored in strings.
+UScientificGraph.cpp contains an efficient median filter implementation and a polynomial fit implementation both of which work well with a very large number of data points and the implementations for these are believed to be novel. 
+It also contains a fast line clipping algorithm that allows "infinite" zoom in/out. 

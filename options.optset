@@ -1,0 +1,18 @@
+﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <PropertyGroup>
+        <VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>
+        <BCC_InstructionSet>6</BCC_InstructionSet>
+        <VerInfo_Locale>2057</VerInfo_Locale>
+        <Icon_MainIcon>csvgraph_Icon.ico</Icon_MainIcon>
+        <UsePackages>false</UsePackages>
+        <TASM_FloatingPoint>Real</TASM_FloatingPoint>
+    </PropertyGroup>
+    <ProjectExtensions>
+        <Borland.Personality>CPlusPlusBuilder.Personality.12</Borland.Personality>
+        <Borland.ProjectType>OptionSet</Borland.ProjectType>
+        <BorlandProject>
+            <CPlusPlusBuilder.Personality/>
+        </BorlandProject>
+        <ProjectFileVersion>12</ProjectFileVersion>
+    </ProjectExtensions>
+</Project>

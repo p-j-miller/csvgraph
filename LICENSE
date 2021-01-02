@@ -1,17 +1,18 @@
+The main software is under the MIT license as described below.
+csvgraph is loosely based on an original public domain graphing library written in Borland builder C++ 5 by Frank Heinrich, mail@frank-heinrich.de but there is very little original code left.
+It also uses FFT code from KISS FFT - https://github.com/mborgerding/kissfft which was written by Mark Borgerding. Only very minor changes have been made to this code to make it compile cleanly. 
+KISS FFT is covered by the BSD-3-Clause license.
+
 MIT License
-
-Copyright (c) 2021 p-j-miller
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
+Copyright (c) 2019,2020,2021 Peter Miller
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
 The above copyright notice and this permission notice shall be included in all
 copies or substantial portions of the Software.
-
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
