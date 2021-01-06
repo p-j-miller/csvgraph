@@ -15,6 +15,11 @@ As well as simple plots of the data in csv files the data can be filtered in a n
 
 The file csvgraph.pdf contains the full manual and a number of examples of its use.
 
+# Versions
+1v0 - 1st github release
+
+1v1 - fixed potential issue with DC component of FFT. Added Menu/Help/Manual. Updated manual.
+
 # Installation
 Cvsgraph is a portable program which does not need installation.
 
