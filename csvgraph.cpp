@@ -22,6 +22,10 @@ int WINAPI _tWinMain(HINSTANCE, HINSTANCE, LPTSTR, int)
 		Application->CreateForm(__classid(TForm1), &Form1);
 		Application->CreateForm(__classid(TScalesWindow), &ScalesWindow);
 		Application->CreateForm(__classid(TAboutBox), &AboutBox);
+		if(_argc==2)  // one argument, assume its a filename and load this file
+				  {
+				   proces_open_filename( _argv[1]); // open filename supplied on command line - just to peek at header row
+				  }
 		Application->Run();
 	}
 	catch (Exception &exception)

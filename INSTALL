@@ -1,14 +1,20 @@
 Cvsgraph is a portable program which does not need installation.
 Copy the file csvgraph.exe to any location on your computer (or run it from a USB-stick or similar).
+If you wish the Help/Manual function to work then copy csvgraph.pdf to the same directory (location) as csvgraph.exe.
 A shortcut on your desktop makes it simple to execute csvgraph.
+The first time you run csvgraph you may see a Windows warning “The Publisher could not be verified. Are you sure you want to run this software”
+(or similar), you can either run anyway (the executable from github should be safe) or compile your own executable from the source files (see below).
+You may also get a similar message from your pdf reader the first time you use Menu/Help/Manual function, again you can accept this as you know why the pdf reader was invoked.
+
 See the file LICENSE for details but csvgraph is free for both commercial and non-commercial use.
 
-csvgraph.exe runs on Windows (10 32 or 64 bit - it will possibly run on earlier versions of Windows back to Vista but this is untested) as it does not require any installation.
+csvgraph.exe runs on Windows (10 32 or 64 bit - it will possibly run on earlier versions of Windows back to Vista but this is untested).
 It will probably also run on Linux under Wine, but this is also untested on recent versions of csvgraph.
 
 
 The source code was compiled with Embarcadero® C++Builder 10.2 - a suitable project file is included in the archive. It should compile with no errors or warnings.
 It should be easy to move to a more recent version of C++Builder (at least for a 32 bit Windows target), but equally it would not be very hard to revert to earlier versions (back to Builder C++ V5) if necessary. 
+A free version of the required Builder C++ compiler is available at https://www.embarcadero.com/products/cbuilder/starter
 
 Many parts of the source code could be of interest if you don't use C++Builder - for example atof.c is part of ya-sprintf see https://github.com/p-j-miller/ya-sprintf
 expr-code.cpp contains many routines that are generally useful (and most of this file is pure C) - including a fast general expression evaluator for expressions stored in strings.

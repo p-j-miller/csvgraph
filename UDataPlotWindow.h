@@ -113,6 +113,8 @@ __published:	// IDE-managed Components
 	TLabel *Label13;
 	TEdit *Polyorder;
 	TLabel *Label14;
+	TAction *Action1;
+	TMenuItem *Action11;
         void __fastcall FormDestroy(TObject *Sender);
         void __fastcall FormClose(TObject *Sender, TCloseAction &Action);
         void __fastcall ResizeExecute(TObject *Sender);
@@ -160,6 +162,7 @@ __published:	// IDE-managed Components
 	void __fastcall BitBtn_set_colourClick(TObject *Sender);
 	void __fastcall Edit_xcolChange(TObject *Sender);
 	void __fastcall Edit_ycolChange(TObject *Sender);
+	void __fastcall Action1Execute(TObject *Sender);
 private:	 // User declarations
         int iShape1X,iShape1Y;
         void virtual  __fastcall WmDropFiles(TWMDropFiles& Message);     // for drag n drop

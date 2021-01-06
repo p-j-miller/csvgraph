@@ -26,7 +26,7 @@ object PlotWindow: TPlotWindow
   OnResize = FormResize
   DesignSize = (
     1290
-    1002)
+    982)
   PixelsPerInch = 96
   TextHeight = 13
   object Panel1: TPanel
@@ -869,12 +869,16 @@ object PlotWindow: TPlotWindow
       Caption = 'ReDraw'
       OnExecute = ReDrawExecute
     end
+    object Action1: TAction
+      Caption = 'Action1'
+      OnExecute = Action1Execute
+    end
   end
   object ImageList1: TImageList
     Left = 304
     Top = 32
     Bitmap = {
-      494C01010A000E00DC0010001000FFFFFFFFFF10FFFFFFFFFFFFFFFF424D3600
+      494C01010A000E00E00010001000FFFFFFFFFF10FFFFFFFFFFFFFFFF424D3600
       0000000000003600000028000000400000003000000001002000000000000030
       0000000000000000000000000000000000000000000000000000000000000000
       0000000000000000000000000000000000000000000000000000000000000000
@@ -1321,6 +1325,10 @@ object PlotWindow: TPlotWindow
     end
     object Help1: TMenuItem
       Caption = 'Help'
+      object Action11: TMenuItem
+        Action = Action1
+        Caption = 'Manual'
+      end
       object About1: TMenuItem
         Caption = 'About'
         OnClick = About1Click

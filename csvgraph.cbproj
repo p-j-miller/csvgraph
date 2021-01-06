@@ -105,6 +105,7 @@
         <VerInfo_Keys>CompanyName=Peter Miller;FileVersion=1.0.0.0;InternalName=;LegalCopyright=2019,2020 Peter Miller;LegalTrademarks=;OriginalFilename=;ProductVersion=1.0.0.0;Comments=;ProgramID=com.embarcadero.$(MSBuildProjectName);FileDescription=$(MSBuildProjectName);ProductName=$(MSBuildProjectName)</VerInfo_Keys>
         <BCC_UseClassicCompiler>false</BCC_UseClassicCompiler>
         <PackageImports>vcl;vclx;rtl;bcbsmp</PackageImports>
+        <Debugger_RunParams>C:\PMi\builder-10v1-projects\csv-graph-github\csvfun1.csv</Debugger_RunParams>
     </PropertyGroup>
     <ItemGroup>
         <CppCompile Include="About.cpp">
@@ -154,8 +155,8 @@
             <BuildOrder>10</BuildOrder>
         </CppCompile>
         <FormResources Include="UDataPlotWindow.dfm"/>
-        <FormResources Include="UScalesWindow.dfm"/>
         <FormResources Include="Unit1.dfm"/>
+        <FormResources Include="UScalesWindow.dfm"/>
         <FormResources Include="About.dfm"/>
         <BuildConfiguration Include="Release">
             <Key>Cfg_2</Key>

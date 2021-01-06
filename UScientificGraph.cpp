@@ -2156,7 +2156,7 @@ bool TScientificGraph::fnFFT(bool dBV_result,bool Hanning,int iGraphNumberF, voi
 	 y=sqrt(x*x+y*y);
 #endif
 	 y/=nfft;// scaling factor from fft
-     if(i==0) y+=y_av; // put average value back in again.
+     if(i==0) y+=fabs(y_av); // put average value back in again. Needs to be fabs() as we have magnitude of conmplex numbers which is >=0.
 	 // for the line below dc and max freq are only in 1 bin, but all other frequencies the resultant power is split between 2 bins.
 	 if(i!=0 && i!= nfft/2) y*=1.4142135623730950488016887242097; /* mult by sqrt(2) to account for energy in the -ve frequency range */
 	 if(dBV_result)

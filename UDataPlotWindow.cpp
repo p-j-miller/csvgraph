@@ -11,7 +11,10 @@
 //
 // Version Date   : changes from previous version
 // 1v0 1/1/2021 : 1st version released on github (was 16v6).
-//
+// 1v1 4/1/2021 : Bug fix in fft - DC component (zero frequency) could previoulsy become -ve if average value of waveform was -ve.
+//              : pdf of manual created so that readers open with bookmarks visible automatically. Manual contents unchanged.
+//              : added Menu/Help/Manual to display manual within csv graph (assumes csvgraph.pdf is in the same directory as csvgraph.exe)
+//              : if a filename is passed on the command line to csvgraph.exe it is opened at start. This allows csvgraph to be associated with csvfiles.
 
 //---------------------------------------------------------------------------
 /*----------------------------------------------------------------------------
@@ -69,7 +72,7 @@
 #include <stdlib.h>
 extern TForm1 *Form1;
 
-const char * Prog_Name="CSVgraph (Github) 1v0";   // needs to be global as used in about box as well.
+const char * Prog_Name="CSVgraph (Github) 1v1";   // needs to be global as used in about box as well.
 #if 1 /* if 1 then use fast_strtof() rather than atof() for floating point conversion. Note in this application this is only slightly faster (1-5%) */
 extern "C" float fast_strtof(const char *s,char **endptr); // if endptr != NULL returns 1st character thats not in the number
 #define strtod fast_strtof  /* set so we use it in place of strtod() */
@@ -2491,4 +2494,17 @@ void __fastcall TPlotWindow::Edit_ycolChange(TObject *Sender)
 //---------------------------------------------------------------------------
 
 
+
+void __fastcall TPlotWindow::Action1Execute(TObject *Sender)
+{   // Help manual
+  char *progname=strdup(_argv[0]);  // argv[0] is the filename & path to the csvgraph executable  , assume csvgraph.pdf is in the same directory
+  int L=strlen(progname);
+  progname[L-3]='p';// change extension from .exe to .pdf as thats the manual
+  progname[L-2]='d';
+  progname[L-1]='f';
+  rprintf("Manual is at %s\n",progname);
+  ShellExecute(NULL,NULL, progname, NULL, NULL, SW_SHOW); // assume .pdf extension is associated with a suitable reader application
+  free(progname);
+}
+//---------------------------------------------------------------------------
 
