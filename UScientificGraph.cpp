@@ -1741,8 +1741,10 @@ void TScientificGraph::fnLinear_filt_time(double tc, int iGraphNumberF, void (*c
         }
 }
 
-void TScientificGraph::fnLinreg(int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+void TScientificGraph::fnLinreg(enum LinregType type, int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
  // apply 1st order least squares linear regression (y=mx+c) to graph in place
+ // enum LinregType  {LinLin,LogLin,LinLog,LogLog,RecipLin,LinRecip,RecipRecip,SqrtLin}; defines preprocessing of varibales before linear regression 1st is X 2nd is Y
+ // results checked using csvfun3.csv. R^2 values (and coefficients) also checked against Excel for the fits excel can do.
 {// to save copying data this is done inline
  SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
  TList *pAList = pAGraph->pDataList;
@@ -1755,9 +1757,31 @@ void TScientificGraph::fnLinreg(int iGraphNumberF, void (*callback)(unsigned int
  unsigned int i,N=0; /* N is count of items */
  if(iCount<2) return; // not enough data in graph to process
  for(i=0;i<iCount;++i) /* only use 1 pass here - to calculate means directly */
-		{++N;
+		{
 		 xi=((SDataPoint*)pAList->Items[i])->dXValue;
 		 yi=((SDataPoint*)pAList->Items[i])->dYValue;
+		 // apply "preprocessing"
+		 if(type== LogLin || type== LogLog)
+			{if(xi<=0) continue;// log requires value >0
+			 xi=log(xi);
+			}
+		 if(type== LinLog || type==LogLog)
+			{if(yi<=0) continue;// log requires value >0
+			 yi=log(yi);
+			}
+		 if(type== RecipLin || type==RecipRecip)
+			{if(xi==0 ) continue; // avoid divide by zero
+			 xi=1.0/xi;
+			}
+		 if(type== LinRecip || type==RecipRecip)
+			{if( yi==0) continue; // avoid divide by zero
+			 yi=1.0/yi;
+			}
+		 if(type== SqrtLin)
+			{if(xi<0 ) continue; // avoid sqrt of a negative number
+			 xi=sqrt(xi);
+			}
+		 ++N;
          meanx+= (xi-meanx)/(double) N; /* calculate means as mi+1=mi+(xi+1 - mi)/i+1 , this should give accurate results and avoids the possibility of the "sum" overflowing*/
          meany+= (yi-meany)/(double) N;
          meanx2+= (xi*xi-meanx2)/(double) N;
@@ -1785,15 +1809,91 @@ void TScientificGraph::fnLinreg(int iGraphNumberF, void (*callback)(unsigned int
 		  else
 			r2=1.0;/* should be in range 0-1 */
 		 }
- rprintf("Best Least squares straight line is Y=%g*X+%g which has an R^2 of %g\n",m,c,r2);
+ switch(type)
+	{ // enum LinregType  {LinLin,LogLin,LinLog,LogLog,RecipLin,LinRecip,RecipRecip,SqrtLin};
+	  // %+g always prints sign which looks better than +%g which prints +-1.23 for negative numbers.
+	  // Use %g rather than %.12g as accuracy of coefficients not so critical here compared to higher order polynomials
+	 case LinLin:
+		rprintf("Best Least squares straight line is Y=%g*X%+g which has an R^2 of %g\n",m,c,r2);
+		break;
+	 case LogLin:
+		// log(x) : y=m*log(x)+c
+		rprintf("Best Least squares line is Y=%g*log(X)%+g which has an R^2 of %g\n",m,c,r2);
+		break;
+	case LinLog:
+		// Exponential: log(y) : y=a*b^x ; log(y)=log(a)+(log b)*x   ; OR y=a*exp(b*x)  =>log(y)=log(a)+b*x
+		c=exp(c); //  transform depends on equation used
+		rprintf("Best Least squares line is Y=%g*%g^(X) OR y=%g*exp(%g*X) which has an R^2 of %g\n",c,exp(m),c,m,r2);
+		break;
+	case LogLog:
+		// Power: Log(x) log(y) : y=a*x^b ; log(y)=log(a)+b*log(x)
+		c=exp(c);
+		rprintf("Best Least squares line is Y=%g*X^%g which has an R^2 of %g\n",c,m,r2);
+		break;
+	 case RecipLin:
+		// 1/x : y=m/x+c
+		rprintf("Best Least squares line is Y=%g/X%+g which has an R^2 of %g\n",m,c,r2);
+		break;
+	case LinRecip:
+		// 1/y : 1/y=m*x+c ;y=1/(m*x+c)
+		rprintf("Best Least squares line is Y=1/(%g*X%+g) which has an R^2 of %g\n",m,c,r2);
+		break;
+	case RecipRecip:
+		// Hyperbolic: 1/x,1/y : 1/y=m/x+c ;y=x/(m+c*x)
+		rprintf("Best Least squares line is Y=X/(%g%+g*X) which has an R^2 of %g\n",m,c,r2);
+		break;
+	 case SqrtLin:
+		// sqrt(x): y=m*sqrt(x)+c
+		rprintf("Best Least squares line is Y=%g*sqrt(X)%+g which has an R^2 of %g\n",m,c,r2);
+		break;
+	}
  // now put new y values back, calculated as y=m*x+c
  for(i=0;i<iCount;++i)
 	{
 	 xi=((SDataPoint*)pAList->Items[i])->dXValue;
-	 ((SDataPoint*)pAList->Items[i])->dYValue=m*xi+c;
+	 try{ // code below has tests for common issues, but use try to catch anything else
+	  switch(type)
+		{ // enum LinregType  {LinLin,LogLin,LinLog,LogLog,RecipLin,LinRecip,RecipRecip,SqrtLin};
+		 case LinLin:
+			((SDataPoint*)pAList->Items[i])->dYValue=m*xi+c;
+			break;
+		 case LogLin:
+			// log(x) : y=m*log(x)+c       log(minfloat)=-103.28 so use -104 for negative/zero
+			((SDataPoint*)pAList->Items[i])->dYValue=m*(xi>0?log(xi):-104.0f)+c;
+			break;
+		 case LinLog:
+			// Exponential: log(y) : y=a*b^x ; log(y)=log(a)+(log b)*x   ; OR y=a*exp(b*x)  =>log(y)=log(a)+b*x
+			((SDataPoint*)pAList->Items[i])->dYValue=c*exp(m*xi);// this might overflow which is not trapped here
+			break;
+		 case LogLog:
+			// Power: Log(x) log(y) : y=a*x^b ; log(y)=log(a)+b*log(x)
+			((SDataPoint*)pAList->Items[i])->dYValue=c*pow(xi,m);
+			break;
+		 case RecipLin:
+			// 1/x : y=m/x+c
+			((SDataPoint*)pAList->Items[i])->dYValue=m*(xi==0? 3.4e38f : 1.0f/xi)+c;
+			break;
+		 case LinRecip:
+			// 1/y : 1/y=m*x+c ;y=1/(m*x+c)
+			((SDataPoint*)pAList->Items[i])->dYValue=1.0/(m*xi+c);
+			break;
+		 case RecipRecip:
+			// Hyperbolic: 1/x,1/y : 1/y=m/x+c ;y=x/(m+c*x)
+			((SDataPoint*)pAList->Items[i])->dYValue=xi/(m+c*xi);
+			break;
+		 case SqrtLin:
+			// sqrt(x): y=m*sqrt(x)+c
+			((SDataPoint*)pAList->Items[i])->dYValue=m*(xi>=0?sqrt(xi):0.0f)+c;
+			break;
+		}
+	   }
+	 catch(...)
+		{ ((SDataPoint*)pAList->Items[i])->dYValue=0; // if something goes wrong put 0 in as a placeholder.
+		}
+
 	 if(callback!=NULL && (i & 0x3fffff)==0)
 		(*callback)((i>>1) + (iCount>>1),iCount); // update on progress , this is 2nd pass through data so goes 50% - 100%
-    }
+	}
 }
 
 

@@ -8,6 +8,8 @@
 
 #include <Graphics.hpp>
 
+enum LinregType  {LinLin,LogLin,LinLog,LogLog,RecipLin,LinRecip,RecipRecip,SqrtLin};
+
 // class for scientific plots
 
 class TScientificGraph
@@ -156,7 +158,7 @@ public:
   void fnMedian_filt_time1(double median_ahead_t, int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)); // new algorithm apply median filter to graph in place  , lookahead defined in time
   void fnMedian_filt_time(double median_ahead_t, int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)); // apply median filter to graph in place  , lookahead defined in time
   void fnLinear_filt_time(double tc, int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)); // apply linear filter to graph in place
-  void fnLinreg(int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)); // apply 1st order linear regression (y=mx+c) to graph in place
+  void fnLinreg(enum LinregType type,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)); // apply 1st order linear regression (y=mx+c) to graph in place
   bool fnPolyreg(unsigned int order,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)); // fit polynomial of specified order regression to graph in place
   bool fnFFT(bool dBV_result,bool Hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)); // apply FFT to data. returns true if OK, false if failed.
   void compress_y(int iGraphNumberF); // compress by deleting points with equal y values except for 1st and last in a row

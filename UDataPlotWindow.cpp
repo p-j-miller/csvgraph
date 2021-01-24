@@ -10,11 +10,13 @@
 // It runs on Windows 10 64 bits. In theory it should run on windows versions from Vista onwards and 32bit versions of Windows but this is untested.
 //
 // Version Date   : changes from previous version
-// 1v0 1/1/2021 : 1st version released on github (was 16v6).
-// 1v1 4/1/2021 : Bug fix in fft - DC component (zero frequency) could previoulsy become -ve if average value of waveform was -ve.
-//              : pdf of manual created so that readers open with bookmarks visible automatically. Manual contents unchanged.
-//              : added Menu/Help/Manual to display manual within csv graph (assumes csvgraph.pdf is in the same directory as csvgraph.exe)
-//              : if a filename is passed on the command line to csvgraph.exe it is opened at start. This allows csvgraph to be associated with csvfiles.
+// 1v0 1/1/2021  : 1st version released on github (was 16v6).
+// 1v1 4/1/2021  : Bug fix in fft - DC component (zero frequency) could previoulsy become -ve if average value of waveform was -ve.
+//               : pdf of manual created so that readers open with bookmarks visible automatically. Manual contents unchanged.
+//               : added Menu/Help/Manual to display manual within csv graph (assumes csvgraph.pdf is in the same directory as csvgraph.exe)
+//               : if a filename is passed on the command line to csvgraph.exe it is opened at start. This allows csvgraph to be associated with csvfiles.
+// 1v2 21/1/2021 : added (many) more types of linear regression eg exponential, log, power, hyperbolic, sqrt.
+//               : Also now traps "nan" and "inf" in csv files - previouly files containing these could be read but with give "LOG10" error when trying to display the graph.
 
 //---------------------------------------------------------------------------
 /*----------------------------------------------------------------------------
@@ -70,9 +72,10 @@
 #include <commdlg.h>    // to use GetOpenFileNameA
 #include <dos.h>
 #include <stdlib.h>
-extern TForm1 *Form1;
+#include <float.h>
 
-const char * Prog_Name="CSVgraph (Github) 1v1";   // needs to be global as used in about box as well.
+extern TForm1 *Form1;
+const char * Prog_Name="CSVgraph (Github) 1v2";   // needs to be global as used in about box as well.
 #if 1 /* if 1 then use fast_strtof() rather than atof() for floating point conversion. Note in this application this is only slightly faster (1-5%) */
 extern "C" float fast_strtof(const char *s,char **endptr); // if endptr != NULL returns 1st character thats not in the number
 #define strtod fast_strtof  /* set so we use it in place of strtod() */
@@ -1029,7 +1032,7 @@ void __fastcall TPlotWindow::Button_add_trace1Click(TObject *Sender)
 		{ShowMessage("Request to filter ignored as filter time constant has not been set");
 		 FString="";
 		}
-   else if(FilterType->ItemIndex==5)
+   else if(FilterType->ItemIndex==12)
 		{// polynomial fit  , order = 0 is OK  and is unsigned so cannot go negative
 		 if(compress)  ShowMessage("Warning: both compress and polynomial fit requested so fitting will be done on compressed data");
 		 snprintf(cstring,sizeof(cstring)," order=%u",poly_order);
@@ -1045,13 +1048,13 @@ void __fastcall TPlotWindow::Button_add_trace1Click(TObject *Sender)
    static char *read_buf=NULL ;   // static so we only malloc it once
    if(read_buf==NULL)
 		{read_buf=(char *)malloc(BIG_BUF_SIZE) ;
-         if( read_buf==NULL)
-                {
-                 StatusText->Caption="No free RAM!";
-                 ShowMessage("No free RAM! cannot malloc space for read_buf");
-                 // continue anyway - just cannot use big read buffer
-                }
-        }
+		 if( read_buf==NULL)
+				{
+				 StatusText->Caption="No free RAM!";
+				 ShowMessage("No free RAM! cannot malloc space for read_buf");
+				 // continue anyway - just cannot use big read buffer
+				}
+		}
 #endif
    fin=fopen(filename.c_str(),"rb");
    if(fin==NULL)
@@ -1521,7 +1524,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
                         {++st;// skip " if present
                          while(isspace(*st)) ++st; // skip any more whitespace
                         }
-                 // now hope we have a number left - strtod() will terminate at the end of the number so any trailing whitespace or " will be ignored
+				 // now hope we have a number left - strtod() will terminate at the end of the number so any trailing whitespace or " will be ignored
                  char *end;
                  yval= strtod(st,&end);   // just a column number - get value for this column
                  if(st==end) continue;    // no valid number found
@@ -1579,7 +1582,8 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
                         if(st==end) continue;    // no valid number found
                         // if(xval!=yval) rprintf("**** xval (col %d) %s=>%g\n",xcol,st,xval);
                         break;
-                }
+				}
+         if(!_finite(xval) || !_finite(yval)) continue; // need 2 valid numbers [eg ignore "inf" ]
          if(firstxvalue)
                 {firstxvalue=false;
                  previousxvalue=xval;
@@ -1698,16 +1702,51 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 		case 4:
 				// lin regression y=mx+c
 				StatusText->Caption=FString;
-				pScientificGraph->fnLinreg(iGraph,filter_callback);
+				pScientificGraph->fnLinreg(LinLin,iGraph,filter_callback);
 				break;
-		case 5: // lin reg y=mx+c via general purpose polynomial fit
+		case 5:
+				// log regression
+				StatusText->Caption=FString;
+				pScientificGraph->fnLinreg(LogLin,iGraph,filter_callback);
+				break;
+		case 6:
+				// exponentail regression
+				StatusText->Caption=FString;
+				pScientificGraph->fnLinreg(LinLog,iGraph,filter_callback);
+				break;
+		case 7:
+				// powerregression
+				StatusText->Caption=FString;
+				pScientificGraph->fnLinreg(LogLog,iGraph,filter_callback);
+				break;
+		case 8:
+				// recip regression
+				StatusText->Caption=FString;
+				pScientificGraph->fnLinreg(RecipLin,iGraph,filter_callback);
+				break;
+		case 9:
+				// lin-recip regression
+				StatusText->Caption=FString;
+				pScientificGraph->fnLinreg(LinRecip,iGraph,filter_callback);
+				break;
+		case 10:
+				// hyperbolic regression
+				StatusText->Caption=FString;
+				pScientificGraph->fnLinreg(RecipRecip,iGraph,filter_callback);
+				break;
+		case 11:
+				// sqrt regression y=m*sqrt(x)+c
+				StatusText->Caption=FString;
+				pScientificGraph->fnLinreg(SqrtLin,iGraph,filter_callback);
+				break;
+		case 12: // lin reg y=mx+c via general purpose polynomial fit
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnPolyreg(poly_order,iGraph,filter_callback))
 						{StatusText->Caption="Polynomial fit failed";
 						 ShowMessage("Warning: Polynomial fit failed - adding original trace to graph");
 						}
 				break;
-		case 6: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+		case 13: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 				// fft return ||
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnFFT(false,false,iGraph,filter_callback))
@@ -1715,7 +1754,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						 ShowMessage("Warning: FFT failed - adding original trace to graph");
 						}
 				break;
-		case 7: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+		case 14: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 				// fft return dBV
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnFFT(true,false,iGraph,filter_callback))
@@ -1723,7 +1762,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						 ShowMessage("Warning: FFT failed - adding original trace to graph");
 						}
 				break;
-		case 8: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+		case 15: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 				// fft with Hanning window, return ||
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnFFT(false,true,iGraph,filter_callback))
@@ -1731,7 +1770,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						 ShowMessage("Warning: FFT failed - adding original trace to graph");
 						}
 				break;
-		case 9: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+		case 16: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 				// fft with Hanning window return dBV
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnFFT(true,true,iGraph,filter_callback))
@@ -1741,8 +1780,8 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 				break;
 		}
   if(*ys!=',')
-    {// if this is the final trace then rescale & actually plot, otherwise skip this step to save time
-     if(iGraph==0 || !zoomed)
+	{// if this is the final trace then rescale & actually plot, otherwise skip this step to save time
+	 if(iGraph==0 || !zoomed)
         { // if 1st graph or not already zoomed then autoscale, otherwise leave this to the user.
 		 StatusText->Caption="Autoscaling";
          Application->ProcessMessages(); /* allow windows to update (but not go idle) */
