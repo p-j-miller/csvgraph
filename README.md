@@ -18,12 +18,18 @@ The file csvgraph.pdf contains the full manual and a number of examples of its u
 # Versions
 1v0 - 1st github release
 
-1v1 - fixed potential issue with DC component of FFT. Added Menu/Help/Manual. Updated manual.
+1v1 - 6/1/2021- fixed potential issue with DC component of FFT. Added Menu/Help/Manual. Updated manual.
+
+1v2 – 24/1/2021 – bug fix - “inf” in csv file would be read as an extremely large number (infinity) 
+     which then caused issues when csvgraph tried to scale numbers and draw the 
+     graph.	Added many more options for “filtering” including exponential, power, hyperbolic and sqrt.
+
 
 # Installation
 Cvsgraph is a portable program which does not need installation.
 
 Copy the file csvgraph.exe to any location on your computer (or run it from a USB-stick or similar).
+Add csvgraph.pdf to the same directory to allow access to the manual from within csvgraph (menu help/manual).
 
 A shortcut on your desktop makes it simple to execute csvgraph.
 
