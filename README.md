@@ -24,6 +24,10 @@ The file csvgraph.pdf contains the full manual and a number of examples of its u
      which then caused issues when csvgraph tried to scale numbers and draw the 
      graph.	Added many more options for “filtering” including exponential, power, hyperbolic and sqrt.
 
+1v3 – 3/2/2021	- more curve fitting options added, y=mx, y=mx+c with GMR , minimum absolute 
+error and minimum relative error, and y=a*x+b*sqrt(x)+c.
+
+
 
 # Installation
 Cvsgraph is a portable program which does not need installation.
