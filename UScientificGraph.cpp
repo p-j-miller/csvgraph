@@ -1741,8 +1741,173 @@ void TScientificGraph::fnLinear_filt_time(double tc, int iGraphNumberF, void (*c
         }
 }
 
+void TScientificGraph::fnLinreg_origin( int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+{ // straight line passing through origin    y=m*x
+  // underlying equation for the best straight line through the origin=sum(XiYi)/sum(Xi^2) from Yang Feng (Columbia Univ) Simultaneous Inferences, pp 18/20.
+ SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
+ TList *pAList = pAGraph->pDataList;
+ unsigned int iCount=pAList->Count;
+ double meanx2=0,meanxy=0; /* mean x^2 , mean x*y */
+ double xi,yi;
+ double m;
+ double maxe=0; // max abs error of fit
+ double e;
+ int i,N=0; /* N is count of items */
+ if(iCount<2) return; // not enough data in graph to process
+ for(i=0;i<iCount;++i) /* only use 1 pass here - to calculate means directly */
+		{++N;
+		 xi=((SDataPoint*)pAList->Items[i])->dXValue;
+		 yi=((SDataPoint*)pAList->Items[i])->dYValue;
+		 meanx2+= (xi*xi-meanx2)/(double) N;
+		 meanxy+= (xi*yi-meanxy)/(double) N;
+		 if(callback!=NULL && (i & 0x3fffff)==0)
+			(*callback)(i>>1,iCount); // update on progress  (this is 1st pass so go 0-50%)
+		}
+ if(meanx2==0)
+		{/* y is independent of x [if this is not trapped we get a divide by zero error trying to set m to infinity] or 0 or 1 point given */
+		 m=0.0 ;
+		}
+ else   {/* have a valid line */
+		 m=(meanxy)/(meanx2);
+		 }
+ rprintf("Best Least squares straight line that passes through the origin is Y=%g*X\n",m);
+ // now put new y values back, calculated as y=m*x+c
+ for(i=0;i<iCount;++i)
+	{yi=((SDataPoint*)pAList->Items[i])->dYValue;
+	 xi=((SDataPoint*)pAList->Items[i])->dXValue;
+	 try{ // code below has tests for common issues, but use try to catch anything else
+		 ((SDataPoint*)pAList->Items[i])->dYValue=m*xi;
+		 e=fabs(yi-((SDataPoint*)pAList->Items[i])->dYValue);
+		 if(e>maxe) maxe=e;
+		}
+	 catch(...)
+		{ ((SDataPoint*)pAList->Items[i])->dYValue=0; // if something goes wrong put 0 in as a placeholder.
+		}
+
+	 if(callback!=NULL && (i & 0x3fffff)==0)
+		(*callback)((i>>1) + (iCount>>1),iCount); // update on progress , this is 2nd pass through data so goes 50% - 100%
+	}
+ rprintf("  Max abs error of above curve is %g\n",maxe);
+}
+
+void TScientificGraph::fnLinreg_abs(bool rel, int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+{  // fit y=mx+c with either min abs error or min abs rel error
+ SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
+ TList *pAList = pAGraph->pDataList;
+ unsigned int iCount=pAList->Count;
+ if(iCount<2) return; // not enough data in graph to process
+ unsigned int i;
+ double m,c,best_err;
+ double yi,xi,e,maxe=0;
+ float *x_arr=(float *)calloc(iCount,sizeof(float)); // x values
+ float *y_arr=(float *)calloc(iCount,sizeof(float)); // y values
+ if(x_arr==NULL)
+	{rprintf(" min abs linefit: not enought free RAM - cannot filter values\n");
+	 return;
+	}
+ if(y_arr==NULL)
+	{rprintf(" min abs linefit: not enought free RAM - cannot filter values\n");
+	 free(x_arr);
+	 return;
+	}
+ for(i=0;i<iCount;++i) /* copy values into x & y arrays */
+	{
+	 x_arr[i]=((SDataPoint*)pAList->Items[i])->dXValue;
+	 y_arr[i]=((SDataPoint*)pAList->Items[i])->dYValue;
+	 if(callback!=NULL && (i & 0x3fffff)==0)
+		(*callback)((i>>1) + (iCount>>1),iCount); // update on progress , this is 2nd pass through data so goes 50% - 100%
+	}
+ // void fit_min_abs_err_line(float *x, float *y,unsigned int nos_vals,bool rel_error,double *m_out, double *c_out,double *best_err_out)
+ fit_min_abs_err_line(x_arr, y_arr,iCount,rel,&m,&c,&best_err);  // do all the hard work ...
+ // don't need x_arr & y_arr any more
+ free(x_arr);
+ free(y_arr);
+ // now put new y values back, calculated as y=m*x+c
+ for(i=0;i<iCount;++i)
+	{yi=((SDataPoint*)pAList->Items[i])->dYValue;
+	 xi=((SDataPoint*)pAList->Items[i])->dXValue;
+	 try{ // code below has tests for common issues, but use try to catch anything else
+		 ((SDataPoint*)pAList->Items[i])->dYValue=m*xi+c;
+		 e=fabs(yi-((SDataPoint*)pAList->Items[i])->dYValue);
+		 if(e>maxe) maxe=e;
+		}
+	 catch(...)
+		{ ((SDataPoint*)pAList->Items[i])->dYValue=0; // if something goes wrong put 0 in as a placeholder.
+		}
+	 if(callback!=NULL && (i & 0x3fffff)==0)
+		(*callback)((i>>1) + (iCount>>1),iCount); // update on progress , this is 2nd pass through data so goes 50% - 100%
+	}
+ if(rel)
+	rprintf("Best min abs relative error straight line is Y=%g*X%+g (error=%g%%)\n",m,c,100.0*best_err);
+  else
+	rprintf("Best min abs error straight line is Y=%g*X%+g (error=%g)\n",m,c,best_err);
+ rprintf("  Max abs error of above curve is %g\n",maxe);
+}
+
+double fun_x(float xparam)
+{return xparam;     // return X
+}
+
+double fun_sqrt(float xparam)
+{if(xparam<=0) return 0;
+ return sqrt((double)xparam);   // return sqrt(X) if x>=0 else 0
+}
+
+void TScientificGraph::fnLinreg_3(int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+{ // fit y=a*x+b*sqrt(x)+c
+
+ SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
+ TList *pAList = pAGraph->pDataList;
+ unsigned int iCount=pAList->Count;
+ if(iCount<2) return; // not enough data in graph to process
+ unsigned int i;
+ double a,b,c;     // coefficients of equation
+ double yi,xi,e,maxe=0;
+ float *x_arr=(float *)calloc(iCount,sizeof(float)); // x values
+ float *y_arr=(float *)calloc(iCount,sizeof(float)); // y values
+ if(x_arr==NULL)
+	{rprintf(" fit y=a*x+b*sqrt(x)+c: not enought free RAM - cannot filter values\n");
+	 return;
+	}
+ if(y_arr==NULL)
+	{rprintf(" fit y=a*x+b*sqrt(x)+c: not enought free RAM - cannot filter values\n");
+	 free(x_arr);
+	 return;
+	}
+ for(i=0;i<iCount;++i) /* copy values into x & y arrays */
+	{
+	 x_arr[i]=((SDataPoint*)pAList->Items[i])->dXValue;
+	 y_arr[i]=((SDataPoint*)pAList->Items[i])->dYValue;
+	 if(callback!=NULL && (i & 0x3fffff)==0)
+		(*callback)((i>>1) + (iCount>>1),iCount); // update on progress , this is 2nd pass through data so goes 50% - 100%
+	}
+ // void leastsquares_reg3(float *y,float *x,int start, int end,double (*f)(float xparam),double (*g)(float xparam), double *a, double *b, double *c)
+ leastsquares_reg3(y_arr, x_arr,0,iCount-1,fun_x,fun_sqrt,&a,&b,&c);  // do all the hard work ...
+ // don't need x_arr & y_arr any more
+ free(x_arr);
+ free(y_arr);
+ // now put new y values back, calculated as y=m*x+c
+ for(i=0;i<iCount;++i)
+	{yi=((SDataPoint*)pAList->Items[i])->dYValue;
+	 xi=((SDataPoint*)pAList->Items[i])->dXValue;
+	 try{ // code below has tests for common issues, but use try to catch anything else
+		 ((SDataPoint*)pAList->Items[i])->dYValue=a*fun_x(xi)+b*fun_sqrt(xi)+c;
+		 e=fabs(yi-((SDataPoint*)pAList->Items[i])->dYValue);
+		 if(e>maxe) maxe=e;
+		}
+	 catch(...)
+		{ ((SDataPoint*)pAList->Items[i])->dYValue=0; // if something goes wrong put 0 in as a placeholder.
+		}
+	 if(callback!=NULL && (i & 0x3fffff)==0)
+		(*callback)((i>>1) + (iCount>>1),iCount); // update on progress , this is 2nd pass through data so goes 50% - 100%
+	}
+ rprintf("Best fit found is Y=%g*X%+g*sqrt(X)%+g\n",a,b,c);    // %+g always prints sign [+-]
+ rprintf("  Max abs error of above curve is %g\n",maxe);
+}
+
 void TScientificGraph::fnLinreg(enum LinregType type, int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
  // apply 1st order least squares linear regression (y=mx+c) to graph in place
+ // can also do GMR for a straight line when type = LinLin_GMR
  // enum LinregType  {LinLin,LogLin,LinLog,LogLog,RecipLin,LinRecip,RecipRecip,SqrtLin}; defines preprocessing of varibales before linear regression 1st is X 2nd is Y
  // results checked using csvfun3.csv. R^2 values (and coefficients) also checked against Excel for the fits excel can do.
 {// to save copying data this is done inline
@@ -1754,6 +1919,8 @@ void TScientificGraph::fnLinreg(enum LinregType type, int iGraphNumberF, void (*
  double meanx2=0,meanxy=0,meany2=0; /* mean x^2 , mean x*y and mean y^2 */
  double xi,yi;
  double m,c,r2; // results of least squares fit
+ double maxe=0; // max abs error of fit
+ double e;
  unsigned int i,N=0; /* N is count of items */
  if(iCount<2) return; // not enough data in graph to process
  for(i=0;i<iCount;++i) /* only use 1 pass here - to calculate means directly */
@@ -1789,7 +1956,7 @@ void TScientificGraph::fnLinreg(enum LinregType type, int iGraphNumberF, void (*
 		 meany2+= (yi*yi-meany2)/(double) N;
 		 if(callback!=NULL && (i & 0x3fffff)==0)
 			(*callback)(i>>1,iCount); // update on progress  (this is 1st pass so go 0-50%)
-        }
+		}
  if(meanx*meanx==meanx2)
         {/* y is independent of x [if this is not trapped we get a divide by zero error trying to set m to infinity] or 0 or 1 point given */
 		 m=0.0 ;
@@ -1799,8 +1966,19 @@ void TScientificGraph::fnLinreg(enum LinregType type, int iGraphNumberF, void (*
  else   {/* have a valid line */
 		 double rt,rb,rm;
 		 rm=(meanx*meany-meanxy)/(meanx*meanx-meanx2);
-		 m=rm;
-		 c=meany-rm*meanx; /* y=mx+c so c=y-mx */
+		 if(type!=LinLin_GMR)
+			{m=rm; // normal least squares regression
+			}
+		 else
+			{
+			  /* Geometric mean regression (GMR) also called Triangular regression see equation 18 in
+				"Least Squares Methods for Treating Problems with Uncertainty in x and y", Joel Tellinghuisen,
+				Anal. Chem. 2020, 92, 10863-10871.
+			  */
+			 m=sqrt((meany*meany-meany2)/(meanx*meanx-meanx2));
+			 if(meanxy<0) m= -m;
+			}
+		 c=meany-m*meanx; /* y=mx+c so c=y-mx */
 		 rt=(meanxy-meanx*meany);
 		 rb=(meany2-meany*meany);
 		 // rprintf("rm=%g rt=%g rb=%g rt/rb=%g \n",rm,rt,rb,rt/rb);
@@ -1816,45 +1994,49 @@ void TScientificGraph::fnLinreg(enum LinregType type, int iGraphNumberF, void (*
 	 case LinLin:
 		rprintf("Best Least squares straight line is Y=%g*X%+g which has an R^2 of %g\n",m,c,r2);
 		break;
+	 case LinLin_GMR:
+		rprintf("Best GMR straight line is Y=%g*X%+g which has an R^2 of %g\n",m,c,r2);
+		break;
 	 case LogLin:
 		// log(x) : y=m*log(x)+c
-		rprintf("Best Least squares line is Y=%g*log(X)%+g which has an R^2 of %g\n",m,c,r2);
+		rprintf("Best Least squares curve is Y=%g*log(X)%+g which has an R^2 of %g\n",m,c,r2);
 		break;
 	case LinLog:
 		// Exponential: log(y) : y=a*b^x ; log(y)=log(a)+(log b)*x   ; OR y=a*exp(b*x)  =>log(y)=log(a)+b*x
 		c=exp(c); //  transform depends on equation used
-		rprintf("Best Least squares line is Y=%g*%g^(X) OR y=%g*exp(%g*X) which has an R^2 of %g\n",c,exp(m),c,m,r2);
+		rprintf("Best Least squares curve is Y=%g*%g^(X) OR y=%g*exp(%g*X) which has an R^2 of %g\n",c,exp(m),c,m,r2);
 		break;
 	case LogLog:
 		// Power: Log(x) log(y) : y=a*x^b ; log(y)=log(a)+b*log(x)
 		c=exp(c);
-		rprintf("Best Least squares line is Y=%g*X^%g which has an R^2 of %g\n",c,m,r2);
+		rprintf("Best Least squares curve is Y=%g*X^%g which has an R^2 of %g\n",c,m,r2);
 		break;
 	 case RecipLin:
 		// 1/x : y=m/x+c
-		rprintf("Best Least squares line is Y=%g/X%+g which has an R^2 of %g\n",m,c,r2);
+		rprintf("Best Least squares curve is Y=%g/X%+g which has an R^2 of %g\n",m,c,r2);
 		break;
 	case LinRecip:
 		// 1/y : 1/y=m*x+c ;y=1/(m*x+c)
-		rprintf("Best Least squares line is Y=1/(%g*X%+g) which has an R^2 of %g\n",m,c,r2);
+		rprintf("Best Least squares curve is Y=1/(%g*X%+g) which has an R^2 of %g\n",m,c,r2);
 		break;
 	case RecipRecip:
 		// Hyperbolic: 1/x,1/y : 1/y=m/x+c ;y=x/(m+c*x)
-		rprintf("Best Least squares line is Y=X/(%g%+g*X) which has an R^2 of %g\n",m,c,r2);
+		rprintf("Best Least squares curve is Y=X/(%g%+g*X) which has an R^2 of %g\n",m,c,r2);
 		break;
 	 case SqrtLin:
 		// sqrt(x): y=m*sqrt(x)+c
-		rprintf("Best Least squares line is Y=%g*sqrt(X)%+g which has an R^2 of %g\n",m,c,r2);
+		rprintf("Best Least squares curve is Y=%g*sqrt(X)%+g which has an R^2 of %g\n",m,c,r2);
 		break;
 	}
  // now put new y values back, calculated as y=m*x+c
  for(i=0;i<iCount;++i)
-	{
+	{yi=((SDataPoint*)pAList->Items[i])->dYValue;
 	 xi=((SDataPoint*)pAList->Items[i])->dXValue;
 	 try{ // code below has tests for common issues, but use try to catch anything else
 	  switch(type)
 		{ // enum LinregType  {LinLin,LogLin,LinLog,LogLog,RecipLin,LinRecip,RecipRecip,SqrtLin};
-		 case LinLin:
+		 case LinLin:    // fall through...
+		 case LinLin_GMR:
 			((SDataPoint*)pAList->Items[i])->dYValue=m*xi+c;
 			break;
 		 case LogLin:
@@ -1886,6 +2068,8 @@ void TScientificGraph::fnLinreg(enum LinregType type, int iGraphNumberF, void (*
 			((SDataPoint*)pAList->Items[i])->dYValue=m*(xi>=0?sqrt(xi):0.0f)+c;
 			break;
 		}
+	   e=fabs(yi-((SDataPoint*)pAList->Items[i])->dYValue);
+	   if(e>maxe) maxe=e;
 	   }
 	 catch(...)
 		{ ((SDataPoint*)pAList->Items[i])->dYValue=0; // if something goes wrong put 0 in as a placeholder.
@@ -1894,6 +2078,7 @@ void TScientificGraph::fnLinreg(enum LinregType type, int iGraphNumberF, void (*
 	 if(callback!=NULL && (i & 0x3fffff)==0)
 		(*callback)((i>>1) + (iCount>>1),iCount); // update on progress , this is 2nd pass through data so goes 50% - 100%
 	}
+ rprintf("  Max abs error of above curve is %g\n",maxe);
 }
 
 

@@ -1560,6 +1560,490 @@ void leastsquares_reg(float *y,float *x,int start, int end,double (*f)(float xpa
 
 }
 
+/* generalised least squares - fit y=a*f(x)+b*g(x)+c - see below for a number of optimised versions for special cases of f(x) and g(x)
+   The basic approach is described in http://www.geometrictools.com/Documentation/LeastSquaresFitting.pdf
+   in section 3 Planar Fitting of 3D Points of Form( y; f(x; y))
+   The solution of the matrix equation was done symbolically using  Maxima to get:
+	   a=ratsimp(invert(matrix([s1,s2,s3],[s4,s5,s6],[s7,s8,s9])).matrix([s10],[s11],[s12])); which gives:
+	   matrix([((s10*s5-s11*s2)*s9+(s11*s3-s10*s6)*s8+s12*s2*s6-s12*s3*s5)/((s1*s5-s2*s4)*s9+(s3*s4-s1*s6)*s8+(s2*s6-s3*s5)*s7)],
+	           [-((s10*s4-s1*s11)*s9+(s11*s3-s10*s6)*s7+s1*s12*s6-s12*s3*s4)/((s1*s5-s2*s4)*s9+(s3*s4-s1*s6)*s8+(s2*s6-s3*s5)*s7)],
+			   [((s10*s4-s1*s11)*s8+(s11*s2-s10*s5)*s7+s1*s12*s5-s12*s2*s4)/((s1*s5-s2*s4)*s9+(s3*s4-s1*s6)*s8+(s2*s6-s3*s5)*s7)])
+        Then as a check
+		a=ratsimp(matrix([s1,s2,s3],[s4,s5,s6],[s7,s8,s9]).ratsimp(invert(matrix([s1,s2,s3],[s4,s5,s6],[s7,s8,s9])).matrix([s10],[s11],[s12]))); gives
+		matrix([s10],[s11],[s12]) which is what you would expect.
+    s1=sum Xi^2
+    s2=sum Xi*Yi
+    s3=sum Xi
+    s4=sum XiYi
+    s5=sum Yi^2
+    s6=sum Yi
+    s7=sum Xi
+    s8=sum Yi
+    s9=sum 1
+    s10=sum XiZi
+    s11=sum YiZi
+    s12=sum Zi
+    And equation to be fitted is z=A*x+B*y+C but here we allow functions so
+      y=A*f(x)+B*g(x)+C
+*/
+void leastsquares_reg3(float *y,float *x,int start, int end,double (*f)(float xparam),double (*g)(float xparam), double *a, double *b, double *c)
+{long double s1=0,s2=0,s3=0,s4,s5=0,s6=0,s7,s8,s9=0,s10=0,s11=0,s12=0; /* see above, use long doubles for accuracy, but as x[] and y[] are float arrays it probably makes no difference */
+ long double dom;
+ int i;
+ for(i=start;i<=end;++i) /* 1st calculate sums */
+        {
+         s1+=((*f)(x[i])) * ((*f)(x[i]));       /* *f is Xi, *g is Yi */
+         s2+=((*f)(x[i])) * ((*g)(x[i]));
+         s3+= ((*f)(x[i]));
+         s5+=((*g)(x[i])) * ((*g)(x[i]));
+         s6+= ((*g)(x[i]));
+         s9+=1;
+         s10+= y[i] * ((*f)(x[i]));
+         s11+= y[i] * ((*g)(x[i]));
+         s12+= y[i];
+        }
+  s4=s2; /* some duplicates set here (I tried avoiding these in maxima but the equations were basically unchanged)*/
+  s7=s3;
+  s8=s6;
+  /* calculate demoninator as its the same in all cases */
+  dom=((s1*s5-s2*s4)*s9+(s3*s4-s1*s6)*s8+(s2*s6-s3*s5)*s7);    /* equation from Maxima - see comments at head of this function */
+  if(dom==0)
+        {/* cannot divide by zero so just set a default result */
+         *a=*b=*c=0;
+         return;
+        }
+  *a=((s10*s5-s11*s2)*s9+(s11*s3-s10*s6)*s8+s12*s2*s6-s12*s3*s5)/dom;  /* equations from Maxima - see comments at head of this function */
+  *b=  -((s10*s4-s1*s11)*s9+(s11*s3-s10*s6)*s7+s1*s12*s6-s12*s3*s4)/dom;
+  *c= ((s10*s4-s1*s11)*s8+(s11*s2-s10*s5)*s7+s1*s12*s5-s12*s2*s4)/dom;
+  return;
+}
+
+/* linear regression line forced to pass through point x=a,y=b ; does not calculate r^2 as not obvious how to use this as point a,b impacts the fit*/
+void lin_reg_through_a_b(float a, float b,float *y,float *x, int start, int end, double *m, double *c)
+/* this version just makes 1 pass over data, uses "updating algorithm" for higher accuracy [works well with floats - but doubles used here for best accuracy]*/
+/* underlying equation for the best straight line through the origin=sum(XiYi)/sum(Xi^2) from Yang Feng (Columbia Univ) Simultaneous Inferences, pp 18/20. */
+{
+ double meanx2=0,meanxy=0; /* mean x^2 , mean x*y */
+ double xi,yi;
+ int i,N=0; /* N is count of items */
+ for(i=start;i<=end;++i) /* only use 1 pass here - to calculate means directly */
+		{++N;
+		 xi = x[i]-a; // ofset x,y as we want line to pass through point (a,b)
+		 yi = y[i]-b;
+		 meanx2+= (xi*xi-meanx2)/(double) N;
+		 meanxy+= (xi*yi-meanxy)/(double) N;
+		}
+ if(meanx2==0)
+		{/* y is independent of x [if this is not trapped we get a divide by zero error trying to set m to infinity] or 0 or 1 point given */
+		 *m=0.0 ;
+		 *c=b; /* make sure line passes through point (a,b) */
+		}
+ else   {/* have a valid line */
+		 double rt,rb,rm;
+		 rm=(meanxy)/(meanx2);
+		 *m=rm;
+		 *c=b-rm*a; /* force to pass though point a,b */
+		 }
+}
+
+/* Least squares fit to a straight line y=m*x+c
+   Written by Peter Miler 2012
+   Uses "updating formula" so gives accurate results with 1 pass through data
+   Option to use Geometric mean regression (GMR) also called Triangular regression see equation 18 in
+   	"Least Squares Methods for Treating Problems with Uncertainty in x and y", Joel Tellinghuisen,
+   	Anal. Chem. 2020, 92, 10863-10871.
+*/
+void lin_reg_GMR(float *y,float *x, int start, int end, bool GMR,double *m, double *c, double *r2) /* linear regression */
+{double meanx=0,meany=0; /* initial values set to mean that N=0 or N=1 do not need to be treated as special cases below */
+ double meanx2=0,meanxy=0,meany2=0; /* mean x^2 , mean x*y and mean y^2 */
+ double xi,yi;
+ int i,N=0; /* N is count of items */
+ for(i=start;i<=end;++i) /* only use 1 pass here - to calculate means directly */
+        {++N;
+         xi = x[i];
+         yi = y[i];
+         meanx+= (xi-meanx)/(double) N; /* calculate means as mi+1=mi+(xi+1 - mi)/i+1 , this should give accurate results and avoids the possibility of the "sum" overflowing*/
+         meany+= (yi-meany)/(double) N;
+         meanx2+= (xi*xi-meanx2)/(double) N;
+         meanxy+= (xi*yi-meanxy)/(double) N;
+         meany2+= (yi*yi-meany2)/(double) N;
+        }
+ if(meanx*meanx==meanx2)
+        {/* y is independent of x [if this is not trapped we get a divide by zero error trying to set m to infinity] or 0 or 1 point given */
+         *m=0.0 ;
+         *c=meany;
+         *r2=0.0;
+        }
+ else   {/* have a valid line */
+         double rt,rb,rm;
+         rm=(meanx*meany-meanxy)/(meanx*meanx-meanx2);
+         if(GMR)
+			{/* Geometric Mean regression  */
+			 double gm;
+			 gm=sqrt((meany*meany-meany2)/(meanx*meanx-meanx2));
+		 	 if(meanxy<0) gm= -gm;
+		 	 *m=gm;
+		 	}
+		 else
+		 	{// normal least squares
+         	 *m=rm;
+         	}
+         *c=meany-*m*meanx; /* y=mx+c so c=y-mx */
+         rt=(meanxy-meanx*meany);
+         rb=(meany2-meany*meany);
+         // rprintf("rm=%g rt=%g rb=%g rt/rb=%g \n",rm,rt,rb,rt/rb);
+         if(rb!=0)     /* trap divide by zero */
+            *r2= rm * (rt/rb) ;
+          else
+            *r2=1.0;/* should be in range 0-1 */
+         }
+}
+
+static inline double calc_err(bool rel_error, double yi,double c) // returns relative or abs error depending on state of rel_error
+{if(rel_error)
+	{// relative error
+	 if(yi!=0)
+	 	return fabs((yi-c)/yi);
+	 else return fabs(c); // if yi==0 returns abs error (avoids divide by zero), 0 if no error
+	}
+ else
+ 	{// abs error
+ 	 return fabs(yi-c);
+	}
+}
+
+// This function tries to fit a min absolute error or min abs relative error line y=m*x+c
+// as a secondary objective where values of min abs error are equal aims to minimise sum abs error (or abs rel error) - this is so there is one unique solution
+// This is a non-linear optimisation so initially does a number of line fits and uses these to find a likely range of m,c and
+// then searches these ranges for the minimum error.
+// Code designed so its normally fast, but it has a timeout just in case which should still give a reasonable result.
+// This algorithm was created by Peter Miller   May 2020.
+void fit_min_abs_err_line(float *x, float *y,unsigned int nos_vals,bool rel_error,double *m_out, double *c_out,double *best_err_out)
+{bool first=true;
+ double m,c,bestm=0,bestc=0,err,besterr=0,e,sumerr,bestsumerr=0;
+ double minm=0, maxm=0;
+ double minc=0,maxc=0;
+ double r2;// for least squares line fit
+#define NOS_PTS_TO_USE_SEGS 100 /* if more than this many points then we split data into "segments" to speed analysis */
+#define NOS_SEGS 10 /* number of segments to split data into */
+ double seg_max_x[NOS_SEGS],seg_max_y[NOS_SEGS]; // co-ords of max in each segment
+ double seg_min_x[NOS_SEGS],seg_min_y[NOS_SEGS]; // co-ords of min in each segment
+ double sx[NOS_SEGS*2],sy[NOS_SEGS*2]; // array of points containing min/max of all segments
+ int seg_size=nos_vals/NOS_SEGS;
+ int seg_end=seg_size; // end of next segment
+ int seg_nos=0;
+ clock_t start_t=clock();
+ if(nos_vals<=2)
+	{// Need at least 2 points to fit a straight line
+ 	 *m_out=0;
+ 	 *c_out=0;
+ 	 *best_err_out=0;
+ 	 return;
+ 	}
+if(nos_vals<NOS_PTS_TO_USE_SEGS)
+	{
+ 	 // we know that the min sum abs error line passes through at least two datapoints (re wikipedia article/thesis) [note here we select line with min abs error, NOT min sum abs error ]
+	 // as there are only a few points we can test all possible pairs - this is very fast to do.
+	for(int i1=0;i1<nos_vals-1;++i1)
+		for(int i2=i1+1;i2<nos_vals;++i2)
+			{if(x[i1]!=x[i2])
+				{// find line from i1 to i2 as y=m*x+c
+				 m=(y[i1]-y[i2])/(x[i1]-x[i2]);
+				 c=y[i1]-m*x[i1];
+				 // now update min/max m/c
+				 if(first)
+				 	{minm=maxm=m;
+				 	 minc=maxc=c;
+				 	}
+				 else
+				 	{if(m>maxm) maxm=m;
+					 if(m<minm) minm=m;
+					 if(c>maxc) maxc=c;
+					 if(c<minc) minc=c;
+					}
+				 // now find abs error of this line
+				 err=0;
+				 sumerr=0;
+				 for(int i=0;i<nos_vals;++i)
+	 				{ e=calc_err(rel_error,y[i],(m*x[i]+c));
+	 				  sumerr+=e;
+	 				  if(e>err)
+					   	{err=e; // max abs error of this line
+	 				  	 if(!first && (err>besterr|| (err==besterr && sumerr>=bestsumerr))) break; // shortcut - error is already worse so no point continueing to look for a larger error
+	 				  	}
+	 				  if(!first && (err==besterr && sumerr>=bestsumerr)) break; // error already higher than best, go straight to next one
+	 				 }
+				 if(first || err<besterr || (err==besterr && sumerr<bestsumerr))
+				 	{first=false;
+					 besterr=err; // best result so far
+					 bestsumerr=sumerr;
+					 bestc=c;
+					 bestm=m;
+					}
+				}
+			}
+	}
+ else
+ 	{// lots of points find split range into a number of segments and for each segment find min/max, then use min/max of all segments as points to consider
+	 // this focuses on finding the range of m,c to explore - its not very good for directly finding the best line
+	// first find min/max y values (and corresponding x values) in each segment
+	for(int i=0;i<nos_vals;++i)
+		{if(first)
+			{seg_max_x[seg_nos]=x[i];
+			 seg_max_y[seg_nos]=y[i];
+			 seg_min_x[seg_nos]=x[i];
+			 seg_min_y[seg_nos]=y[i];
+			 first=false;
+			}
+		if(y[i]>seg_max_y[seg_nos])
+			{// new max
+			 seg_max_x[seg_nos]=x[i];
+			 seg_max_y[seg_nos]=y[i];
+			}
+		if(y[i]<seg_min_y[seg_nos])
+			{// new min
+			 seg_min_x[seg_nos]=x[i];
+			 seg_min_y[seg_nos]=y[i];
+			}
+		if(i>=seg_end)
+			{seg_end+=seg_size;
+			 if(seg_nos<NOS_SEGS-1)
+			 	{seg_nos++; // ensure array indices stay in range
+			 	 first=true;
+			 	}
+			}
+		}
+	// copy min max values into sx/sy arrays for easier processing below
+	for(int i=0;i<NOS_SEGS;++i)
+		{sx[i]=seg_max_x[i];
+		 sy[i]=seg_max_y[i];
+		 sx[i+NOS_SEGS]=seg_min_x[i];
+		 sy[i+NOS_SEGS]=seg_min_y[i];
+		}
+	// now search these
+	first=true;
+	for(int i1=0;i1<NOS_SEGS*2-1;i1++)
+		{for(int i2=i1+1;i2<NOS_SEGS*2;i2++)
+			{if(sx[i1]!=sx[i2])
+				{// find line from i1 to i2 as y=m*x+c
+				 m=(sy[i1]-sy[i2])/(sx[i1]-sx[i2]);
+				 c=sy[i1]-m*sx[i1];
+				 // now update min/max m/c
+				 if(first)
+				 	{minm=maxm=m;
+				 	 minc=maxc=c;
+				 	}
+				 else
+				 	{if(m>maxm) maxm=m;
+					 if(m<minm) minm=m;
+					 if(c>maxc) maxc=c;
+					 if(c<minc) minc=c;
+					}
+				 // now find abs error of this line
+				 err=0;
+				 sumerr=0;
+				 // 1st check min/max array as that may let us stop if error is large
+				 for(int i=0;i<NOS_SEGS*2;i++)
+	 				{ e=calc_err(rel_error,sy[i],(m*sx[i]+c));
+	 				  sumerr+=e;
+	 				  if(e>err)
+					   	{err=e; // max abs error of this line
+	 				  	 if(!first && (err>besterr|| (err==besterr && sumerr>=bestsumerr))) break; // shortcut - error is already worse so no point continueing to look for a larger error
+	 				  	}
+	 				  if(!first && (err==besterr && sumerr>=bestsumerr)) break; // error already higher than best, go straight to next one  // error already higher than best, go straight to next one
+	 				 }
+				 // if we get here we need to check all the points	(no need to reset err as points checked above are all on line so will be checked again)
+		 		 if(first || err<besterr || (err==besterr && sumerr<bestsumerr))
+		 			{// check every point to find max abs error
+					 sumerr=0;
+				 	 for(int i=0;i<nos_vals;++i)
+	 					{ e=calc_err(rel_error,y[i],(m*x[i]+c));
+	 					 sumerr+=e;
+	 				  	 if(e>err)
+					   		{err=e; // max abs error of this line
+	 				  	 	 if(!first && (err>besterr || (err==besterr && sumerr>=bestsumerr))) break; // shortcut - error is already worse so no point continueing to look for a larger error
+	 				  		}
+	 				  	 if(!first && (err==besterr && sumerr>=bestsumerr)) break; // error already higher than best, go straight to next one  // error already higher than best, go straight to next one
+	 				 	}
+	 				}
+				 if(first || err<besterr || (err==besterr && sumerr<bestsumerr))
+				 	{first=false;
+					 besterr=err; // best result so far
+					 bestsumerr=sumerr;
+					 bestc=c;
+					 bestm=m;
+					}
+				}
+			}
+		}
+	}
+ lin_reg_GMR(y,x,0,nos_vals-1,false,&m,&c,&r2);
+ // got fit
+ // now find max abs error of this line
+ err=0;
+ sumerr=0;
+ for(int i=0;i<nos_vals;++i)
+	{ e=calc_err(rel_error,y[i],(m*x[i]+c));
+	  sumerr+=e;
+	  if(e>err)
+	   	{err=e; // max abs error of this line
+ 	  	}
+	 }
+
+ if(err<besterr || (err==besterr && sumerr<bestsumerr))
+  	{// got a lower error than previously
+  	 besterr=err;
+	 bestsumerr=sumerr;
+  	 bestm=m;
+  	 bestc=c;
+	}
+ lin_reg_GMR(y,x,0,nos_vals-1,true,&m,&c,&r2);
+ // got GMR fit
+ // now find max abs error of this line
+ err=0;
+ sumerr=0;
+ for(int i=0;i<nos_vals;++i)
+	{ e=calc_err(rel_error,y[i],(m*x[i]+c));
+	  sumerr+=e;
+	  if(e>err)
+	   	{err=e; // max abs error of this line
+ 	  	}
+	 }
+ if(err<besterr || (err==besterr && sumerr<bestsumerr))
+  	{// got a lower error than previously
+  	 besterr=err;
+	 bestsumerr=sumerr;
+  	 bestm=m;
+  	 bestc=c;
+ 	}
+ /* now vary line a little to see if we can find a line with a smaller min abs deviation */
+ if(besterr==0)
+	{// all done (cannot do better than zero error)
+	 *m_out=bestm;
+	 *c_out=bestc;
+	 *best_err_out=besterr;
+	 return;
+	}
+ // use min/max m/c range found by fitting straight lines to all pairs of points, use 2000 steps between these for initial exploration
+
+ double tm,tc;
+ tm=maxm-minm; // range of m from fitting straight lines by pairs of points
+ maxm=bestm+tm;
+ minm=bestm-tm;
+ tc=maxc-minc; // range of c from fitting straight lines by pairs of points
+ maxc=bestc+tc;
+ minc=bestc-tc;
+ for(int im=0;im<=2000;++im)     // use ints for loop counters as mstep may be very small and give us resolution issues
+	{m=minm+tm*(double)im/1000.0;  // from minm to maxm step tm/1000
+	 for(int ic=0;ic<=2000;++ic)
+		{c=minc+tc*(double)ic/1000.0;  // from minc to maxc step tc/1000
+		 err=0;
+		 if(nos_vals>=NOS_PTS_TO_USE_SEGS)
+			{sumerr=0;
+			 // we are using segments, 1st check min/max array as that may let us stop if error is large
+			 for(int i=0;i<NOS_SEGS*2;i++)
+				{ e=calc_err(rel_error,sy[i],(m*sx[i]+c));
+				  sumerr+=e;
+				  if(e>err)
+					{err=e; // max abs error of this line
+					 if(err>besterr|| (err==besterr && sumerr>=bestsumerr)) break; // shortcut - error is already worse so no point continueing to look for a larger error
+					}
+				  if(err==besterr && sumerr>=bestsumerr) break; // error already higher than best, go straight to next one
+				 }
+			}
+		 if(err<besterr || (err==besterr && sumerr<bestsumerr))
+			{// check every point to find max abs error
+			 sumerr=0;
+			 for(int i=0;i<nos_vals;++i)
+				{e=calc_err(rel_error,y[i],(m*x[i]+c));
+				 sumerr+=e;
+				 if(e>err)
+					{err=e; // max abs error of this line
+					 if(err>besterr|| (err==besterr && sumerr>=bestsumerr)) break; // error already higher than best, go straight to next one
+					}
+				 if(err==besterr && sumerr>=bestsumerr) break; // error already higher than best, go straight to next one
+				}
+			}
+		 if(err<besterr|| (err==besterr && sumerr<bestsumerr))
+			{// got a lower error than previously
+			 besterr=err;
+			 bestsumerr=sumerr;
+			 bestm=m;
+			 bestc=c;
+			}
+		}
+	}
+ // having found area of best - zoom in , look +/-10 steps from previous best, dividing step by 2 each iteration
+ int last_improvement_j=0;
+ tm/=100.0;// tm/1000 was steps used above *10 to give new step
+ tc/=100.0;
+ for(int j=0;j<70;++j)// nos of zooms to do, normally we will run out of resolution and so break out of loop before this naturally terminates
+  {
+   minm=bestm-tm;
+   maxm=bestm+tm;
+   minc=bestc-tc;
+   maxc=bestc+tc;
+   volatile double mz=maxm+tm/20.0,cz=maxc+tc/20.0; // try and avoid optimiser being too clever in if statement below
+   if(mz==maxm && cz==maxc) break; // out of resolution  on both loops, if one loop out of resolution we can still keep going refining the other one
+   // now do general search
+   rprintf("itn %-2d: search m from %g to %g step %g and c from %g to %g step %g\n",j,minm,maxm,tm/20.0,minc,maxc,tc/20.0);
+   for(int im=-1;im<=40;++im)     // use ints for loop counters as mstep may be very small and give us resolution issues
+	{if(im<0) m=bestm; // make sure we already test bestm exactly
+	 else m=minm+tm*(double)im/20.0;  // from minm to maxm step tm/20
+	 for(int ic=-1;ic<=40;++ic)
+		{if(ic<0) c=bestc; // make sure we test bestc exactly
+		 else c=minc+tc*(double)ic/20.0;  // from minc to maxc step tc/20
+		 err=0;
+		 if(nos_vals>=NOS_PTS_TO_USE_SEGS)
+			{sumerr=0;
+			 // we are using segments, 1st check min/max array as that may let us stop if error is large
+			 for(int i=0;i<NOS_SEGS*2;i++)
+				{ e=calc_err(rel_error,sy[i],(m*sx[i]+c));
+				  sumerr+=e;
+				  if(e>err)
+					{err=e; // max abs error of this line
+					 if(err>besterr|| (err==besterr && sumerr>=bestsumerr)) break; // shortcut - error is already worse so no point continueing to look for a larger error
+					}
+				  if(err==besterr && sumerr>=bestsumerr) break; // error already higher than best, go straight to next one
+				 }
+			}
+		 if( err<besterr || (err==besterr && sumerr<bestsumerr))
+			{// check every point to find max abs error
+			 sumerr=0;
+			 for(int i=0;i<nos_vals;++i)
+				{ e=calc_err(rel_error,y[i],(m*x[i]+c));
+				 sumerr+=e;
+				 if(e>err)
+					{err=e; // max abs error of this line
+					 if(err>besterr|| (err==besterr && sumerr>=bestsumerr)) break; // error already higher than best, go straight to next one
+					}
+			     if(err==besterr && sumerr>=bestsumerr) break; // error already higher than best, go straight to next one
+				}
+			}
+		 if(err<besterr || (err==besterr && sumerr<bestsumerr))
+			{// got a lower error than previously
+			 last_improvement_j=j;
+			 besterr=err;
+			 bestsumerr=sumerr;
+			 bestm=m;
+			 bestc=c;
+			}
+		}
+	 }
+
+   if(((j-last_improvement_j)>10 && (clock()-start_t)/(double)CLOCKS_PER_SEC>30.0) || (clock()- start_t)/(double)CLOCKS_PER_SEC>100.0)
+		{rprintf(" Min abs error fit: Giving up with %d iterations without improvement at %g secs total\n",j-last_improvement_j,(clock()- start_t)/(double)CLOCKS_PER_SEC);
+		 break; // give up if we are taking a very long time - > 30 secs and no improvement or > 100 secs
+		}
+   tc/=2.0; // have steps for next iteration
+   tm/=2.0;
+  }
+
+ *m_out=bestm;
+ *c_out=bestc;
+ *best_err_out=besterr;
+}
+
 
 #ifdef  onepassreg
 /* this version just makes 1 pass over data, uses "updating algorithm" for higher accuracy [works well with floats - but doubles used here for best accuracy]*/

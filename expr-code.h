@@ -93,7 +93,12 @@ bool last_sexpr_ok(); /* returns true if last sexpr expression was correct in sy
 
 /* generalised least squares - fit y=a*f(x)+b*g(x) - see below for a number of optimised versions for special cases of f(x) and g(x) */
 void leastsquares_reg(float *y,float *x,int start, int end,double (*f)(float xparam),double (*g)(float xparam), double *a, double *b);
+/* generalised least squares - fit y=a*f(x)+b*g(x)+c  */
+void leastsquares_reg3(float *y,float *x,int start, int end,double (*f)(float xparam),double (*g)(float xparam), double *a, double *b, double *c);
 /* specialised versions of above - faster and more accurate that using general version above */
+void lin_reg_through_a_b(float a, float b,float *y,float *x, int start, int end, double *m, double *c); /* y=mx */
+void lin_reg_GMR(float *y,float *x, int start, int end, bool GMR,double *m, double *c, double *r2); // lin reg optional GMR
+void fit_min_abs_err_line(float *x, float *y,unsigned int nos_vals,bool rel_error,double *m_out, double *c_out,double *best_err_out); // fit min rel/abs error line
 void lin_reg(float *y,float *x, int start, int end, double *m, double *c, double *r2); /* linear regression */
 void log_reg(float *y,float *x, float yoff,float xoff,int start, int end, double *m, double *c, double *r2); /* linear regression on logx / logy*/
 /* yoff and xoff are subtracted from *y and *x this is useful as log(z) requires z>0 */

@@ -8,7 +8,7 @@
 
 #include <Graphics.hpp>
 
-enum LinregType  {LinLin,LogLin,LinLog,LogLog,RecipLin,LinRecip,RecipRecip,SqrtLin};
+enum LinregType  {LinLin,LinLin_GMR,LogLin,LinLog,LogLog,RecipLin,LinRecip,RecipRecip,SqrtLin};
 
 // class for scientific plots
 
@@ -158,6 +158,9 @@ public:
   void fnMedian_filt_time1(double median_ahead_t, int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)); // new algorithm apply median filter to graph in place  , lookahead defined in time
   void fnMedian_filt_time(double median_ahead_t, int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)); // apply median filter to graph in place  , lookahead defined in time
   void fnLinear_filt_time(double tc, int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)); // apply linear filter to graph in place
+  void fnLinreg_origin( int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)); // fit y=mc
+  void fnLinreg_abs(bool rel, int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)); // fit y=mx+c with min abs error or min abs relative error
+  void fnLinreg_3(int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)); // fit y=a*x+b*sqrt(x)+c
   void fnLinreg(enum LinregType type,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)); // apply 1st order linear regression (y=mx+c) to graph in place
   bool fnPolyreg(unsigned int order,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)); // fit polynomial of specified order regression to graph in place
   bool fnFFT(bool dBV_result,bool Hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)); // apply FFT to data. returns true if OK, false if failed.

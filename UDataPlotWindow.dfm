@@ -26,7 +26,7 @@ object PlotWindow: TPlotWindow
   OnResize = FormResize
   DesignSize = (
     1290
-    1002)
+    982)
   PixelsPerInch = 96
   TextHeight = 13
   object Panel1: TPanel
@@ -669,7 +669,7 @@ object PlotWindow: TPlotWindow
     object FilterType: TListBox
       Left = 0
       Top = 833
-      Width = 148
+      Width = 153
       Height = 93
       Hint = 
         'Select filtering required - you also need to set the filter time' +
@@ -681,7 +681,11 @@ object PlotWindow: TPlotWindow
         'Median Filter'
         'Median1 Filter'
         'Linear Filter'
+        'Lin.regression (y=mx)'
         'Lin. regression (y=mx+c)'
+        'GMR regression (y=mx+c)'
+        'min abs err: y=mx+c'
+        'min rel err: y=mx+c'
         'Log (y=m*log(x)+c)'
         'Exponential y=c*exp(mx)'
         'Power y=c*x^m'
@@ -689,6 +693,7 @@ object PlotWindow: TPlotWindow
         'y=1/(mx+c)'
         'Hyperbolic'
         'sqrt y=m*sqrt(x)+c'
+        'y=a*x+b*sqrt(x)+c'
         'Polynomial fit'
         'FFT returns |magnitude|'
         'FFT returns dBV'
@@ -885,7 +890,7 @@ object PlotWindow: TPlotWindow
     Left = 304
     Top = 32
     Bitmap = {
-      494C01010A000E00F00010001000FFFFFFFFFF10FFFFFFFFFFFFFFFF424D3600
+      494C01010A000E00000110001000FFFFFFFFFF10FFFFFFFFFFFFFFFF424D3600
       0000000000003600000028000000400000003000000001002000000000000030
       0000000000000000000000000000000000000000000000000000000000000000
       0000000000000000000000000000000000000000000000000000000000000000

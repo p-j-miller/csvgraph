@@ -17,6 +17,10 @@
 //               : if a filename is passed on the command line to csvgraph.exe it is opened at start. This allows csvgraph to be associated with csvfiles.
 // 1v2 21/1/2021 : added (many) more types of linear regression eg exponential, log, power, hyperbolic, sqrt.
 //               : Also now traps "nan" and "inf" in csv files - previouly files containing these could be read but with give "LOG10" error when trying to display the graph.
+// 1v3 27/1/2021 : Geometric Mean regression added as filter option
+//     30/1/2021 : fit to y=mx added
+//               : y=mx+c min abs error and min abs relative error fits added.
+//     2/2/2021  : added y=a*sqrt(x)+b*x+c least squares fit  [ note this is the same as an order 2 poly fit to sqrt(x) but code is more efficient than doing this ]
 
 //---------------------------------------------------------------------------
 /*----------------------------------------------------------------------------
@@ -75,7 +79,7 @@
 #include <float.h>
 
 extern TForm1 *Form1;
-const char * Prog_Name="CSVgraph (Github) 1v2";   // needs to be global as used in about box as well.
+const char * Prog_Name="CSVgraph (Github) 1v3";   // needs to be global as used in about box as well.
 #if 1 /* if 1 then use fast_strtof() rather than atof() for floating point conversion. Note in this application this is only slightly faster (1-5%) */
 extern "C" float fast_strtof(const char *s,char **endptr); // if endptr != NULL returns 1st character thats not in the number
 #define strtod fast_strtof  /* set so we use it in place of strtod() */
@@ -1028,11 +1032,12 @@ void __fastcall TPlotWindow::Button_add_trace1Click(TObject *Sender)
    else FString="" ; // "" means no filtering
    bool is_filter=strstr(FString.c_str(),"Filter")!= NULL;  // true if "filter" appears in the text
    bool is_fft=strstr(FString.c_str(),"FFT")!= NULL;  // true if "FFT" appears in the text
+   bool is_poly=strstr(FString.c_str(),"Polynomial")!= NULL;// true if "Polynomial" appears in string
    if(is_filter &&  median_ahead_t<=0)
 		{ShowMessage("Request to filter ignored as filter time constant has not been set");
 		 FString="";
 		}
-   else if(FilterType->ItemIndex==12)
+   else if(is_poly)
 		{// polynomial fit  , order = 0 is OK  and is unsigned so cannot go negative
 		 if(compress)  ShowMessage("Warning: both compress and polynomial fit requested so fitting will be done on compressed data");
 		 snprintf(cstring,sizeof(cstring)," order=%u",poly_order);
@@ -1700,53 +1705,78 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
                         }
 				break;
 		case 4:
+				// lin regression y=mx
+				StatusText->Caption=FString;
+				pScientificGraph->fnLinreg_origin(iGraph,filter_callback);
+				break;
+		case 5:
 				// lin regression y=mx+c
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(LinLin,iGraph,filter_callback);
 				break;
-		case 5:
+		case 6:
+				// lin regression y=mx+c  via GMR
+				StatusText->Caption=FString;
+				pScientificGraph->fnLinreg(LinLin_GMR,iGraph,filter_callback);
+				break;
+		case 7:
+				// minimal max abs error: y=mx+c
+				StatusText->Caption=FString;
+				pScientificGraph->fnLinreg_abs(false,iGraph,filter_callback);
+				break;
+		case 8:
+				// minimal max abs relative error: y=mx+c
+				StatusText->Caption=FString;
+				pScientificGraph->fnLinreg_abs(true,iGraph,filter_callback);
+				break;
+		case 9:
 				// log regression
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(LogLin,iGraph,filter_callback);
 				break;
-		case 6:
+		case 10:
 				// exponentail regression
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(LinLog,iGraph,filter_callback);
 				break;
-		case 7:
+		case 11:
 				// powerregression
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(LogLog,iGraph,filter_callback);
 				break;
-		case 8:
+		case 12:
 				// recip regression
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(RecipLin,iGraph,filter_callback);
 				break;
-		case 9:
+		case 13:
 				// lin-recip regression
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(LinRecip,iGraph,filter_callback);
 				break;
-		case 10:
+		case 14:
 				// hyperbolic regression
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(RecipRecip,iGraph,filter_callback);
 				break;
-		case 11:
+		case 15:
 				// sqrt regression y=m*sqrt(x)+c
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(SqrtLin,iGraph,filter_callback);
 				break;
-		case 12: // lin reg y=mx+c via general purpose polynomial fit
+		case 16:
+				// y=a*x+b*sqrt(x)+c  (least squares fit)
+				StatusText->Caption=FString;
+				pScientificGraph->fnLinreg_3(iGraph,filter_callback);
+				break;
+		case 17: //  general purpose polynomial fit   (least squares using orthogonal polynomials)
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnPolyreg(poly_order,iGraph,filter_callback))
 						{StatusText->Caption="Polynomial fit failed";
 						 ShowMessage("Warning: Polynomial fit failed - adding original trace to graph");
 						}
 				break;
-		case 13: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+		case 18: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 				// fft return ||
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnFFT(false,false,iGraph,filter_callback))
@@ -1754,7 +1784,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						 ShowMessage("Warning: FFT failed - adding original trace to graph");
 						}
 				break;
-		case 14: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+		case 19: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 				// fft return dBV
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnFFT(true,false,iGraph,filter_callback))
@@ -1762,7 +1792,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						 ShowMessage("Warning: FFT failed - adding original trace to graph");
 						}
 				break;
-		case 15: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+		case 20: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 				// fft with Hanning window, return ||
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnFFT(false,true,iGraph,filter_callback))
@@ -1770,7 +1800,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						 ShowMessage("Warning: FFT failed - adding original trace to graph");
 						}
 				break;
-		case 16: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+		case 21: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 				// fft with Hanning window return dBV
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnFFT(true,true,iGraph,filter_callback))
