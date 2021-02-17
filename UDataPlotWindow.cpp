@@ -21,7 +21,14 @@
 //     30/1/2021 : fit to y=mx added
 //               : y=mx+c min abs error and min abs relative error fits added.
 //     2/2/2021  : added y=a*sqrt(x)+b*x+c least squares fit  [ note this is the same as an order 2 poly fit to sqrt(x) but code is more efficient than doing this ]
-
+// 2v0 6/2/2021  : change way x&y values are stored to reduce memory overhead and make it simpler to "filter" data
+//               : for 20M data points memory usage reduced from 357.1 MB to 140.1MB and loading/plotting 1 trace reducing from 26.375 to 22.67 secs.
+//               : (now uses 8 bytes per data point).
+//               : some speed optimisations as well (eg if adding multiple traces at once only process x values once then copy for other traces - assuming they are monotonic in input file)
+//               : sort optimised (worse case improved dramatically)
+//               : reading times (h:m:s) made more robust - will now read a general number as a float (secs) - but assumes no exponent present
+//               : warning - h:m:s date handling code assumes times are in order (all increasing), if they are not then day handling code may get confused...
+//
 //---------------------------------------------------------------------------
 /*----------------------------------------------------------------------------
  * Copyright (c) 2019,2020,2021 Peter Miller
@@ -79,16 +86,18 @@
 #include <float.h>
 
 extern TForm1 *Form1;
-const char * Prog_Name="CSVgraph (Github) 1v3";   // needs to be global as used in about box as well.
+const char * Prog_Name="CSVgraph (Github) 2v0";   // needs to be global as used in about box as well.
 #if 1 /* if 1 then use fast_strtof() rather than atof() for floating point conversion. Note in this application this is only slightly faster (1-5%) */
 extern "C" float fast_strtof(const char *s,char **endptr); // if endptr != NULL returns 1st character thats not in the number
 #define strtod fast_strtof  /* set so we use it in place of strtod() */
 #endif
-
+extern "C" unsigned int count_lines(char *filename); // in lc.c - returnd number of lines in file (quickly)
 #define WHITE_BACKGROUND /* if defined then use a white background, otherwise use a black background*/
 #define UseVCLdialogs /* if defined used VCL dialogs, otherwise use "raw" windows ones */
 #define BIG_BUF_SIZE (128*1024) /* Should be a power of 2. 1024*1024=1MB . Testing showed 4K is the min for moderate performance, and after 256k performance gets slightly worse */
   /* times to read 2 columns from a 2BG file are no buf 126secs, 4k 78s, 8k 72s, 16k 71s, 32k 70s, 64k 69s, 128k 68s, 256k 68s, 512k 69s, 1024k 69s, 4096k 71s */
+#define CL_BLOCK_SIZE (1024*1024) /* must be a bigish power of 2 , used for count_lines() function to quickly count lines in file 1M seems to be best on my PC */
+
 #define P_UNUSED(x) (void)x; /* a way to avoid warning unused parameter messages from the compiler */
 
 /* next 2 function used to support conversion to unicode vcl see https://blogs.embarcadero.com/migrating-legacy-c-builder-apps-to-c-builder-10-seattle/
@@ -118,6 +127,7 @@ volatile bool addtraceactive=false; // set to true when add trace active to avoi
 bool zoomed=false; // set when zoomed in to stop autoscaling when new traces added
 bool user_set_trace_colour=false;
 TColor user_trace_colour;
+unsigned int nos_lines_in_file=0; // number of lines in last file opened
 
 // dynamic number of columns
 static char **col_ptrs=NULL,**hdr_col_ptrs=NULL; // pointers to strings for each field
@@ -1063,9 +1073,9 @@ void __fastcall TPlotWindow::Button_add_trace1Click(TObject *Sender)
 #endif
    fin=fopen(filename.c_str(),"rb");
    if(fin==NULL)
-        {ShowMessage("Error: cannot open file"+filename);
-         addtraceactive=false;// finished
-         return;
+		{ShowMessage("Error: cannot open file"+filename);
+		 addtraceactive=false;// finished
+		 return;
 		}
 #ifdef BIG_BUF_SIZE
    if( read_buf!=NULL)
@@ -1331,7 +1341,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 	}
 
 
-  iGraph=pScientificGraph->fnAddGraph();  //iGraph==graph index  , 0 for 1st, 1 for 2nd...
+  iGraph=pScientificGraph->fnAddGraph(nos_lines_in_file);  //iGraph==graph index  , 0 for 1st, 1 for 2nd...
   //rprintf("iGraph=%d\n",iGraph);
   pScientificGraph->fnSetColDataPoint(Col,iGraph);    //set colors
   pScientificGraph->fnSetColErrorBar(Col,iGraph);
@@ -1475,6 +1485,14 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
   t_string="00:00:00.2";
   rprintf("gethms(%s) returns %g should be 0.2\n",t_string,gethms(t_string));
   rprintf("gethms_days(%s) returns %g should be 86400.2\n",t_string,gethms_days(t_string));
+  t_string="4294967296"; // 2^32
+  rprintf("gethms(%s) returns %g should be 4.29497e+09\n",t_string,gethms(t_string));
+  t_string="4294967296000"; // 2^32 *1000
+  rprintf("gethms(%s) returns %g should be 4.29497e+12\n",t_string,gethms(t_string));
+  t_string="4294967296000.123"; // 2^32  *1000 +.123
+  rprintf("gethms(%s) returns %g should be 4.29497e+12\n",t_string,gethms(t_string));
+  t_string="0.0000000000001"; // 1e-13
+  rprintf("gethms(%s) returns %g should be 1e-13\n",t_string,gethms(t_string));
 #endif
  // this is the normal working code
 
@@ -1483,45 +1501,45 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
   clock_t begin_t,end_t2s;
   begin_t=clock();
   while(1)
-        {
-         csv_line=readline(fin);
-         if(csv_line==NULL)
-                {break;// whole file read
-                }
+		{
+		 csv_line=readline(fin);
+		 if(csv_line==NULL)
+				{break;// whole file read
+				}
 
-         parsecsv(csv_line,col_ptrs, max_col);   // was MAX_COLS, its slightly faster using max_col
-         lines_in_file++;
-         if((lines_in_file & 0x7fff)==1)     // ==1 means we start with 0% read . Was 0x3ff   , 0x7fff gives one every 40ms in a typical case
-                {// let user see something happening , printing to the screen is slow so only do this occasionally
-                 end_t2s=clock();
-                 if(lines_in_file==1 || end_t2s-begin_t > 2*CLK_TCK)
-                        {// 1st line or more than 2 secs difference
-                         if(lines_in_file!=1)
-                                begin_t+=2*CLK_TCK; // move forward 2 secs  (unless 1st line in file)
+		 parsecsv(csv_line,col_ptrs, max_col);   // was MAX_COLS, its slightly faster using max_col
+		 lines_in_file++;
+		 if((lines_in_file & 0x7fff)==1)     // ==1 means we start with 0% read . Was 0x3ff   , 0x7fff gives one every 40ms in a typical case
+				{// let user see something happening , printing to the screen is slow so only do this occasionally
+				 end_t2s=clock();
+				 if(lines_in_file==1 || end_t2s-begin_t > 2*CLK_TCK)
+						{// 1st line or more than 2 secs difference
+						 if(lines_in_file!=1)
+								begin_t+=2*CLK_TCK; // move forward 2 secs  (unless 1st line in file)
 #if 1
-                         if(yexpr)
-                                {snprintf(cstring,sizeof(cstring),"%.0f %% read",100.0*(double)ftell(fin)/(double)statbuf.st_size);
-                                }
-                          else
-                                {snprintf(cstring,sizeof(cstring),"%.0f %% read of column %d",100.0*(double)ftell(fin)/(double)statbuf.st_size,ycol);
-                                }
+						 if(yexpr)
+								{snprintf(cstring,sizeof(cstring),"%.0f %% read",100.0*(double)ftell(fin)/(double)statbuf.st_size);
+								}
+						  else
+								{snprintf(cstring,sizeof(cstring),"%.0f %% read of column %d",100.0*(double)ftell(fin)/(double)statbuf.st_size,ycol);
+								}
 #else
-                         snprintf(cstring,sizeof(cstring),"%d lines read",lines_in_file);
+						 snprintf(cstring,sizeof(cstring),"%d lines read",lines_in_file);
 #endif
-                         StatusText->Caption=cstring;
+						 StatusText->Caption=cstring;
                         }
                  Application->ProcessMessages(); /* allow windows to update (but not go idle), do this regularly [not just every 2 secs] */
-                }
-         float yval,xval;
-         if(yexpr)
-                {try
-                        {
-                         yval=execute_rpn(); // expression - excute it
-                        }
-                 catch (...)   // assume the issue is an error in the expression
-                        {yval=0;
-                        }
-                }
+				}
+		 float yval,xval;
+		 if(yexpr)
+				{try
+						{
+						 yval=execute_rpn(); // expression - excute it
+						}
+				 catch (...)   // assume the issue is an error in the expression
+						{yval=0;
+						}
+				}
          else
                 {st=col_ptrs[ycol-1];
                  while(isspace(*st)) ++st; // skip any leading whitespace
@@ -1531,114 +1549,125 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
                         }
 				 // now hope we have a number left - strtod() will terminate at the end of the number so any trailing whitespace or " will be ignored
                  char *end;
-                 yval= strtod(st,&end);   // just a column number - get value for this column
+				 yval= strtod(st,&end);   // just a column number - get value for this column
                  if(st==end) continue;    // no valid number found
                  // rprintf("yval (col %d) %s=>%g\n",ycol,st,yval);
                 }
          gotyvalue=true;// if we get here we have a valid y value
-         // now get x value
-         switch(Xcol_type->ItemIndex)
-                {case 0: xval=lines_in_file; // x=linenumber in file
-                        break;
+		 // now get x value
+		 if(nos_traces_added>1 && xmonotonic && !compress )
+			{xval=pScientificGraph->fnAddDataPoint_nextx(iGraph); // same value as previous graph loaded  as this is faster than decoding it again
+			}
+		 else
+			{
+			 switch(Xcol_type->ItemIndex)
+				{case 0: xval=lines_in_file; // x=linenumber in file
+						break;
 				 case 1: // time h:m:s.s (with optional date of form 05-Jul-19 or 2020-03-31 or similar terminated in whitespace)
 						double ti; // needs to be a double as we subtract first_time before converting to a float
-                        st=col_ptrs[xcol-1];
-                        while(isspace(*st)) ++st; // skip any leading whitespace
-                        if(*st=='"')
-                                {++st;// skip " if present
-                                 while(isspace(*st)) ++st; // skip any more whitespace
-                                }
-                         {char *dptr; // look ahead to see if there is a date we need to skip
+						st=col_ptrs[xcol-1];
+						while(isspace(*st)) ++st; // skip any leading whitespace
+						if(*st=='"')
+								{++st;// skip " if present
+								 while(isspace(*st)) ++st; // skip any more whitespace
+								}
+						 {char *dptr; // look ahead to see if there is a date we need to skip
 										// date is either 05-Jul-19 or 2020-03-31 or 12/12/20 or similar terminated in whitespace
-                          bool got_date=false;
-                          for(dptr=st;*dptr;++dptr)
-                                {if(*dptr=='-' || *dptr=='/')
-                                        {got_date=true;
-                                         break;
-                                        }
-                                 if(*dptr==':')
-                                        {// found a time, not a date
-                                         break;
-                                        }
-                                }
-                           if(got_date)
-                                {for(;*dptr;++dptr)
-                                        if(isspace(*dptr)) break;// carry on from where we were, look for whitespace which marks end of date
-                                 while(isspace(*dptr)) ++dptr;  // skip whitespace so should be at start of time
-                                 if(isdigit(*dptr)) st=dptr; // if we ended up on a digit then assume this is the start of the time
-                                }
-                          }
-                        // convert time into seconds , gethms_days() ignores trailing whitespace and "'s
+						  bool got_date=false;
+						  for(dptr=st;*dptr;++dptr)
+								{if(*dptr=='-' || *dptr=='/')
+										{got_date=true;
+										 break;
+										}
+								 if(*dptr==':')
+										{// found a time, not a date
+										 break;
+										}
+								}
+						   if(got_date)
+								{for(;*dptr;++dptr)
+										if(isspace(*dptr)) break;// carry on from where we were, look for whitespace which marks end of date
+								 while(isspace(*dptr)) ++dptr;  // skip whitespace so should be at start of time
+								 if(isdigit(*dptr)) st=dptr; // if we ended up on a digit then assume this is the start of the time
+								}
+						  }
+						// convert time into seconds , gethms_days() ignores trailing whitespace and "'s
 
 						ti=gethms_days(st);  // note we called reset_days above so we always start correctly at 0 days
 						if(ti<0) continue;   // gethms_days() returns a -ve value when it find an error, so ignore this line when that happens
 						if(firstxvalue) first_time=ti;  // remember 1st value, and use as ofset for the rest of the values
+#if 0 /* line below assumes times are in increasing order which is NOT guaranteed ! */
 						xval=ti-first_time;  // ofset time by time of 1st value (so we maximise resolution in the float xval)
+#else
+                        xval=ti; // can loose resolution for big times, but we are limited by storing xvalues as floats.
+#endif
 						break;
-                 default: // should only be "2" - value in specified column
-                        st=col_ptrs[xcol-1];
-                        while(isspace(*st)) ++st; // skip any leading whitespace
-                        if(*st=='"')
-                                {++st;// skip " if present
-                                 while(isspace(*st)) ++st; // skip any more whitespace
-                                }
-                        char *end; 
-                        xval= strtod(st,&end);   // get value for this column
-                        if(st==end) continue;    // no valid number found
-                        // if(xval!=yval) rprintf("**** xval (col %d) %s=>%g\n",xcol,st,xval);
-                        break;
+				 default: // should only be "2" - value in specified column
+						st=col_ptrs[xcol-1];
+						while(isspace(*st)) ++st; // skip any leading whitespace
+						if(*st=='"')
+								{++st;// skip " if present
+								 while(isspace(*st)) ++st; // skip any more whitespace
+								}
+						char *end;
+						xval= strtod(st,&end);   // get value for this column
+						// rprintf("Xval: xcol=%d string=%s =%g\n",xcol,st,xval);
+						if(st==end) continue;    // no valid number found
+						// if(xval!=yval) rprintf("**** xval (col %d) %s=>%g\n",xcol,st,xval);
+						break;
 				}
-         if(!_finite(xval) || !_finite(yval)) continue; // need 2 valid numbers [eg ignore "inf" ]
-         if(firstxvalue)
-                {firstxvalue=false;
-                 previousxvalue=xval;
-                 previousyvalue=yval;
-                }
-           else
-                {if(xval<previousxvalue)
-                        { // x value is NOT monotonically increasing
-                         xmonotonic=false;
-                        }
-                 else   {// x value is monotonically increasing
+			 if(!_finite(xval) || !_finite(yval)) continue; // need 2 valid numbers [eg ignore "inf" ]
+			}
+		 if(firstxvalue)
+				{firstxvalue=false;
+				 previousxvalue=xval;
+				 previousyvalue=yval;
+				}
+		   else
+				{if(xval<previousxvalue)
+						{ // x value is NOT monotonically increasing
+						 xmonotonic=false;
+						}
+				 else   {// x value is monotonically increasing
 
 #if 1   /* this way of compressing only works if x values are monotonically increasing, we only know this correctly on the 2nd trace added onwards when we can trust xmonotonic */
-        /* There is a general solution for compression in function compress_y() but that requires reading all data into an array and then compressing it (and then freeing extra memory) so peak RAM is lower by doing it here if we can */
-                         if(nos_traces_added>1 && xmonotonic && compress && yval==previousyvalue)        // don't bother to store lots of identical values if "compress" is enabled
-                                {skipy=true;
-                                 previousxvalue=xval;
-                                 continue;
-                                }
-                         if(skipy) // if have skipped some values put last point in so we see a correct straight line
-                                {skipy=false;
-                                 pScientificGraph->fnAddDataPoint(previousxvalue+x_offset,previousyvalue,iGraph); // ignore out of ram as that will be trapped below
-                                }
+		/* There is a general solution for compression in function compress_y() but that requires reading all data into an array and then compressing it (and then freeing extra memory) so peak RAM is lower by doing it here if we can */
+						 if(nos_traces_added>1 && xmonotonic && compress && yval==previousyvalue)        // don't bother to store lots of identical values if "compress" is enabled
+								{skipy=true;
+								 previousxvalue=xval;
+								 continue;
+								}
+						 if(skipy) // if have skipped some values put last point in so we see a correct straight line
+								{skipy=false;
+								 pScientificGraph->fnAddDataPoint(previousxvalue+x_offset,previousyvalue,iGraph); // ignore out of ram as that will be trapped below
+								}
 #endif
-                         previousxvalue=xval;
-                         previousyvalue=yval;
-                        }
-                }
-
-         if(!pScientificGraph->fnAddDataPoint(xval+x_offset,yval,iGraph))
-                {// out of RAM
-                 ShowMessage("Error: not enough memory to load all specified columns");
-                 fclose(fin);
-                 StatusText->Caption="Error: not enough memory to load all specified columns";
-                 if(s) free(s);
-                 addtraceactive=false;// finished
-                 pScientificGraph->fnDeleteGraph(iGraph); // delete partial column
-                 if(iGraph==0 || !zoomed)
-                        { // if 1st graph or not already zoomed then autoscale, otherwise leave this to the user.
-                         StatusText->Caption="Autoscaling";
-                         Application->ProcessMessages(); /* allow windows to update (but not go idle) */
-                         pScientificGraph->fnAutoScale();
-                        }
-                 StatusText->Caption="Drawing graph";
-                 Application->ProcessMessages(); /* allow windows to update (but not go idle) */
-                 fnReDraw();
-                 StatusText->Caption="Error: not enough memory to load all specified columns";
-                 return;
-                }
-        }
+						 previousxvalue=xval;
+						 previousyvalue=yval;
+						}
+				}
+		 // rprintf("before addDatapoint: xval=%g x_offset=%g yval=%g iGraph=%d\n",xval,x_offset,yval,iGraph);
+		 if(!pScientificGraph->fnAddDataPoint(xval+x_offset,yval,iGraph))
+				{// out of RAM
+				 ShowMessage("Error: not enough memory to load all specified columns");
+				 fclose(fin);
+				 StatusText->Caption="Error: not enough memory to load all specified columns";
+				 if(s) free(s);
+				 addtraceactive=false;// finished
+				 pScientificGraph->fnDeleteGraph(iGraph); // delete partial column
+				 if(iGraph==0 || !zoomed)
+						{ // if 1st graph or not already zoomed then autoscale, otherwise leave this to the user.
+						 StatusText->Caption="Autoscaling";
+						 Application->ProcessMessages(); /* allow windows to update (but not go idle) */
+						 pScientificGraph->fnAutoScale();
+						}
+				 StatusText->Caption="Drawing graph";
+				 Application->ProcessMessages(); /* allow windows to update (but not go idle) */
+				 fnReDraw();
+				 StatusText->Caption="Error: not enough memory to load all specified columns";
+				 return;
+				}
+		}
   rprintf("%d lines read from csv file\n",lines_in_file);
   if(*ys!=',') fclose(fin);
   if(!gotyvalue)
@@ -1951,7 +1980,89 @@ void set_ListboxXY(void) // highlight default columns in ListBoxX/Y (if valid co
 	}
 }
 //---------------------------------------------------------------------------
-void proces_open_filename(char *fn) // open filename - just to peek at header row
+/* use built in windows functions directly to read file, check for \n's by reading array 64bits at a time */
+	/* \n detection from idea in http://graphics.stanford.edu/~seander/bithacks.html#ZeroInWord */
+
+unsigned int count_lines(char *filename, double filesize)
+{   HANDLE hFile;
+	unsigned int lines=0;
+	char *buf=(char *)malloc(CL_BLOCK_SIZE); // buffer for reads - malloc guarantees sensible alignment for buf;
+	char *cp;
+	DWORD nBytesRead = 0;
+	BOOL bResult   = FALSE;
+	long total_bytes_read=0;
+	clock_t begin_t;
+	begin_t=clock();
+	//rprintf("count_lines: Filename=%s BLOCK_SIZE=%u\n",filename,BLOCK_SIZE);
+	if(buf==NULL)
+		{rprintf(" count_lines() - not enough RAM - sorry!\b");
+		 return 0; // No RAM
+		}
+	/*
+	HANDLE CreateFileA(
+	LPCSTR                lpFileName,
+	DWORD                 dwDesiredAccess,
+	DWORD                 dwShareMode,
+	LPSECURITY_ATTRIBUTES lpSecurityAttributes,
+	DWORD                 dwCreationDisposition,
+	DWORD                 dwFlagsAndAttributes,
+	HANDLE                hTemplateFile
+	);
+	*/
+	hFile = CreateFile(filename,               // file to open
+					   GENERIC_READ,          // open for reading
+					   FILE_SHARE_READ,       // share for reading
+					   NULL,                  // default security
+					   OPEN_EXISTING,         // existing file only
+					   FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, // normal file  , will be read sequentially
+					   NULL);                 // no attr. template
+
+	if (hFile == INVALID_HANDLE_VALUE)
+		{free(buf);
+		 return 0; // cannot open file
+		}
+	while ( (bResult = ReadFile(hFile, buf, CL_BLOCK_SIZE, &nBytesRead, NULL)))    /* bResult is false only on error */
+		{
+		 // Check for eof.
+		 if (bResult &&  nBytesRead == 0)
+			{
+			 // at the end of the file
+			 break;
+			}
+		 total_bytes_read+=nBytesRead; // keep track of bytes read to date
+		 uint64_t v64;
+		 uint64_t *pv64;
+		 for(pv64=(uint64_t *)buf; nBytesRead>=8;nBytesRead-=8)
+			{// read buffer 8 bytes at a time looking for \n = 0a*/
+			 v64=*pv64++; // read next 8 characters from buffer
+			 v64^= UINT64_C(0x0a0a0a0a0a0a0a0a); // convert \n's to zero's as test below is for zero bytes
+			 if ((v64 - UINT64_C(0x0101010101010101)) & (~v64) & UINT64_C(0x8080808080808080))
+				{// at least 1 byte is a \n, count them, there is 1 bit set in data for every \n character in the 8 bytes
+                 v64=(v64 - UINT64_C(0x0101010101010101)) & (~v64) & UINT64_C(0x8080808080808080);
+				 ++lines; // at least 1 \n found
+				 while((v64=(v64&(v64-1)))) ++lines; // (x&(x-1)) removes a single bit set from data, so this counts the remaining \n's
+				}
+			}
+		 cp=(char *)pv64;// might be some bytes left to process, do them here 1 character at a time
+		 while(nBytesRead--)
+			if(*cp++=='\n') ++lines;
+		 if( clock()-begin_t > 2*CLK_TCK)
+			{// more than 2 secs difference , give user something to see
+             char str_buf[128];
+			 begin_t+=2*CLK_TCK; // move forward 2 secs
+			 snprintf(str_buf,sizeof(str_buf),"%.0f %% read",100.0*(double)total_bytes_read/filesize);
+			 Form1->pPlotWindow->StatusText->Caption=str_buf;
+			 Application->ProcessMessages(); /* allow windows to update (but not go idle), do this regularly  */
+			}
+		}
+	CloseHandle(hFile);
+	free(buf);
+	// rprintf("  %u lines found\n",lines);
+	return lines;
+}
+
+//---------------------------------------------------------------------------
+void proces_open_filename(char *fn) // open filename - just to peek at header row  : now also counts the number of lines in the file
 {
 // Form1->pPlotWindow->StatusText->Caption=cstring;
   FILE *fin;
@@ -1959,15 +2070,19 @@ void proces_open_filename(char *fn) // open filename - just to peek at header ro
   unsigned int nos_cols_in_file;
   unsigned int j;
   AnsiString basename;
+  char str_buf[100];  // temp buffer
+  struct stat statbuf;    // gives filesize which is then used to show progress as a %
+  nos_lines_in_file=0; // we need to count the number of lines in the file
+  if(addtraceactive) return; // currently adding traces so cannot change filename
   if(fn==NULL || strcmp(fn,"")==0)
         {filename="";
          Form1->pPlotWindow->StatusText->Caption="No filename set";
          Form1->pPlotWindow->StaticText_filename->Text="Not set";
          return; // if no filename then done here
-        }
+		}
   filename=fn;
   basename=filename.SubString(filename.LastDelimiter("\\:")+1,128); // window will add scroll bars automaticaly if name is too long
-  fin=fopen(filename.c_str(),"rt");
+  fin=fopen(filename.c_str(),"rb");
   if(fin==NULL)
         {ShowMessage("Error: cannot open file "+filename);
          Form1->pPlotWindow->StatusText->Caption="No filename set";
@@ -1975,7 +2090,10 @@ void proces_open_filename(char *fn) // open filename - just to peek at header ro
          rprintf("Cannot open filename <%s>\n",filename.c_str());
          filename="";
          return;
-        }
+		}
+
+  fstat(fileno(fin), &statbuf); // get filesize (etc)
+
   rcls();
   rprintf("filename selected is %s\n",filename.c_str());
   csv_line=readline(fin);
@@ -2076,10 +2194,19 @@ void proces_open_filename(char *fn) // open filename - just to peek at header ro
 		 Form1->pPlotWindow->ListBoxX->Items->Add(hdr_col_ptrs[j]);
          Form1->pPlotWindow->ListBoxY->Items->Add(hdr_col_ptrs[j]);
 		}
-  fclose(fin);// only want 1st line here (just display headers so user can select ones to graph
 
+  fclose(fin);// only want 1st line here (just display headers so user can select ones to graph
   set_ListboxXY(); // highlight items in ListBoxX & Y that have been selected in Edit_xcol & Edit_ycol
-  Form1->pPlotWindow->StatusText->Caption="Ready";
+  Application->ProcessMessages(); /* allow windows to update (but not go idle), do this regularly  */
+  // now do fast count of lines in file
+  addtraceactive=true;  // stop user adding traces until we have counted the number of lines in the file
+  Form1->pPlotWindow->StatusText->Caption="Counting lines in file..." ;
+  clock_t begin_t=clock();
+  nos_lines_in_file=count_lines(filename.c_str(),statbuf.st_size);  // this will keep user updated on its progress by updating status line message every 2 secs
+  addtraceactive=false;
+  rprintf(" File has %u lines (file read in %g secs)\n",nos_lines_in_file,(double)(clock()-begin_t)/CLK_TCK);
+  snprintf(str_buf,sizeof(str_buf),"Ready : %u lines found in file",nos_lines_in_file);
+  Form1->pPlotWindow->StatusText->Caption=str_buf;
   Form1->pPlotWindow->StaticText_filename->Text=basename;
 }
 

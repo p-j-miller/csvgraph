@@ -15,19 +15,10 @@ enum LinregType  {LinLin,LinLin_GMR,LogLin,LinLog,LogLog,RecipLin,LinRecip,Recip
 class TScientificGraph
 {
 public:
-  struct SDataPoint                   //datapoint structure
-  {
-#if 1
-    float dXValue;   // save space by using floats rather than doubles
-    float dYValue;
-#else
-    double dXValue;
-    double dYValue;
-#endif
-  };
+
 protected:
 
-  struct  SInterval                   //intervall structure for scales
+  struct  SInterval                   //interval structure for scales
   {
     double dMin;
     double dMax;
@@ -35,7 +26,10 @@ protected:
 
   struct SGraph                       //structure for single graph
   {
-    TList *pDataList;                 //data list for SDataPoint
+	float *x_vals;                    // x values for this graph
+	float *y_vals;                    // y values for this graph
+	unsigned int size_vals_arrays;    // actual size of above arrays (in floats)
+	unsigned int nos_vals;            // how many items currently in x/y_vals arrays
     TColor ColDataPoint;              //color data points
     TColor ColErrorBar;               //color error bars
     TColor ColLine;                   //color graph line
@@ -151,8 +145,9 @@ public:
   void fnSetGrids(bool b) {bGrids=b;}
 
   //Add Items
-  bool fnAddDataPoint(double dXValueF, double dYValueF,
-       int iGraphNumberF = 0); // returns true if added OK else false
+  bool fnAddDataPoint(float dXValueF, float dYValueF,
+	   int iGraphNumberF = 0); // returns true if added OK else false
+  float fnAddDataPoint_nextx(int iGraphNumberF);    // returns next x value for this graph assuming its the same as the previous graph
   bool fnChangeXoffset(double dX); // change all X values by adding dX to the most recently added graph if at least 2 graphs defined
   void fnMedian_filt(unsigned int median_ahead, int iGraphNumberF = 0); // apply median filter to graph in place , lookahead defined in samples
   void fnMedian_filt_time1(double median_ahead_t, int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)); // new algorithm apply median filter to graph in place  , lookahead defined in time
@@ -165,8 +160,10 @@ public:
   bool fnPolyreg(unsigned int order,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)); // fit polynomial of specified order regression to graph in place
   bool fnFFT(bool dBV_result,bool Hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)); // apply FFT to data. returns true if OK, false if failed.
   void compress_y(int iGraphNumberF); // compress by deleting points with equal y values except for 1st and last in a row
+  void my_swap(int iGraphNumberF, int i, int j) ; // part of myqsort
+  void myqsort(int iGraphNumberF, int left, int right) ; // sort q line on graph to increasing x values
   void sortx( int iGraphNumberF); // sort ordered on x values
-  int fnAddGraph();
+  int fnAddGraph(unsigned int max_points) ;  // create new line for graph with at most max_points
 
   //Scale Functions
   void fnResize();

@@ -4,6 +4,8 @@
 //
 //  Loosely based on an original public domain version by  Frank heinrich, mail@frank-heinrich.de
 // Major tidy up 1/9/2019 to remove unused functionality
+// 6/2/2021 for 2v0 major change to use float *x_vals,*y_vals rather than SDataPoints in a TLIST.
+//
 /*----------------------------------------------------------------------------
  * Copyright (c) 2019 Peter Miller
  *
@@ -120,13 +122,7 @@ TScientificGraph::TScientificGraph(int iBitmapWidthK, int iBitmapHeightK)
 
 //------------------------------------------------------------------------------
 TScientificGraph::~TScientificGraph()
-{
-  int i;
-  for (i=0; i<iNumberOfGraphs; i++)                        //free graphs
-  {
-    ((SGraph*) pHistory->Items[i])->pDataList->Clear();
-    delete ((SGraph*) pHistory->Items[i])->pDataList;
-  }
+{  fnClearAll() ; // clear (delete) all lines + the data they hold
   pHistory->Clear();
   delete pHistory;
   delete pBitmap;
@@ -357,7 +353,6 @@ void TScientificGraph::fnPaint()
 
   TRect LayoutRect;
   TSize ASize;
-  TList *pAList;
   SGraph *pAGraph;
   TPoint Point; // avoid dynamic memory allocation overhead if we used new and delete
   TPoint *pPoint=&Point;
@@ -657,8 +652,7 @@ void TScientificGraph::fnPaint()
   //Data points and Error Bars, lines
   for (j = 0; j < iNumberOfGraphs; j++)
   {
-    pAGraph = ((SGraph*) pHistory->Items[j]);
-    pAList = pAGraph->pDataList;
+	pAGraph = ((SGraph*) pHistory->Items[j]);
     if (((pAGraph->ucStyle) & 1) == 1)             //style: data point
     { unsigned int istep;
          /* new, more intelligent way to display points
@@ -671,7 +665,7 @@ void TScientificGraph::fnPaint()
       double xd=sScaleX.dMax-sScaleX.dMin; // total span
       double xi=xd/x_width_pixels; // use all the pixels available
       xd=sScaleX.dMin-xi; // -xi as add xi before its used
-      iCount=pAList->Count;
+	  iCount=pAGraph->nos_vals ;
 #if 1
       // do binary search to find start of area thats visible on the screen
       int starti;    // index just before start
@@ -683,43 +677,43 @@ void TScientificGraph::fnPaint()
        int mid;
        while(low<=high && !found)
         {mid=low+((high-low)>>1); /* (low+high)/2 but written so cannot overflow */
-         double midVal=((SDataPoint*) pAList->Items[mid])->dXValue;
-         if(midVal<key)
-                low=mid+1;
-         else if (midVal>key)
-                high=mid-1;
-         else
-                found=true; // mid is exact match
-        }
-       if(found) starti=mid;
-       else starti=low-1;   // not found want 1 before
-       if(starti<0) starti=0; // ensure not before start (don't worry if its past the end as for loop below deals with that case)
-      }
-      for (unsigned int i=starti; i<iCount; i++)  // was i+=step
+		 double midVal=pAGraph->x_vals[mid];
+		 if(midVal<key)
+				low=mid+1;
+		 else if (midVal>key)
+				high=mid-1;
+		 else
+				found=true; // mid is exact match
+		}
+	   if(found) starti=mid;
+	   else starti=low-1;   // not found want 1 before
+	   if(starti<0) starti=0; // ensure not before start (don't worry if its past the end as for loop below deals with that case)
+	  }
+	  for (unsigned int i=starti; i<iCount; i++)  // was i+=step
 #else
-      for (unsigned int i=0; i<iCount; i++)  // was i+=step
+	  for (unsigned int i=0; i<iCount; i++)  // was i+=step
 #endif
-      {
-       dX = ((SDataPoint*) pAList->Items[i])->dXValue;
-       if(!fnInScaleX(dX))
-                {if(dX> sScaleX.dMax) break; // past end so all done for this trace
+	  {
+	   dX = pAGraph->x_vals[i];
+	   if(!fnInScaleX(dX))
+				{if(dX> sScaleX.dMax) break; // past end so all done for this trace
                  else continue; // PMi optimisation - skip values before xmin
                                 // this is important when zooming in as otherwise code below will see the whole file and will "compress" the graph incorrectly
                 }
-       ymax=ymin=((SDataPoint*) pAList->Items[i])->dYValue; // dY
-       x_ymax=x_ymin=dX;
-       if(zoom_fun_level)
-          {Application->ProcessMessages(); /* allow windows to update (but not go idle) - potentially causes recursion ! */
-           if(zoom_fun_level>1)
-                goto fnpaint_end;// > 1 means we have recursion , abort present update as we need to do another with different scaling
-          }
-        // we know scaling so we can calculate how many points we need to skip
-       xd+=xi; // this works better when "skip equal y values is set" as x values are not then evenly spaced and this way points selected are evenly spaced
-       dX = ((SDataPoint*) pAList->Items[i])->dXValue; // dX,dY is 1st point examined, lastx,lasty is last point in this "segment"
-       dY = ((SDataPoint*) pAList->Items[i])->dYValue;
-       for(istep=1;i+istep<iCount && (((SDataPoint*) pAList->Items[i+istep])->dXValue)<xd ;++istep)
-        {lastx = ((SDataPoint*) pAList->Items[i+istep])->dXValue;
-         lasty = ((SDataPoint*) pAList->Items[i+istep])->dYValue;
+	   ymax=ymin=pAGraph->y_vals[i];// dY
+	   x_ymax=x_ymin=dX;
+	   if(zoom_fun_level)
+		  {Application->ProcessMessages(); /* allow windows to update (but not go idle) - potentially causes recursion ! */
+		   if(zoom_fun_level>1)
+				goto fnpaint_end;// > 1 means we have recursion , abort present update as we need to do another with different scaling
+		  }
+		// we know scaling so we can calculate how many points we need to skip
+	   xd+=xi; // this works better when "skip equal y values is set" as x values are not then evenly spaced and this way points selected are evenly spaced
+	   dX = pAGraph->x_vals[i]; // dX,dY is 1st point examined, lastx,lasty is last point in this "segment"
+	   dY = pAGraph->y_vals[i];
+	   for(istep=1;i+istep<iCount && pAGraph->x_vals[i+istep]<xd ;++istep)
+		{lastx = pAGraph->x_vals[i+istep];
+		 lasty = pAGraph->y_vals[i+istep];
          if(lasty>ymax) {ymax=lasty;x_ymax=lastx;}
          if(lasty<ymin) {ymin=lasty;x_ymin=lastx;}
         }
@@ -772,22 +766,22 @@ void TScientificGraph::fnPaint()
       }   // end for(i)
 
     }  // end if (((pAGraph->ucStyle) & 1) == 1) (if style: data point)
-    if (((pAGraph->ucStyle)&4)==4)                        //style: line
+	if (((pAGraph->ucStyle)&4)==4)                        //style: line
     { unsigned int istep;
       bool first=True;    // used to trap start and end of region we wish to view (when zoomed)
       bool last=False;
       DOUBLE ymax,ymin;
       double x_ymax,x_ymin; // used to capture features in skipped data (need to be double due to clipping)
       DOUBLE lastx,lasty;
-      iCount=pAList->Count;
+	  iCount=pAGraph->nos_vals;
       pBitmap->Canvas->Pen->Width=pAGraph->iWidthLine;
       pBitmap->Canvas->Pen->Color=pAGraph->ColLine;
       pBitmap->Canvas->Pen->Style=pAGraph->LineStyle;
       //iCount=pAList->Count;
       if (iCount!=0)
-      {
-        dX = ((SDataPoint*) pAList->Items[0])->dXValue;
-        dY = ((SDataPoint*) pAList->Items[0])->dYValue;
+	  {
+		dX = pAGraph->x_vals[0];
+		dY = pAGraph->y_vals[0];
         fnKoord2Point(pPoint,dX,dY);
         pBitmap->Canvas->PenPos=*pPoint;
         *pPoint2=*pPoint;
@@ -806,8 +800,8 @@ void TScientificGraph::fnPaint()
        double key=sScaleX.dMin;   // without this being a double we get floating point overflow on midVal<key below when dMin->dMax is very large
        int mid;
        while(low<=high && !found)
-        {mid=low+((high-low)>>1); /* (low+high)/2 but written so cannot overflow */
-         double midVal=((SDataPoint*) pAList->Items[mid])->dXValue;
+		{mid=low+((high-low)>>1); /* (low+high)/2 but written so cannot overflow */
+		 double midVal=pAGraph->x_vals[mid];
          if(midVal<key)
                 low=mid+1;
          else if (midVal>key)
@@ -824,8 +818,8 @@ void TScientificGraph::fnPaint()
       for (unsigned int i=0; i<iCount; i++)  // linear search from start
 #endif      
       {
-       dX = ((SDataPoint*) pAList->Items[i])->dXValue;
-       if(first && dX >sScaleX.dMin)
+	   dX = pAGraph->x_vals[i];
+	   if(first && dX >sScaleX.dMin)
         { // 1st point after min x value - want to process this
         }
        else if(last==false && dX>sScaleX.dMax)
@@ -840,17 +834,17 @@ void TScientificGraph::fnPaint()
        if(first)
         {// first point to be displayed - need to define start of the 1st line
          if(i>0)
-                {xs= ((SDataPoint*) pAList->Items[i-1])->dXValue;
-                 ys = ((SDataPoint*) pAList->Items[i-1])->dYValue;
+				{xs= pAGraph->x_vals[i-1];
+				 ys =pAGraph->y_vals[i-1];
                 }
-         else
-                {xs= ((SDataPoint*) pAList->Items[0])->dXValue;
-                 ys = ((SDataPoint*) pAList->Items[0])->dYValue;
+		 else
+				{xs= pAGraph->x_vals[0];
+				 ys = pAGraph->y_vals[0] ;
                 }
         }
 
-       dX = ((SDataPoint*) pAList->Items[i])->dXValue;
-       dY = ((SDataPoint*) pAList->Items[i])->dYValue;
+	   dX = pAGraph->x_vals[i];
+	   dY = pAGraph->y_vals[i] ;
        ymax=ymin=dY;
        x_ymin=x_ymax=dX;
        if(zoom_fun_level)
@@ -862,9 +856,9 @@ void TScientificGraph::fnPaint()
        xd+=xi; // this works better when "skip equal y values is set" as x values are not then evenly spaced and this way points selected are evenly spaced
        lastx=dX ; // dX,dY is 1st point examined, lastx,lasty is last point in this "segment"
        lasty=dY ;
-       for(istep=1;i+istep<iCount && (((SDataPoint*) pAList->Items[i+istep])->dXValue)<xd ;++istep)
-        {lastx = ((SDataPoint*) pAList->Items[i+istep])->dXValue;
-         lasty = ((SDataPoint*) pAList->Items[i+istep])->dYValue;
+	   for(istep=1;i+istep<iCount && pAGraph->x_vals[i+istep]<xd ;++istep)
+		{lastx = pAGraph->x_vals[i+istep];
+         lasty = pAGraph->y_vals[i+istep];
          if(lasty>ymax) {ymax=lasty;x_ymax=lastx;}
          if(lasty<ymin) {ymin=lasty;x_ymin=lastx;}
         }
@@ -1003,28 +997,26 @@ fnpaint_end:  // tidy up then return if we get here via a goto.
 
 //------------------------------------------------------------------------------
 
-bool TScientificGraph::fnAddDataPoint(double dXValueF, double dYValueF,int iGraphNumberF)    // returns true is added OK, false if not
+bool TScientificGraph::fnAddDataPoint(float dXValueF, float dYValueF,int iGraphNumberF)    // returns true is added OK, false if not
+{ if(iGraphNumberF<0 || iGraphNumberF >=iNumberOfGraphs) return false; // invalid graph number
+  SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
+  int i=pAGraph->nos_vals; // current size
+  if(i >=pAGraph->size_vals_arrays ) return false; // array full [ could try and extend arrays here, but should not be needed ]
+  pAGraph->x_vals[i]= dXValueF;
+  pAGraph->y_vals[i]= dYValueF;
+  pAGraph->nos_vals=i+1; // one more data point stored
+  // rprintf("addpoint X=%g Y=%g graphnos=%d point#=%d\n",dXValueF,dYValueF,iGraphNumberF,i);
+  return true; // data point added OK
+};
+
+float TScientificGraph::fnAddDataPoint_nextx(int iGraphNumberF)    // returns next x value for this graph assuming its the same as the previous graph
 {
-  TList *pAList;
-  SDataPoint *pDataPoint;
-  try {
-        pDataPoint = new SDataPoint;                  //allocate point
-        pDataPoint->dXValue=dXValueF;                 //x
-        pDataPoint->dYValue=dYValueF;                 //y
-		pAList = ((SGraph*) pHistory->Items[iGraphNumberF])->pDataList;  //address of data list
-		pAList->Add(pDataPoint);                      //insert point in list   (pAList is a list of pointers to SDataPoint objects)
-#if 0      /* with builder 10.2 this makes no difference to execution time but increases space used by traces a little */
-		if(pAList->Count == pAList->Capacity )
-            pAList->Capacity +=4000; // add space for extra 4000 items if list was full, would automatically expand but this may be more efficient
-#endif
-#if 0
-        pAList->Expand(); // make more space in array (not strictly needed but faster as adds space in larger chunks)  [ actually its faster NOT doing this!]
-#endif        
-        return true;
-       }
-   catch (...) {  // assume the issue is out of memory
-         return false;
-        }
+  if(iGraphNumberF<1 || iGraphNumberF >=iNumberOfGraphs) return 0; // invalid graph number
+  SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
+  SGraph *pAGraph_1 = ((SGraph*) pHistory->Items[iGraphNumberF-1]); // previous trace added
+  int i=pAGraph->nos_vals; // current size
+  if(i >=pAGraph_1->nos_vals ) return 0; // past end of previous x array
+  return pAGraph_1->x_vals[i];     // value from previous trace
 };
 
 bool TScientificGraph::fnChangeXoffset(double dX) // change all X values by adding dX to the most recently added graph if at least 2 graphs defined
@@ -1032,12 +1024,11 @@ bool TScientificGraph::fnChangeXoffset(double dX) // change all X values by addi
   if( iNumberOfGraphs<2) return false;   // must be at least 2 graphs to do this
   int j=iNumberOfGraphs-1;
   SGraph *pAGraph = ((SGraph*) pHistory->Items[j]);
-  TList *pAList = pAGraph->pDataList;
-  unsigned int iCount=pAList->Count;
+  unsigned int iCount=pAGraph->nos_vals; // current size;
   for (unsigned int i=0; i<iCount; i++)  // for all items in list add dX to x value
       {
-       (((SDataPoint*) pAList->Items[i])->dXValue)+=dX;
-      }
+	   pAGraph->x_vals[i]+=dX;
+	  }
   return true;    
 };
 
@@ -1123,109 +1114,30 @@ void TScientificGraph::fnMedian_filt(unsigned int median_ahead, int iGraphNumber
 {// mt=median(mint+,maxt+,mt-1)  - min, max look ahead 2+ . This algorithm provides a fast (if median_ahead is smallish) but good approximation to a true median
  if(median_ahead>1)
         {double m,ymin,ymax;
-         SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
-         TList *pAList = pAGraph->pDataList;
-         unsigned int iCount=pAList->Count;
+		 SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
+		 unsigned int iCount=pAGraph->nos_vals;
          for (unsigned int i=0; i<iCount; i++)  // for all items in list
                 {if(i==0)
-                        m=((SDataPoint*)pAList->Items[i])->dYValue; // initial value
+						m=pAGraph->y_vals[i]; // initial value
                  if(i+1<iCount)
                         {// find min/max up to median_ahead
-                         ymax=ymin=((SDataPoint*)pAList->Items[i+1])->dYValue;
+						 ymax=ymin=pAGraph->y_vals[i+1];
                          for (unsigned int j=2;j<=median_ahead && i+j<iCount; j++)
-                                {double t= ((SDataPoint*)pAList->Items[i+j])->dYValue;
+								{double t= pAGraph->y_vals[i+j];
                                  if(t>ymax) ymax=t;
                                  else if(t<ymin) ymin=t;
                                 }
                          if(m>ymax) m=ymax; // median cal
                          else if(m<ymin) m=ymin; // else m is median
                         }
-                 ((SDataPoint*)pAList->Items[i])->dYValue=m; // put back filtered value
+				 pAGraph->y_vals[i]=m; // put back filtered value
                 }
         }
 }
 
 
-#if 0
- // This code was written from scratch 28/12/2019 Peter Miller
- // code looks ahead from the end of the previous lookahead so that portion of the code examines each x value once.
- // knowing starting and ending value of range (from above) we can take equally spaced samples and then another set of samples with a "prime" period to the 1st
- //  This is functionally the same as fnMedian_filt_time below (just a few optiisations in that code).
- // it should be considered a "generic prototype" to be used to create specific versions of the code rather than to be directly used (other than for trials/debuging).
- //
- void TScientificGraph::fnMedian_filt_time1(double median_ahead_t, int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)) // apply median filter to graph in place  , lookahead defined in time
-{
- // callback() is called periodically to let caller know progress   . This is done based on time (once/sec).
- time_t lastT;
- unsigned int i,j,last_endi=0,endi,jinc ;
- float this_endT,maxy,miny,nearesty,y,m;
- SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
- TList *pAList = pAGraph->pDataList;
- unsigned int maxi=pAList->Count;
- lastT=clock(); // used to keep callbacks at uniform time intervals
- if(median_ahead_t>0 && maxi>=3) // need at least 3 points for initial median and need a positive value for the look ahead time
-        {m=median3(((SDataPoint*)pAList->Items[0])->dYValue,((SDataPoint*)pAList->Items[1])->dYValue,((SDataPoint*)pAList->Items[2])->dYValue);
-         //rprintf("initial median of 1st 3 points (%g,%g,%g) selected as %g\n",((SDataPoint*)pAList->Items[0])->dYValue,((SDataPoint*)pAList->Items[1])->dYValue,((SDataPoint*)pAList->Items[2])->dYValue,m);
-         for(i=0;i<maxi;++i)
-                {// process all points one by one
-                 if(callback!=NULL && (i & 0xffff)==0 && (clock()-lastT)>= CLOCKS_PER_SEC)
-                        {lastT=clock();   // update on progress every second (approximately - use i & 0xff to keep average overhead of time() check very low
-                         (*callback)(i,maxi);
-                        }
-                 this_endT=((SDataPoint*)pAList->Items[i])->dXValue+median_ahead_t; // time for the end of the look ahead
-                 for(endi=last_endi;endi<maxi && ((SDataPoint*)pAList->Items[endi])->dXValue < this_endT;++endi) // search forward to find i that matches end of look ahead time
-                        {
-                         if(i==0)
-                                {// do real average for 1st point [as we can and it gives us a better starting value, especially for big lookaheads]
-                                 m+=(((SDataPoint*)pAList->Items[endi])->dYValue-m)/(float)(endi+1);
-                                }
-                         }
-                 // now we need to process from i to endi, if this is a lot of points limit to max 63 [range 63 jinc=1 (63 points), range 64 jinc=2 (32 points)  ]
-                 jinc=1+(endi-i)/64;  // 64 is a power of 2 for efficiency, but also visibally seems to give sensible results, while being faster than the original code
-                 last_endi=endi; // ensure we don't check values we have already processed
-                 // now search for min,max,nearest y
-                 maxy=miny=nearesty= ((SDataPoint*)pAList->Items[i])->dYValue;  // this is 1st value so loop below start on 2nd value
-                 for(j=i+jinc;j<maxi && j<endi;j+=jinc)
-                        {y= ((SDataPoint*)pAList->Items[j])->dYValue;
-                         if(y>maxy) maxy=y;
-                         if(y<miny) miny=y;
-                         if(fabs(y-m)<fabs(nearesty-m)) nearesty=y;
-                        }
-                 if(jinc>1) //  if it was 1 we have already sampled every point, otherwise take a 2nd pass
-                        {
-#if 0
-                         // take a 2nd pass - do backwards so we guarantee to include last point and use jinc+1 as step (so swap odd/even and ~ relatively prime)
-                         // by eye this is very similar to the potentially more "random" power of 2 -1 algorithm below, but a bit slower to execute, so its not normally used
-                         jinc++; // swap odd<->even and adjacent numbers are frequently relatively prime (definately has a different period)
-                         for(j=min(endi-1,maxi-1);j>=i+jinc;j-=jinc) // note j is unsigned, test  j>=i+jinc ensures it cannot go negative
-                                {y= ((SDataPoint*)pAList->Items[j])->dYValue;
-                                 if(y>maxy) maxy=y;
-                                 if(y<miny) miny=y;
-                                 if(fabs(y-m)<fabs(nearesty-m)) nearesty=y;
-                                }
-#else
-                         // now make another pass taking more samples (but less numerically than loop above) that are not (very) harmonicaly related to those taken above
-                         // this is faster than the #else code for big lookaheads as the while loop just deletes low order bits in inc rather than potentially incrementing it a lot of times
-                         jinc++;
-                         while(jinc&(jinc-1)) jinc&=jinc-1; // decrease jinc by deleting lower order bits until its a power of 2
-                         jinc=(jinc<<1)-1; // a power of 2 -1 is frequently prime, at least its unlikley to have common factors with the original jinc used above
-                         // for example if jinc was 2 originally on the 2nd pass it will become 3, if it was 3,4,5 or 6  it will become 7
-                         for(j=i+jinc;j<maxi && j<endi;j+=jinc)
-                                {y= ((SDataPoint*)pAList->Items[j])->dYValue;
-                                 if(y>maxy) maxy=y;
-                                 if(y<miny) miny=y;
-                                 if(fabs(y-m)<fabs(nearesty-m)) nearesty=y;
-                                }
-#endif
-                        }
-                 // approximate median m must be between miny and maxy
-                 if(m<miny) m=miny;
-                 if(m>maxy) m=maxy;
-                 ((SDataPoint*)pAList->Items[i])->dYValue=m; // put back filtered value
-                }
-         }
- }
-#elif 1
+
+
  //        U S E   T H I S    V E R S I O N  !!!
  //        =====================================  (normally - see comments of this and alternatives)
  // This code was written from scratch 28/12/2019 Peter Miller
@@ -1243,24 +1155,23 @@ void TScientificGraph::fnMedian_filt(unsigned int median_ahead, int iGraphNumber
  float f,dt; // linear filtered value (range limited based on median limits)
  float k,lastdt=0,x,lastx=0;
  SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
- TList *pAList = pAGraph->pDataList;
- unsigned int maxi=pAList->Count;
+ unsigned int maxi=pAGraph->nos_vals ;
  lastT=clock(); // used to keep callbacks at uniform time intervals
  if(median_ahead_t>0 && maxi>=3) // need at least 3 points for initial median and need a positive value for the look ahead time
-        {f=m=median3(((SDataPoint*)pAList->Items[0])->dYValue,((SDataPoint*)pAList->Items[1])->dYValue,((SDataPoint*)pAList->Items[2])->dYValue);
-         //rprintf("initial median of 1st 3 points (%g,%g,%g) selected as %g\n",((SDataPoint*)pAList->Items[0])->dYValue,((SDataPoint*)pAList->Items[1])->dYValue,((SDataPoint*)pAList->Items[2])->dYValue,m);
+		{f=m=median3(pAGraph->y_vals[0],pAGraph->y_vals[1],pAGraph->y_vals[2]);
+		 //rprintf("initial median of 1st 3 points (%g,%g,%g) selected as %g\n",((SDataPoint*)pAList->Items[0])->dYValue,((SDataPoint*)pAList->Items[1])->dYValue,((SDataPoint*)pAList->Items[2])->dYValue,m);
          for(i=0;i<maxi;++i)
                 {// process all points one by one
                  if(callback!=NULL && (i & 0xffff)==0 && (clock()-lastT)>= CLOCKS_PER_SEC)
                         {lastT=clock();   // update on progress every second (approximately - use i & 0xff to keep average overhead of time() check very low
                          (*callback)(i,maxi);
                         }
-                 this_endT=((SDataPoint*)pAList->Items[i])->dXValue+median_ahead_t; // time for the end of the look ahead
-                 if(last_endi!=0) lastx=((SDataPoint*)pAList->Items[last_endi-1])->dXValue;
-                 for(endi=last_endi;endi<maxi && ((SDataPoint*)pAList->Items[endi])->dXValue < this_endT;++endi) // search forward to find i that matches end of look ahead time
-                        { // update linear filter while we do this so it "runs" median_ahead_t in advance of current location so approximately gives average of +/-median_ahead_t around current time
+				 this_endT=pAGraph->x_vals[i]+median_ahead_t; // time for the end of the look ahead
+				 if(last_endi!=0) lastx=pAGraph->x_vals[last_endi-1];
+				 for(endi=last_endi;endi<maxi &&pAGraph->x_vals[endi] < this_endT;++endi) // search forward to find i that matches end of look ahead time
+						{ // update linear filter while we do this so it "runs" median_ahead_t in advance of current location so approximately gives average of +/-median_ahead_t around current time
                          if(i!=0) // if i==0 don't do anything here as we will calculate the actual median below and use this to initialise f
-                                {x= ((SDataPoint*)pAList->Items[endi])->dXValue;
+								{x= pAGraph->x_vals[endi];
                                  dt= x - lastx;
                                  lastx=x;
                                  if(dt>0)
@@ -1269,7 +1180,7 @@ void TScientificGraph::fnMedian_filt(unsigned int median_ahead, int iGraphNumber
                                                 {k=1.0-exp(-(dt)/(2.0*median_ahead_t)); // *2.0 as we want to look forward and back by median_ahead_t
                                                  lastdt=dt;
                                                 }
-                                         f+=k*(((SDataPoint*)pAList->Items[endi])->dYValue-f);
+										 f+=k*(pAGraph->y_vals[endi]-f);
                                         }
                                 }
 
@@ -1281,7 +1192,7 @@ void TScientificGraph::fnMedian_filt(unsigned int median_ahead, int iGraphNumber
                                 {
                                  for(unsigned int k=0; k<endi;++k)   // take a copy of all the y values that we want median of, also get min,max,average
                                         {
-                                         arr[k]= ((SDataPoint*)pAList->Items[k])->dYValue;
+										 arr[k]= pAGraph->y_vals[k];
                                         }
                                  f=quick_select( arr, endi); // initialise with actual median as its quick to calculate
                                 free(arr);
@@ -1290,16 +1201,16 @@ void TScientificGraph::fnMedian_filt(unsigned int median_ahead, int iGraphNumber
                  last_endi=endi; // ensure we don't check values we have already processed
                  if(endi>=maxi)
                         {// lookahead goes beyond end of data , in this case we assume the limits are unbounded and leave current median value alone
-                         ((SDataPoint*)pAList->Items[i])->dYValue=f; // put back current filtered value
-                          continue;
+						  pAGraph->y_vals[i]=f; // put back current filtered value
+						  continue;
                         }
                  // now we need to process from i to endi, if this is a lot of points limit to max 63 [range 63 jinc=1 (63 points), range 64 jinc=2 (32 points)  ]
                  jinc=1+(endi-i)/64;  // 64 is a power of 2 for efficiency, but also visibally seems to give sensible results, while being faster than the original code
-                 // now search for min,max,nearest y
-                 maxy=miny=nearesty= ((SDataPoint*)pAList->Items[i])->dYValue;  // this is 1st value so loop below start on 2nd value
+				 // now search for min,max,nearest y
+				 maxy=miny=nearesty= pAGraph->y_vals[i];  // this is 1st value so loop below start on 2nd value
 
                  for(j=i+jinc;j<maxi && j<endi;j+=jinc)
-                        {y= ((SDataPoint*)pAList->Items[j])->dYValue;
+						{y= pAGraph->y_vals[j];
                          if(y>maxy) maxy=y;
                          if(y<miny) miny=y;
                          if(fabs(y-f)<fabs(nearesty-f)) nearesty=y; // nearest to f
@@ -1312,7 +1223,7 @@ void TScientificGraph::fnMedian_filt(unsigned int median_ahead, int iGraphNumber
                          jinc=(jinc<<1)-1; // a power of 2 -1 is frequently prime, at least its unlikley to have common factors with the original jinc used above
                          // for example if jinc was 2 originally on this 2nd pass it will become 3, if it was 3,4,5 or 6  it will become 7
                          for(j=i+jinc;j<maxi && j<endi;j+=jinc)
-                                {y= ((SDataPoint*)pAList->Items[j])->dYValue;
+								{y= pAGraph->y_vals[j];
                                  if(y>maxy) maxy=y;
                                  if(y<miny) miny=y;
                                  if(fabs(y-m)<fabs(nearesty-m)) nearesty=y;
@@ -1330,264 +1241,13 @@ void TScientificGraph::fnMedian_filt(unsigned int median_ahead, int iGraphNumber
                             {m=f; //  use filtered value directly
                             }
                        }
-                 ((SDataPoint*)pAList->Items[i])->dYValue=m; // put back filtered value
-                }
-         }
- }
-#elif 0
- // This code was written from scratch 28/12/2019 Peter Miller
- // code looks ahead from the end of the previous lookahead so that portion of the code examines each x value once.
- // knowing starting and ending value of range (from above) we can take equally spaced samples and then another set of samples with a "prime" period to the 1st
- // This uses a linear filter as well as the median - using the linear filter (which looks ahead median_ahead_t) directly unless clipped to stay in the range of the median
- // the nearest value to the linear filter is returned so its always a value thats in the input (just like a real median)
- // This also shows a few affects by only sampling on the look ahead , but mainly it "looks strange" as even with large look aheads the values are noisy as the nearest found changes with time
- //
- void TScientificGraph::fnMedian_filt_time1(double median_ahead_t, int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)) // apply median filter to graph in place  , lookahead defined in time
-{
- // callback() is called periodically to let caller know progress   . This is done based on time (once/sec).
- time_t lastT;
- unsigned int i,j,last_endi=0,endi,jinc ;
- float this_endT,maxy,miny,nearesty,y,m;
- float f,dt; // linear filtered value (range limited based on median limits)
- float k,lastdt=0;
- SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
- TList *pAList = pAGraph->pDataList;
- unsigned int maxi=pAList->Count;
- lastT=clock(); // used to keep callbacks at uniform time intervals
- if(median_ahead_t>0 && maxi>=3) // need at least 3 points for initial median and need a positive value for the look ahead time
-        {f=m=median3(((SDataPoint*)pAList->Items[0])->dYValue,((SDataPoint*)pAList->Items[1])->dYValue,((SDataPoint*)pAList->Items[2])->dYValue);
-         //rprintf("initial median of 1st 3 points (%g,%g,%g) selected as %g\n",((SDataPoint*)pAList->Items[0])->dYValue,((SDataPoint*)pAList->Items[1])->dYValue,((SDataPoint*)pAList->Items[2])->dYValue,m);
-         for(i=0;i<maxi;++i)
-                {// process all points one by one
-                 if(callback!=NULL && (i & 0xffff)==0 && (clock()-lastT)>= CLOCKS_PER_SEC)
-                        {lastT=clock();   // update on progress every second (approximately - use i & 0xff to keep average overhead of time() check very low
-                         (*callback)(i,maxi);
-                        }
-                 this_endT=((SDataPoint*)pAList->Items[i])->dXValue+median_ahead_t; // time for the end of the look ahead
-
-                 for(endi=last_endi;endi<maxi && ((SDataPoint*)pAList->Items[endi])->dXValue < this_endT;++endi) // search forward to find i that matches end of look ahead time
-                        { // update linear filter while we do this so it "runs" median_ahead_t in advance of current location so approximately gives average of +/-median_ahead_t around current time
-                         if(i==0)
-                                {// do real average for 1st point [as we can and it gives us a better starting value, especially for big lookaheads]
-                                 f+=(((SDataPoint*)pAList->Items[endi])->dYValue-f)/(float)(endi+1);
-                                }
-                         else
-                                {dt=((SDataPoint*)pAList->Items[endi])->dXValue - ((SDataPoint*)pAList->Items[endi-1])->dXValue;
-                                 if(dt>0)
-                                        {// above if avoids possible divide by zero below
-                                         if(dt!=lastdt) // only calculate k when dt changes [ saves ~ 1 sec ]
-                                                {k=1.0-exp(-(dt)/(2.0*median_ahead_t)); // *2.0 as we want to look forward and back by median_ahead_t
-                                                }
-                                         f+=k*(((SDataPoint*)pAList->Items[endi])->dYValue-f);
-                                        }
-                                }
-
-                        }
-                 // now we need to process from i to endi, if this is a lot of points limit to max 63 [range 63 jinc=1 (63 points), range 64 jinc=2 (32 points)  ]
-                 jinc=1+(endi-i)/64;  // 64 is a power of 2 for efficiency, but also visibally seems to give sensible results, while being faster than the original code
-                 last_endi=endi; // ensure we don't check values we have already processed
-                 // now search for min,max,nearest y
-                 maxy=miny=nearesty= ((SDataPoint*)pAList->Items[i])->dYValue;  // this is 1st value so loop below start on 2nd value
-
-                 for(j=i+jinc;j<maxi && j<endi;j+=jinc)
-                        {y= ((SDataPoint*)pAList->Items[j])->dYValue;
-                         if(y>maxy) maxy=y;
-                         if(y<miny) miny=y;
-                         if(fabs(y-f)<fabs(nearesty-f)) nearesty=y; // nearest to f
-                        }
-                 if(jinc>1) //  if it was 1 we have already sampled every point, otherwise take a 2nd pass
-                        {
-                         // now make another pass taking more samples (but less numerically than loop above) that are not (very) harmonicaly related to those taken above
-                         jinc++;
-                         while(jinc&(jinc-1)) jinc&=jinc-1; // decrease jinc by deleting lower order bits until its a power of 2
-                         jinc=(jinc<<1)-1; // a power of 2 -1 is frequently prime, at least its unlikley to have common factors with the original jinc used above
-                         // for example if jinc was 2 originally on the 2nd pass it will become 3, if it was 3,4,5 or 6  it will become 7
-                         for(j=i+jinc;j<maxi && j<endi;j+=jinc)
-                                {y= ((SDataPoint*)pAList->Items[j])->dYValue;
-                                 if(y>maxy) maxy=y;
-                                 if(y<miny) miny=y;
-                                 if(fabs(y-f)<fabs(nearesty-f)) nearesty=y;
-                                }
-                        }
-                 // approximate median must be between miny and maxy
-                 if(f<miny)
-                        {f=m=miny;
-                        }
-                 else
-                       {if(f>maxy)
-                            {f=m=maxy;
-                            }
-                        else
-                            {m=nearesty; //  use nearest value found to current filtered value
-                            }
-                       }
-                 ((SDataPoint*)pAList->Items[i])->dYValue=m; // put back filtered value
-                }
+				 pAGraph->y_vals[i]=m; // put back filtered value
+				}
          }
  }
 
-#elif 1
- // This has become a "test bed" for various median approximations
- // it includes an exact calculation of the median for comparison
- // see rprint outputs for results
- //
- /* another version - this uses an iterative approximation to the median for initialisation rather than the average
-    Algorithm from
-    https://stackoverflow.com/questions/1058813/on-line-iterator-algorithms-for-estimating-statistical-median-mode-skewnes
-    the algorithm is:
-    cumadev += abs(sample-median)
-    eta = 1.5*cumadev/(k*k), where k is the number of samples seen so far
-             note that cumadev/k is average dev so eta=1.5*adev/k  , and it may be better to use an incremental average rather than cumadev.
-    median += eta * sgn(sample - median) where sgn is the signum function which returns one of {-1, 0, 1}  [here it just needs to return -1 or 1 ]
-
-    While this does give a reasonably sensible result there seems to be no reason to use it over "average" which is a well known and robust algorithm.
- */
- //  this is a version of the generic code above that used the above algorithm for the initial initialisation instead of using the average
-
-int floatcomp(const void* elem1, const void* elem2) // needed to sort floats with qsort function
-{
-    if(*(const float*)elem1 < *(const float*)elem2)
-        return -1;
-    return *(const float*)elem1 > *(const float*)elem2; // returns 0 on equal
-}
 
 
-
- void TScientificGraph::fnMedian_filt_time1(double median_ahead_t, int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)) // apply median filter to graph in place  , lookahead defined in time
-{
- // callback() is called periodically to let caller know progress   . This is done based on time (once/sec).
- time_t lastT;
- unsigned int i,j,last_endi=0,endi,jinc ;
- float this_endT,maxy,miny,nearesty,y,m;
- double cumadev=0,eta;
- SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
- TList *pAList = pAGraph->pDataList;
- unsigned int maxi=pAList->Count;
- lastT=clock(); // used to keep callbacks at uniform time intervals
- if(median_ahead_t>0 && maxi>=3) // need at least 3 points for initial median and need a positive value for the look ahead time
-        {m=median3(((SDataPoint*)pAList->Items[0])->dYValue,((SDataPoint*)pAList->Items[1])->dYValue,((SDataPoint*)pAList->Items[2])->dYValue);
-         //rprintf("initial median of 1st 3 points (%g,%g,%g) selected as %g\n",((SDataPoint*)pAList->Items[0])->dYValue,((SDataPoint*)pAList->Items[1])->dYValue,((SDataPoint*)pAList->Items[2])->dYValue,m);
-         for(i=0;i<maxi;++i)
-                {// process all points one by one
-                 if(callback!=NULL && (i & 0xffff)==0 && (clock()-lastT)>= CLOCKS_PER_SEC)
-                        {lastT=clock();   // update on progress every second (approximately - use i & 0xff to keep average overhead of time() check very low
-                         (*callback)(i,maxi);
-                        }
-                 this_endT=((SDataPoint*)pAList->Items[i])->dXValue+median_ahead_t; // time for the end of the look ahead
-                 for(endi=last_endi;endi<maxi && ((SDataPoint*)pAList->Items[endi])->dXValue < this_endT;++endi) // search forward to find i that matches end of look ahead time
-                        {
-                         if(i==0)
-                                {
-#if 1
-                                 // use new approximation for the median rather than the average here
-#define sgn(x) ((x)<0?-1.0:1.0)
-                                 cumadev+=fabs(((SDataPoint*)pAList->Items[endi])->dYValue-m);
-                                 eta=1.5*cumadev/((float)(endi+1)*(float)(endi+1));
-                                 m+=eta*sgn(((SDataPoint*)pAList->Items[endi])->dYValue-m);
-#else
-                                 m+=(((SDataPoint*)pAList->Items[endi])->dYValue-m)/(float)(endi+1);
-#endif
-                                }
-                         }
-                 if(i==0)
-                        {
-#if 0
-                         // calculate exact median
-                         if(endi>=maxi) endi=maxi-1;
-                         float *arr=(float *)calloc(endi,sizeof(float));
-                         if(arr!=NULL)
-                                {
-                                 for(unsigned int k=0; k<endi;++k)   // take a copy of all the y values that we want median of, also get min,max,average
-                                        {
-                                         arr[k]= ((SDataPoint*)pAList->Items[k])->dYValue;
-                                        }
-                                 m=quick_select( arr, endi); // initialise with actual median as its quick to calculate
-                                free(arr);
-                               }
-#else
-                         // do exact median by taking a copy of the values, qsorting them and using the mid element
-                         float *arr=(float *)calloc(endi,sizeof(float));
-                         float qs;
-                         unsigned int mid=(endi>>1)-1;// as array is 0..endi-1 eg if 10 elements (endi=10) array is 0..9, mid=10/2-1=4 (and mid+1=5)
-                         float meany;
-                         for(unsigned int k=0; k<endi;++k)   // take a copy of all the y values that we want median of, also get min,max,average
-                                {y= ((SDataPoint*)pAList->Items[k])->dYValue;
-                                 arr[k]= y;
-                                 if(k==0)
-                                        {maxy=miny=meany=y;
-                                        }
-                                 else
-                                        {if(y>maxy) maxy=y;
-                                         if(y<miny) miny=y;
-                                         meany+=(y-meany)/(float)(k+1);
-                                        }
-                                }
-                         rprintf("quick_select() starting\n");
-                         lastT=clock();
-                         qs=quick_select( arr, endi);
-                         rprintf("quick_select() complete after %.2f secs\n median=%g\n",(clock()-lastT)/CLOCKS_PER_SEC,qs);
-                         rprintf("qsort of %u elements starting\n",endi);
-                         lastT=clock(); // warning - we start with the array as left by quick_select which will be different to the original array in order
-                         qsort(arr, endi, sizeof(float), floatcomp);
-                         rprintf("qsort complete after %.2f secs",(clock()-lastT)/CLOCKS_PER_SEC);
-                         rprintf(" middle element [%u]=%g mid+1=%g.\n Median= average of [mid],[mid+1]=%g\n",mid,arr[mid],arr[mid+1],0.5*(arr[mid]+arr[mid+1]) );
-
-                         rprintf("Approximate median by eta algorithm is %g\n",m);
-                         rprintf("Average value =%g min=%g max=%g (min+max)/2=%g\n",meany,miny,maxy,0.5*(miny+maxy) );
-
-                         m= 0.5*(arr[mid]+arr[mid+1]); // given we have actually calculated it, use actual median for the rest of the code below.
-                         free(arr);
-#endif
-                        }
-                 // now we need to process from i to endi, if this is a lot of points limit to max 63 [range 63 jinc=1 (63 points), range 64 jinc=2 (32 points)  ]
-                 jinc=1+(endi-i)/64;  // 64 is a power of 2 for efficiency, but also visibally seems to give sensible results, while being faster than the original code
-                 last_endi=endi; // ensure we don't check values we have already processed
-                 // now search for min,max,nearest y
-                 maxy=miny=nearesty= ((SDataPoint*)pAList->Items[i])->dYValue;  // this is 1st value so loop below start on 2nd value
-                 for(j=i+jinc;j<maxi && j<endi;j+=jinc)
-                        {y= ((SDataPoint*)pAList->Items[j])->dYValue;
-                         if(y>maxy) maxy=y;
-                         if(y<miny) miny=y;
-                         if(fabs(y-m)<fabs(nearesty-m)) nearesty=y;
-                        }
-                 if(jinc>1) //  if it was 1 we have already sampled every point, otherwise take a 2nd pass
-                        {
-#if 0
-                         // take a 2nd pass - do backwards so we guarantee to include last point and use jinc+1 as step (so swap odd/even and ~ relatively prime)
-                         // by eye this is very similar to the potentially more "random" power of 2 -1 algorithm below, but a bit slower to execute, so its not normally used
-                         jinc++; // swap odd<->even and adjacent numbers are frequently relatively prime (definately has a different period)
-                         for(j=min(endi-1,maxi-1);j>=i+jinc;j-=jinc) // note j is unsigned, test  j>=i+jinc ensures it cannot go negative
-                                {y= ((SDataPoint*)pAList->Items[j])->dYValue;
-                                 if(y>maxy) maxy=y;
-                                 if(y<miny) miny=y;
-                                 if(fabs(y-m)<fabs(nearesty-m)) nearesty=y;
-                                }
-#else
-                         // now make another pass taking more samples (but less numerically than loop above) that are not (very) harmonicaly related to those taken above
-                         // this is faster than the #else code for big lookaheads as the while loop just deletes low order bits in inc rather than potentially incrementing it a lot of times
-                         jinc++;
-                         while(jinc&(jinc-1)) jinc&=jinc-1; // decrease jinc by deleting lower order bits until its a power of 2
-                         jinc=(jinc<<1)-1; // a power of 2 -1 is frequently prime, at least its unlikley to have common factors with the original jinc used above
-                         // for example if jinc was 2 originally on the 2nd pass it will become 3, if it was 3,4,5 or 6  it will become 7
-                         for(j=i+jinc;j<maxi && j<endi;j+=jinc)
-                                {y= ((SDataPoint*)pAList->Items[j])->dYValue;
-                                 if(y>maxy) maxy=y;
-                                 if(y<miny) miny=y;
-                                 if(fabs(y-m)<fabs(nearesty-m)) nearesty=y;
-                                }
-#endif
-                        }
-                 // approximate median m must be between miny and maxy
-                 if(m<miny) m=miny;
-                 if(m>maxy) m=maxy;
-                 ((SDataPoint*)pAList->Items[i])->dYValue=m; // put back filtered value
-                }
-         }
- }
-
-#endif
-
-#if 1
 // This code was written from scratch 28/12/2019 Peter Miller
  // code looks ahead from the end of the previous lookahead so that portion of the code examines each x value once.
  // knowing starting and ending value of range (from above) we can take equally spaced samples and then another set of samples with a "prime" period to the 1st
@@ -1600,11 +1260,10 @@ int floatcomp(const void* elem1, const void* elem2) // needed to sort floats wit
  unsigned int i,j,last_endi=0,endi,jinc ;
  float this_endT,maxy,miny,y,m;
  SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
- TList *pAList = pAGraph->pDataList;
- unsigned int maxi=pAList->Count;
+ unsigned int maxi=pAGraph->nos_vals ;
  lastT=clock(); // used to keep callbacks at uniform time intervals
  if(median_ahead_t>0 && maxi>=3) // need at least 3 points for initial median and need a positive value for the look ahead time
-        {m=median3(((SDataPoint*)pAList->Items[0])->dYValue,((SDataPoint*)pAList->Items[1])->dYValue,((SDataPoint*)pAList->Items[2])->dYValue);
+		{m=median3(pAGraph->y_vals[0],pAGraph->y_vals[1],pAGraph->y_vals[2]);
          //rprintf("initial median of 1st 3 points (%g,%g,%g) selected as %g\n",((SDataPoint*)pAList->Items[0])->dYValue,((SDataPoint*)pAList->Items[1])->dYValue,((SDataPoint*)pAList->Items[2])->dYValue,m);
          for(i=0;i<maxi;++i)
                 {// process all points one by one
@@ -1612,122 +1271,74 @@ int floatcomp(const void* elem1, const void* elem2) // needed to sort floats wit
                         {lastT=clock();   // update on progress every second (approximately - use i & 0xff to keep average overhead of time() check very low
                          (*callback)(i,maxi);
                         }
-                 this_endT=((SDataPoint*)pAList->Items[i])->dXValue+median_ahead_t; // time for the end of the look ahead
-                 for(endi=last_endi;endi<maxi && ((SDataPoint*)pAList->Items[endi])->dXValue < this_endT;++endi); // search forward to find i that matches end of look ahead time
-                 if(i==0)
-                        {// do exact median by taking a copy of the values, and using quick_select() to find the median
-                         float *arr=(float *)calloc(endi,sizeof(float));
-                         if(arr!=NULL)
-                                {
-                                 for(unsigned int k=0; k<endi;++k)   // take a copy of all the y values that we want median of, also get min,max,average
-                                        {
-                                         arr[k]= ((SDataPoint*)pAList->Items[k])->dYValue;
-                                        }
-                                 m=quick_select( arr, endi); // initialise with actual median as its quick to calculate
-                                free(arr);
-                               }
-                        }
-                 last_endi=endi; // ensure we don't check values we have already processed
-                 if(endi>=maxi)
-                        {// lookahead go beyond end of data , in this case we assume the limits are unbounded and leave current median value alone
-                         ((SDataPoint*)pAList->Items[i])->dYValue=m; // put back current median value
-                          continue;
-                        }
-                 // now we need to process from i to endi, if this is a lot of points limit to max 63 [range 63 jinc=1 (63 points), range 64 jinc=2 (32 points)  ]
-                 jinc=1+(endi-i)/64;  // 64 is a power of 2 for efficiency, but also visibally seems to give sensible results, while being faster than the original code
+				 this_endT=pAGraph->x_vals[i]+median_ahead_t; // time for the end of the look ahead
+				 for(endi=last_endi;endi<maxi && pAGraph->x_vals[endi] < this_endT;++endi); // search forward to find i that matches end of look ahead time
+				 if(i==0)
+						{// do exact median by taking a copy of the values, and using quick_select() to find the median
+						 float *arr=(float *)calloc(endi,sizeof(float));
+						 if(arr!=NULL)
+								{
+								 for(unsigned int k=0; k<endi;++k)   // take a copy of all the y values that we want median of, also get min,max,average
+										{
+										 arr[k]=pAGraph->y_vals[k];
+										}
+								 m=quick_select( arr, endi); // initialise with actual median as its quick to calculate
+								free(arr);
+							   }
+						}
+				 last_endi=endi; // ensure we don't check values we have already processed
+				 if(endi>=maxi)
+						{// lookahead go beyond end of data , in this case we assume the limits are unbounded and leave current median value alone
+						 pAGraph->y_vals[i]=m; // put back current median value
+						  continue;
+						}
+				 // now we need to process from i to endi, if this is a lot of points limit to max 63 [range 63 jinc=1 (63 points), range 64 jinc=2 (32 points)  ]
+				 jinc=1+(endi-i)/64;  // 64 is a power of 2 for efficiency, but also visibally seems to give sensible results, while being faster than the original code
 
-                 // now search for min,max
-                 maxy=miny= ((SDataPoint*)pAList->Items[i])->dYValue;  // this is 1st value so loop below start on 2nd value
-                 for(j=i+jinc;j<maxi && j<endi;j+=jinc)
-                        {y= ((SDataPoint*)pAList->Items[j])->dYValue;
-                         if(y>maxy) maxy=y;
-                         if(y<miny) miny=y;
-                        }
-                 if(jinc>1) //  if it was 1 we have already sampled every point, otherwise take a 2nd pass to add extra samples
-                        {
-                         // now make another pass taking more samples (but less numerically than loop above) that are not (very) harmonicaly related to those taken above
-                         jinc++;
-                         while(jinc&(jinc-1)) jinc&=jinc-1; // decrease jinc by deleting lower order bits until its a power of 2
-                         jinc=(jinc<<1)-1; // a power of 2 -1 is frequently prime, at least its unlikley to have common factors with the original jinc used above
-                         // for example if jinc was 2 originally on the 2nd pass it will become 3, if it was 3,4,5 or 6  it will become 7
-                         for(j=i+jinc;j<maxi && j<endi;j+=jinc)
-                                {y= ((SDataPoint*)pAList->Items[j])->dYValue;
-                                 if(y>maxy) maxy=y;
-                                 if(y<miny) miny=y;
-                                }
-                        }
-                 // approximate median m must be between miny and maxy
-                 if(m<miny) m=miny;
-                 if(m>maxy) m=maxy;
-                 ((SDataPoint*)pAList->Items[i])->dYValue=m; // put back filtered value
-                }
-         }
+				 // now search for min,max
+				 maxy=miny= pAGraph->y_vals[i]; // this is 1st value so loop below start on 2nd value
+				 for(j=i+jinc;j<maxi && j<endi;j+=jinc)
+						{y= pAGraph->y_vals[j];
+						 if(y>maxy) maxy=y;
+						 if(y<miny) miny=y;
+						}
+				 if(jinc>1) //  if it was 1 we have already sampled every point, otherwise take a 2nd pass to add extra samples
+						{
+						 // now make another pass taking more samples (but less numerically than loop above) that are not (very) harmonicaly related to those taken above
+						 jinc++;
+						 while(jinc&(jinc-1)) jinc&=jinc-1; // decrease jinc by deleting lower order bits until its a power of 2
+						 jinc=(jinc<<1)-1; // a power of 2 -1 is frequently prime, at least its unlikley to have common factors with the original jinc used above
+						 // for example if jinc was 2 originally on the 2nd pass it will become 3, if it was 3,4,5 or 6  it will become 7
+						 for(j=i+jinc;j<maxi && j<endi;j+=jinc)
+								{y= pAGraph->y_vals[j];
+								 if(y>maxy) maxy=y;
+								 if(y<miny) miny=y;
+								}
+						}
+				 // approximate median m must be between miny and maxy
+				 if(m<miny) m=miny;
+				 if(m>maxy) m=maxy;
+				 pAGraph->y_vals[i]=m; // put back filtered value
+				}
+		 }
  }
-
-#else
-void TScientificGraph::fnMedian_filt_time(double median_ahead_t, int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)) // apply median filter to graph in place  , lookahead defined in time
-{// mt=median(mint+,maxt+,mt-1)  - min, max look ahead 2+ . This algorithm provides a reasonably fast but good approximation to a true median
- // look ahead based on time is designed to be robust to rounding errors (as x values are floats) - the limit value is average(x[i+j],x[i+j+1])
- // callback() is called periodically to let caller know progress
- if(median_ahead_t>0)
-        {double m,ymin,ymax;
-         double lastx,xij;
-         SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
-         TList *pAList = pAGraph->pDataList;
-         unsigned int iCount=pAList->Count;
-         if(iCount<2) return; // not enough data in graph to process
-         m=((SDataPoint*)pAList->Items[0])->dYValue; // initial value
-         for (unsigned int i=0; i<iCount; i++)  // for all items in list
-                {
-                 if(callback!=NULL && (i & 0x3ffff)==0)
-                        (*callback)(i,iCount); // update on progress
-                 if(i+2<iCount)
-                        {// find min/max up to median_ahead
-                         ymax=ymin=((SDataPoint*)pAList->Items[i+1])->dYValue;
-                         lastx=((SDataPoint*)pAList->Items[i])->dXValue;
-                         xij=((SDataPoint*)pAList->Items[i+2])->dXValue;
-                         unsigned int inc=1,nos_samples=0;
-                         for (unsigned int j=2;
-                                i+j+1<iCount &&
-                                median_ahead_t>0.5*(xij+ ((SDataPoint*)pAList->Items[i+j+1])->dXValue)-lastx;
-                                j+=inc)
-                                {xij=((SDataPoint*)pAList->Items[i+j+1])->dXValue;
-                                 double t= ((SDataPoint*)pAList->Items[i+j])->dYValue;
-                                 if(t>ymax) ymax=t;
-                                 else if(t<ymin) ymin=t;
-                                 // above loop can require lots of iterations if sample time is small (eg 1ms), start skipping values if we have already sampled a reasonable number
-                                 nos_samples++;
-                                 if((nos_samples&0xf)==0)
-                                        {if(inc&0xfffffff)
-                                          inc<<=1; // *2 , if test stops overflow
-                                        }
-                                }
-                         if(m>ymax) m=ymax; // median cal
-                         else if(m<ymin) m=ymin; // else m is median
-                        }
-                 ((SDataPoint*)pAList->Items[i])->dYValue=m; // put back filtered value
-                }
-        }
-}
-#endif
 
 void TScientificGraph::fnLinear_filt_time(double tc, int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)) // apply linear filter to graph in place
 {// f(t)+=k*(y(t)+f(t-1))
  // k=1-exp(-dt/tc) where dt is time between samples
  // callback() is called periodically to let caller know progress
  if(tc>0)
-        {double m;
-         double lastx,x,y,k;
+		{double m;
+		 double lastx,x,y,k;
 		 SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
-		 TList *pAList = pAGraph->pDataList;
-		 unsigned int iCount=pAList->Count;
+		 unsigned int iCount=pAGraph->nos_vals ;
 		 if(iCount<2) return; // not enough data in graph to process
-		 m=((SDataPoint*)pAList->Items[0])->dYValue; // initial value
-		 lastx=((SDataPoint*)pAList->Items[0])->dXValue;
-         for (unsigned int i=0; i<iCount; i++)  // for all items in list
+		 m=pAGraph->y_vals[0]; // initial value
+		 lastx=pAGraph->x_vals[0];
+		 for (unsigned int i=0; i<iCount; i++)  // for all items in list
                 {
-				 y=((SDataPoint*)pAList->Items[i])->dYValue;
-				 x=((SDataPoint*)pAList->Items[i])->dXValue;
+				 y=pAGraph->y_vals[i];
+				 x=pAGraph->x_vals[i];
                  if(x>lastx)
                         {// above if avoids possible maths error below
                          k=1.0-exp(-(x-lastx)/tc);
@@ -1736,8 +1347,8 @@ void TScientificGraph::fnLinear_filt_time(double tc, int iGraphNumberF, void (*c
                  lastx=x;
 				 if(callback!=NULL && (i & 0x3fffff)==0)
 						(*callback)(i,iCount); // update on progress
-				 ((SDataPoint*)pAList->Items[i])->dYValue=m; // put back filtered value
-                }
+				 pAGraph->y_vals[i]=m; // put back filtered value
+				}
         }
 }
 
@@ -1745,8 +1356,7 @@ void TScientificGraph::fnLinreg_origin( int iGraphNumberF, void (*callback)(unsi
 { // straight line passing through origin    y=m*x
   // underlying equation for the best straight line through the origin=sum(XiYi)/sum(Xi^2) from Yang Feng (Columbia Univ) Simultaneous Inferences, pp 18/20.
  SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
- TList *pAList = pAGraph->pDataList;
- unsigned int iCount=pAList->Count;
+ unsigned int iCount=pAGraph->nos_vals ;
  double meanx2=0,meanxy=0; /* mean x^2 , mean x*y */
  double xi,yi;
  double m;
@@ -1756,8 +1366,8 @@ void TScientificGraph::fnLinreg_origin( int iGraphNumberF, void (*callback)(unsi
  if(iCount<2) return; // not enough data in graph to process
  for(i=0;i<iCount;++i) /* only use 1 pass here - to calculate means directly */
 		{++N;
-		 xi=((SDataPoint*)pAList->Items[i])->dXValue;
-		 yi=((SDataPoint*)pAList->Items[i])->dYValue;
+		 xi=pAGraph->x_vals[i];
+		 yi=pAGraph->y_vals[i];
 		 meanx2+= (xi*xi-meanx2)/(double) N;
 		 meanxy+= (xi*yi-meanxy)/(double) N;
 		 if(callback!=NULL && (i & 0x3fffff)==0)
@@ -1773,15 +1383,15 @@ void TScientificGraph::fnLinreg_origin( int iGraphNumberF, void (*callback)(unsi
  rprintf("Best Least squares straight line that passes through the origin is Y=%g*X\n",m);
  // now put new y values back, calculated as y=m*x+c
  for(i=0;i<iCount;++i)
-	{yi=((SDataPoint*)pAList->Items[i])->dYValue;
-	 xi=((SDataPoint*)pAList->Items[i])->dXValue;
+	{yi=pAGraph->y_vals[i];
+	 xi=pAGraph->x_vals[i];
 	 try{ // code below has tests for common issues, but use try to catch anything else
-		 ((SDataPoint*)pAList->Items[i])->dYValue=m*xi;
-		 e=fabs(yi-((SDataPoint*)pAList->Items[i])->dYValue);
+		 pAGraph->y_vals[i]=m*xi;
+		 e=fabs(yi-pAGraph->y_vals[i]);
 		 if(e>maxe) maxe=e;
 		}
 	 catch(...)
-		{ ((SDataPoint*)pAList->Items[i])->dYValue=0; // if something goes wrong put 0 in as a placeholder.
+		{ pAGraph->y_vals[i]=0; // if something goes wrong put 0 in as a placeholder.
 		}
 
 	 if(callback!=NULL && (i & 0x3fffff)==0)
@@ -1793,49 +1403,31 @@ void TScientificGraph::fnLinreg_origin( int iGraphNumberF, void (*callback)(unsi
 void TScientificGraph::fnLinreg_abs(bool rel, int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 {  // fit y=mx+c with either min abs error or min abs rel error
  SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
- TList *pAList = pAGraph->pDataList;
- unsigned int iCount=pAList->Count;
+ unsigned int iCount=pAGraph->nos_vals ;
  if(iCount<2) return; // not enough data in graph to process
  unsigned int i;
  double m,c,best_err;
  double yi,xi,e,maxe=0;
- float *x_arr=(float *)calloc(iCount,sizeof(float)); // x values
- float *y_arr=(float *)calloc(iCount,sizeof(float)); // y values
- if(x_arr==NULL)
-	{rprintf(" min abs linefit: not enought free RAM - cannot filter values\n");
-	 return;
-	}
- if(y_arr==NULL)
-	{rprintf(" min abs linefit: not enought free RAM - cannot filter values\n");
-	 free(x_arr);
-	 return;
-	}
- for(i=0;i<iCount;++i) /* copy values into x & y arrays */
-	{
-	 x_arr[i]=((SDataPoint*)pAList->Items[i])->dXValue;
-	 y_arr[i]=((SDataPoint*)pAList->Items[i])->dYValue;
-	 if(callback!=NULL && (i & 0x3fffff)==0)
-		(*callback)((i>>1) + (iCount>>1),iCount); // update on progress , this is 2nd pass through data so goes 50% - 100%
-	}
+ float *x_arr=pAGraph->x_vals ; // x values
+ float *y_arr=pAGraph->y_vals; // y values
+
  // void fit_min_abs_err_line(float *x, float *y,unsigned int nos_vals,bool rel_error,double *m_out, double *c_out,double *best_err_out)
  fit_min_abs_err_line(x_arr, y_arr,iCount,rel,&m,&c,&best_err);  // do all the hard work ...
- // don't need x_arr & y_arr any more
- free(x_arr);
- free(y_arr);
+
  // now put new y values back, calculated as y=m*x+c
  for(i=0;i<iCount;++i)
-	{yi=((SDataPoint*)pAList->Items[i])->dYValue;
-	 xi=((SDataPoint*)pAList->Items[i])->dXValue;
+	{yi=y_arr[i];
+	 xi=x_arr[i];
 	 try{ // code below has tests for common issues, but use try to catch anything else
-		 ((SDataPoint*)pAList->Items[i])->dYValue=m*xi+c;
-		 e=fabs(yi-((SDataPoint*)pAList->Items[i])->dYValue);
+		 y_arr[i]=m*xi+c;
+		 e=fabs(yi-y_arr[i]);
 		 if(e>maxe) maxe=e;
 		}
 	 catch(...)
-		{ ((SDataPoint*)pAList->Items[i])->dYValue=0; // if something goes wrong put 0 in as a placeholder.
+		{ y_arr[i]=0; // if something goes wrong put 0 in as a placeholder.
 		}
 	 if(callback!=NULL && (i & 0x3fffff)==0)
-		(*callback)((i>>1) + (iCount>>1),iCount); // update on progress , this is 2nd pass through data so goes 50% - 100%
+		(*callback)((i),iCount); // update on progress
 	}
  if(rel)
 	rprintf("Best min abs relative error straight line is Y=%g*X%+g (error=%g%%)\n",m,c,100.0*best_err);
@@ -1855,51 +1447,30 @@ double fun_sqrt(float xparam)
 
 void TScientificGraph::fnLinreg_3(int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 { // fit y=a*x+b*sqrt(x)+c
-
  SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
- TList *pAList = pAGraph->pDataList;
- unsigned int iCount=pAList->Count;
+ unsigned int iCount=pAGraph->nos_vals ;
  if(iCount<2) return; // not enough data in graph to process
  unsigned int i;
- double a,b,c;     // coefficients of equation
  double yi,xi,e,maxe=0;
- float *x_arr=(float *)calloc(iCount,sizeof(float)); // x values
- float *y_arr=(float *)calloc(iCount,sizeof(float)); // y values
- if(x_arr==NULL)
-	{rprintf(" fit y=a*x+b*sqrt(x)+c: not enought free RAM - cannot filter values\n");
-	 return;
-	}
- if(y_arr==NULL)
-	{rprintf(" fit y=a*x+b*sqrt(x)+c: not enought free RAM - cannot filter values\n");
-	 free(x_arr);
-	 return;
-	}
- for(i=0;i<iCount;++i) /* copy values into x & y arrays */
-	{
-	 x_arr[i]=((SDataPoint*)pAList->Items[i])->dXValue;
-	 y_arr[i]=((SDataPoint*)pAList->Items[i])->dYValue;
-	 if(callback!=NULL && (i & 0x3fffff)==0)
-		(*callback)((i>>1) + (iCount>>1),iCount); // update on progress , this is 2nd pass through data so goes 50% - 100%
-	}
+ float *x_arr=pAGraph->x_vals ; // x values
+ float *y_arr=pAGraph->y_vals; // y values
+ double a,b,c;     // coefficients of equation
  // void leastsquares_reg3(float *y,float *x,int start, int end,double (*f)(float xparam),double (*g)(float xparam), double *a, double *b, double *c)
  leastsquares_reg3(y_arr, x_arr,0,iCount-1,fun_x,fun_sqrt,&a,&b,&c);  // do all the hard work ...
- // don't need x_arr & y_arr any more
- free(x_arr);
- free(y_arr);
- // now put new y values back, calculated as y=m*x+c
+ // put new values back  y=a*x+b*sqrt(x)+c
  for(i=0;i<iCount;++i)
-	{yi=((SDataPoint*)pAList->Items[i])->dYValue;
-	 xi=((SDataPoint*)pAList->Items[i])->dXValue;
+	{yi=y_arr[i];
+	 xi=x_arr[i];
 	 try{ // code below has tests for common issues, but use try to catch anything else
-		 ((SDataPoint*)pAList->Items[i])->dYValue=a*fun_x(xi)+b*fun_sqrt(xi)+c;
-		 e=fabs(yi-((SDataPoint*)pAList->Items[i])->dYValue);
+		 y_arr[i]=a*fun_x(xi)+b*fun_sqrt(xi)+c;
+		 e=fabs(yi-y_arr[i]);
 		 if(e>maxe) maxe=e;
 		}
 	 catch(...)
-		{ ((SDataPoint*)pAList->Items[i])->dYValue=0; // if something goes wrong put 0 in as a placeholder.
+		{ y_arr[i]=0; // if something goes wrong put 0 in as a placeholder.
 		}
 	 if(callback!=NULL && (i & 0x3fffff)==0)
-		(*callback)((i>>1) + (iCount>>1),iCount); // update on progress , this is 2nd pass through data so goes 50% - 100%
+		(*callback)((i),iCount); // update on progress
 	}
  rprintf("Best fit found is Y=%g*X%+g*sqrt(X)%+g\n",a,b,c);    // %+g always prints sign [+-]
  rprintf("  Max abs error of above curve is %g\n",maxe);
@@ -1912,9 +1483,7 @@ void TScientificGraph::fnLinreg(enum LinregType type, int iGraphNumberF, void (*
  // results checked using csvfun3.csv. R^2 values (and coefficients) also checked against Excel for the fits excel can do.
 {// to save copying data this is done inline
  SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
- TList *pAList = pAGraph->pDataList;
- unsigned int iCount=pAList->Count;
-
+ unsigned int iCount=pAGraph->nos_vals ;
  double meanx=0,meany=0; /* initial values set to mean that N=0 or N=1 do not need to be treated as special cases below */
  double meanx2=0,meanxy=0,meany2=0; /* mean x^2 , mean x*y and mean y^2 */
  double xi,yi;
@@ -1925,8 +1494,8 @@ void TScientificGraph::fnLinreg(enum LinregType type, int iGraphNumberF, void (*
  if(iCount<2) return; // not enough data in graph to process
  for(i=0;i<iCount;++i) /* only use 1 pass here - to calculate means directly */
 		{
-		 xi=((SDataPoint*)pAList->Items[i])->dXValue;
-		 yi=((SDataPoint*)pAList->Items[i])->dYValue;
+		 xi=pAGraph->x_vals[i];
+		 yi=pAGraph->y_vals[i];
 		 // apply "preprocessing"
 		 if(type== LogLin || type== LogLog)
 			{if(xi<=0) continue;// log requires value >0
@@ -2030,49 +1599,49 @@ void TScientificGraph::fnLinreg(enum LinregType type, int iGraphNumberF, void (*
 	}
  // now put new y values back, calculated as y=m*x+c
  for(i=0;i<iCount;++i)
-	{yi=((SDataPoint*)pAList->Items[i])->dYValue;
-	 xi=((SDataPoint*)pAList->Items[i])->dXValue;
+	{yi=pAGraph->y_vals[i];
+	 xi=pAGraph->x_vals[i];
 	 try{ // code below has tests for common issues, but use try to catch anything else
 	  switch(type)
 		{ // enum LinregType  {LinLin,LogLin,LinLog,LogLog,RecipLin,LinRecip,RecipRecip,SqrtLin};
 		 case LinLin:    // fall through...
 		 case LinLin_GMR:
-			((SDataPoint*)pAList->Items[i])->dYValue=m*xi+c;
+			pAGraph->y_vals[i]=m*xi+c;
 			break;
 		 case LogLin:
 			// log(x) : y=m*log(x)+c       log(minfloat)=-103.28 so use -104 for negative/zero
-			((SDataPoint*)pAList->Items[i])->dYValue=m*(xi>0?log(xi):-104.0f)+c;
+			pAGraph->y_vals[i]=m*(xi>0?log(xi):-104.0f)+c;
 			break;
 		 case LinLog:
 			// Exponential: log(y) : y=a*b^x ; log(y)=log(a)+(log b)*x   ; OR y=a*exp(b*x)  =>log(y)=log(a)+b*x
-			((SDataPoint*)pAList->Items[i])->dYValue=c*exp(m*xi);// this might overflow which is not trapped here
+			pAGraph->y_vals[i]=c*exp(m*xi);// this might overflow which is not trapped here
 			break;
 		 case LogLog:
 			// Power: Log(x) log(y) : y=a*x^b ; log(y)=log(a)+b*log(x)
-			((SDataPoint*)pAList->Items[i])->dYValue=c*pow(xi,m);
+			pAGraph->y_vals[i]=c*pow(xi,m);
 			break;
 		 case RecipLin:
 			// 1/x : y=m/x+c
-			((SDataPoint*)pAList->Items[i])->dYValue=m*(xi==0? 3.4e38f : 1.0f/xi)+c;
+			pAGraph->y_vals[i]=m*(xi==0? 3.4e38f : 1.0f/xi)+c;
 			break;
 		 case LinRecip:
 			// 1/y : 1/y=m*x+c ;y=1/(m*x+c)
-			((SDataPoint*)pAList->Items[i])->dYValue=1.0/(m*xi+c);
+			pAGraph->y_vals[i]=1.0/(m*xi+c);
 			break;
 		 case RecipRecip:
 			// Hyperbolic: 1/x,1/y : 1/y=m/x+c ;y=x/(m+c*x)
-			((SDataPoint*)pAList->Items[i])->dYValue=xi/(m+c*xi);
+			pAGraph->y_vals[i]=xi/(m+c*xi);
 			break;
 		 case SqrtLin:
 			// sqrt(x): y=m*sqrt(x)+c
-			((SDataPoint*)pAList->Items[i])->dYValue=m*(xi>=0?sqrt(xi):0.0f)+c;
+			pAGraph->y_vals[i]=m*(xi>=0?sqrt(xi):0.0f)+c;
 			break;
 		}
-	   e=fabs(yi-((SDataPoint*)pAList->Items[i])->dYValue);
+	   e=fabs(yi-pAGraph->y_vals[i]);
 	   if(e>maxe) maxe=e;
 	   }
 	 catch(...)
-		{ ((SDataPoint*)pAList->Items[i])->dYValue=0; // if something goes wrong put 0 in as a placeholder.
+		{ pAGraph->y_vals[i]=0; // if something goes wrong put 0 in as a placeholder.
 		}
 
 	 if(callback!=NULL && (i & 0x3fffff)==0)
@@ -2093,8 +1662,7 @@ bool TScientificGraph::fnPolyreg(unsigned int order,int iGraphNumberF, void (*ca
 	// returns true if works, false if an issue found
 {
  SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
- TList *pAList = pAGraph->pDataList;
- unsigned int iCount=pAList->Count;
+ unsigned int iCount=pAGraph->nos_vals ;
  double x,y;  // need to be double as we scale floats
  long double divisor,previous;
  float minx,maxx,miny,maxy;
@@ -2116,11 +1684,11 @@ bool TScientificGraph::fnPolyreg(unsigned int order,int iGraphNumberF, void (*ca
 	{order=iCount>>1; // imperical observation is order > 1/2 total number of points then bad things happen numerically, so trap that here
 	}
  try{ /* the code below may fail if given a high enough order so trap that here */
-	minx=((SDataPoint*)pAList->Items[0])->dXValue;  // xvalues are sorted into order
-	maxx=((SDataPoint*)pAList->Items[iCount-1])->dXValue;
-	miny=maxy=((SDataPoint*)pAList->Items[0])->dYValue;
+	minx=pAGraph->x_vals[0];   // xvalues are sorted into order
+	maxx=pAGraph->x_vals[iCount-1];
+	miny=maxy=pAGraph->y_vals[0];
 	for(i=0;i<iCount;++i)
-		{y=((SDataPoint*)pAList->Items[i])->dYValue;
+		{y=pAGraph->y_vals[i];
 		 if(y>maxy) maxy=y;
 		 if(y<miny) miny=y;
 		}
@@ -2149,8 +1717,8 @@ bool TScientificGraph::fnPolyreg(unsigned int order,int iGraphNumberF, void (*ca
 		 if(callback!=NULL)
 			(*callback)(j,order+1); // update on progress
 		 for(i=0;i<iCount;++i)
-			{x=((SDataPoint*)pAList->Items[i])->dXValue;
-			 y=((SDataPoint*)pAList->Items[i])->dYValue;
+			{x=pAGraph->x_vals[i];
+			 y=pAGraph->y_vals[i];
 			 // scale x,y
 			 x=x*xm+xc;
 			 y=y*ym+yc;
@@ -2170,7 +1738,7 @@ bool TScientificGraph::fnPolyreg(unsigned int order,int iGraphNumberF, void (*ca
 			{previous=divisor;
 			 divisor=0;
 			 for(i=0;i<iCount;++i) // calculate orthogonal polynomials for next order
-				{x=((SDataPoint*)pAList->Items[i])->dXValue;
+				{x=pAGraph->x_vals[i];
 				 // scale x
 				 x=x*xm+xc;
 				 pv=0;
@@ -2269,8 +1837,8 @@ bool TScientificGraph::fnPolyreg(unsigned int order,int iGraphNumberF, void (*ca
  double maxe=0,maxep=0;  // max abs error found between poly approximation and original data points
  long double meane2=0,meane2p=0;  // mean (error^2)
  for(i=0;i<iCount;++i)
-	{x= ((SDataPoint*)pAList->Items[i])->dXValue;
-	 y= ((SDataPoint*)pAList->Items[i])->dYValue;
+	{x= pAGraph->x_vals[i];
+	 y= pAGraph->y_vals[i];
 	 if(horner_poly)
 		{
 		 // evaluate conventional poly by Horners rule(gives y*ym so need to divide by ym at the end)
@@ -2309,7 +1877,7 @@ bool TScientificGraph::fnPolyreg(unsigned int order,int iGraphNumberF, void (*ca
 	  if(fabs(err) > maxe)
 		maxe=fabs(err); // calculate max abs error
 	  meane2+=(err*err-meane2)/(long double)(i+1);  // incremental update for mean(error^2)
-	 ((SDataPoint*)pAList->Items[i])->dYValue=sum; // put calculated value (orthogonal poly as that should be the most accurate) back
+	  pAGraph->y_vals[i]=sum; // put calculated value (orthogonal poly as that should be the most accurate) back
 	}
  rprintf("  with orthogonal poly   : max abs error is %.12g, rms error is %.12g\n",(double)maxe,(double)sqrt(meane2));
  if(horner_poly)
@@ -2333,10 +1901,9 @@ bool TScientificGraph::fnFFT(bool dBV_result,bool Hanning,int iGraphNumberF, voi
  // if dBV is true returns result in dBV (ie 20*log10(magnitude))
  // if Hanning is true use a Hanning (Hann) window - this is the recommended general purpose window at https://download.ni.com/evaluation/pxi/Understanding%20FFTs%20and%20Windowing.pdf
  //    which says "In general, the Hanning window is satisfactory in 95 percent of cases. It has good frequency resolution and reduced spectral leakage. "
- //
+ //  Note we still need to create a copy for rin as its size can be larger than y_vals[]
  SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
- TList *pAList = pAGraph->pDataList;
- unsigned int iCount=pAList->Count;
+ unsigned int iCount=pAGraph->nos_vals ;
  double x,y;
  float lastx,xmin,xmax,xinc_min,xinc_max;
  double xinc,xinc_av,y_av,freq,freq_step;
@@ -2365,16 +1932,16 @@ bool TScientificGraph::fnFFT(bool dBV_result,bool Hanning,int iGraphNumberF, voi
 	 return false;
 	}
   // get "stats" from input data
-  lastx=xmin= ((SDataPoint*)pAList->Items[0])->dXValue; // x values are sorted
-  xmax=((SDataPoint*)pAList->Items[iCount-1])->dXValue;
-  xinc=(((SDataPoint*)pAList->Items[1])->dXValue)-xmin;
+  lastx=xmin= pAGraph->x_vals[0]; // x values are sorted
+  xmax=pAGraph->x_vals[iCount-1];
+  xinc=pAGraph->x_vals[1] -xmin;
   xinc_min=xinc_av=xinc_max=xinc;
-  y_av=((SDataPoint*)pAList->Items[0])->dYValue;
+  y_av=pAGraph->y_vals[0];
   y2_av=y_av*y_av;
   for (i=1;i<iCount;++i)
 	{
-	 x=((SDataPoint*)pAList->Items[i])->dXValue;
-	 y=((SDataPoint*)pAList->Items[i])->dYValue;
+	 x=pAGraph->x_vals[i];
+	 y=pAGraph->y_vals[i];
 	 xinc=x-lastx;
 	 if(xinc>xinc_max) xinc_max=xinc;
 	 if(xinc<xinc_min) xinc_min=xinc;
@@ -2395,11 +1962,11 @@ bool TScientificGraph::fnFFT(bool dBV_result,bool Hanning,int iGraphNumberF, voi
 	{if(Hanning)
 		{// need to apply Hann(ing) window - see Numerical Recipees or wikipedia for more details.
 		 double window=0.5*(1.0-cos(6.283185307179586476925286766559*(double)i/(double)nfft));// 6.28... = 2*PI
-		 rin[i] = window*(((SDataPoint*)pAList->Items[i])->dYValue - y_av);
+		 rin[i] = window*(pAGraph->y_vals[i] - y_av);
 		}
 	 else
 		{
-		 rin[i] = ((SDataPoint*)pAList->Items[i])->dYValue - y_av;
+		 rin[i] = pAGraph->y_vals[i] - y_av;
 		}
 	}
  // rest of rin array needs to be filled with zero - this has already been done by calloc()
@@ -2449,20 +2016,21 @@ bool TScientificGraph::fnFFT(bool dBV_result,bool Hanning,int iGraphNumberF, voi
 		 if(y<=0) y=20.0*-45.0; // 1.4e-45 is the min (denormalised) value for a float
 		 else y=20*log10(y);// convert result to dBV
 		}
-	 ((SDataPoint*)pAList->Items[i])->dYValue=y;  // |result|
-	 ((SDataPoint*)pAList->Items[i])->dXValue=freq; // freq in Hz, starting at DC
+	 pAGraph->y_vals[i]=y;  // |result|
+	 pAGraph->x_vals[i]=freq; // freq in Hz, starting at DC
 	}
- // we put less values back - now need to free space for now unused points
- for(;i< iCount;i++)
-		{
-		 delete (SDataPoint*)pAList->Items[i]; // delete all the now unused x,y points
-		}
- if((nfft/2)+1<iCount)
-	pAList->Count=(nfft/2)+1; // shrink array to number of values put back
- free(kiss_fftr_state);
- free(rin);
+ free(rin);    // free up dynamic memory used
  free(sout);
+ free(kiss_fftr_state);
  kiss_fft_cleanup(); // final cleanup for fft functions
+ if((nfft/2)+1<iCount)
+	{
+	 pAGraph->nos_vals=(nfft/2)+1; // shrink array to number of values put back (this does NOT actually change size of arrays).
+	 pAGraph->x_vals=(float *)realloc(pAGraph->x_vals,sizeof(float)*pAGraph->nos_vals);  // resize arrays
+	 pAGraph->y_vals=(float *)realloc(pAGraph->y_vals,sizeof(float)*pAGraph->nos_vals);
+	 pAGraph->size_vals_arrays =pAGraph->nos_vals; // new size of arrays
+	}
+
  return true; // good return
 }
 
@@ -2472,17 +2040,16 @@ void TScientificGraph::compress_y(int iGraphNumberF) // compress by deleting poi
  // at end items >=j need to be deleted (that is done at the end of this function)
  double lasty,lastx,x,y;
  SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
- TList *pAList = pAGraph->pDataList;
- unsigned int iCount=pAList->Count;
+ unsigned int iCount=pAGraph->nos_vals ;
  unsigned int i,j;
  bool skipy=false; // set to true while we are skipping equal y values
  if(iCount<2) return; // not enough data in graph to process
- lasty=((SDataPoint*)pAList->Items[0])->dYValue;
- lastx=((SDataPoint*)pAList->Items[0])->dXValue;
+ lasty=pAGraph->y_vals[0];
+ lastx=pAGraph->x_vals[0];
  for (i=j=1; i<iCount; i++)  // for all items in list except 1st, i is where we read from, j is where we write to
 		{
-		 y=((SDataPoint*)pAList->Items[i])->dYValue;
-		 x=((SDataPoint*)pAList->Items[i])->dXValue;
+		 y=pAGraph->y_vals[i];
+		 x=pAGraph->x_vals[i];
          if(y==lasty)
                 {// in block of repeats
                  skipy=true;
@@ -2492,39 +2059,125 @@ void TScientificGraph::compress_y(int iGraphNumberF) // compress by deleting poi
                 }
          if(skipy)
                 {// we have skipped some values, put the last one in
-                 ((SDataPoint*)pAList->Items[j])->dYValue=lasty;
-                 ((SDataPoint*)pAList->Items[j])->dXValue=lastx;
-                 ++j;
+				 pAGraph->y_vals[j]=lasty;
+				 pAGraph->x_vals[j]=lastx;
+				 ++j;
                  skipy=false;
                 }
-         ((SDataPoint*)pAList->Items[j])->dYValue=y;// y value is different, copy point over
-         ((SDataPoint*)pAList->Items[j])->dXValue=x;
-         ++j;
+		 pAGraph->y_vals[j]=y;// y value is different, copy point over
+		 pAGraph->x_vals[j]=x;
+		 ++j;
          lasty=y;
          lastx=x;
-        }
- // now delete values not used    [ have used array elements from 0 to j-1 ]
- rprintf("compress: %u point(s) removed from trace\n",iCount-j);
- for(i=j;i< iCount;i++)
-		{
-		 delete (SDataPoint*)pAList->Items[i]; // delete all the now unused x,y points
 		}
- pAList->Count=j;// resize array that holds points  (frees up memory space in that as well)
+ if(skipy)
+	{// need to add in final point  if we were still in a constant run when the end was reached
+	 pAGraph->y_vals[j]=y;// y value is different, copy point over
+	 pAGraph->x_vals[j]=x;
+	 ++j;
+	}
+ // now delete values not used    [ have used array elements from 0 to j-1 ]
+ rprintf("compress: %u point(s) removed from trace (previous size=%u new size=%u)\n",iCount-j,iCount,j);
+ pAGraph->nos_vals=j;// resize array that holds points  (frees up memory space in that as well)
+ pAGraph->x_vals=(float *)realloc(pAGraph->x_vals,sizeof(float)*j);  // resize arrays
+ pAGraph->y_vals=(float *)realloc(pAGraph->y_vals,sizeof(float)*j);
+ pAGraph->size_vals_arrays =j;// new size of arrays
 }
 
 
-int __fastcall xcompare(void * Item1, void * Item2)    /* define comparison order for sort below */
-{double diff=((TScientificGraph::SDataPoint*)Item1)->dXValue - ((TScientificGraph::SDataPoint*)Item2)->dXValue;
- if(diff==0) return 0; // same
- else if(diff<0) return -1;
- else return 1;
+// use my own version of quicksort as its not possible to easily use the built in version to sort x and keep y in the correct order
+void TScientificGraph::my_swap(int iGraphNumberF, int i, int j)
+{  // swap both x & y
+ if(i==j) return; // just in case !
+ SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
+ float temp;
+ temp = pAGraph->x_vals[i];
+ pAGraph->x_vals[i] = pAGraph->x_vals[j];
+ pAGraph->x_vals[j] = temp;
+ temp = pAGraph->y_vals[i];
+ pAGraph->y_vals[i] = pAGraph->y_vals[j];
+ pAGraph->y_vals[j] = temp;
 }
 
-void TScientificGraph::sortx( int iGraphNumberF) // sort ordered on x values
+
+/* myqsort: sort v[left]...v[right] into increasing order */
+/* this uses a quicksort algorithm
+   It iterates to process the largest segment and uses recursive calls for the smallest segment so stack usage is small [ limited to log2(size) recursions max]
+   Uses random pivot element to avoid very bad worse case runtime thats possible with fixed or median pivot.
+*/
+void TScientificGraph::myqsort(int iGraphNumberF, int p, int r)
 {
  SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
- TList *pAList = pAGraph->pDataList;
- pAList->Sort(xcompare);
+ float *xa=pAGraph->x_vals;
+ float x;// pivot value
+ int k;// pivot location  (left most)
+ int l;
+ while(p < r)   /* iterate to process the largest segment */
+  {k=p;
+   l=r+1;
+   if (r == p + 1)
+	 {  /* Two elements only - can trivially sort these */
+	  if (xa[p] > xa[r])
+		my_swap(iGraphNumberF,p,r);
+	  return ;
+	 }
+   /* select a random element to partition on - this should mean no sequence gives poor sorting performance */
+   /* this does add ~ 10% to sort time for the common case of "nearly sorted", but overall sort time is small so this is not really an issue */
+   static uint32_t rn=1103515245u; /* non-zero initialisation for random number generator */
+   uint32_t xn=rn; /* temp value for random number generator*/
+   /* Algorithm "xor" from p. 4 of Marsaglia, "Xorshift RNGs" coded inline for speed */
+   xn ^= xn << 13;
+   xn ^= xn >> 17;
+   xn ^= xn << 5;
+   rn= xn;
+   xn=p+xn%(r+1-p); // random value between p and r
+   my_swap(iGraphNumberF,p,xn);// swap random element to left  , does nothing if p==xn
+   x=xa[k];
+   do k++; while((xa[k]<=x) && (k<r));
+   do l--; while(xa[l]>x);
+   while(k<l)
+	{my_swap(iGraphNumberF,k,l);
+	  do k++; while(xa[k]<=x);
+	  do l--; while(xa[l]>x);
+	}
+   my_swap(iGraphNumberF,p,l);
+   int q=l;
+   if(q-1 -p < r-q+1)
+	  {// sort smallest partition 1st  to limit stack usage
+	   myqsort(iGraphNumberF,p,q-1);    // recursive call for smallest segment
+	   p=q+1; ;    // iterate  to process larger segment
+	  }
+   else
+	  {
+	   myqsort(iGraphNumberF,q+1,r);   // recursive call
+	   r=q-1;   // iterate
+	  }
+  }
+ return;
+}
+
+
+void TScientificGraph::sortx( int iGraphNumberF) // sort ordered on x values  (makes x values increasing)
+{
+ SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
+ unsigned int iCount=pAGraph->nos_vals ;
+ myqsort( iGraphNumberF,0,iCount-1); // sort
+#if 0
+ rprintf("sorting finished x[0]=%g x[1]=%g x[2]=%g x[4]=%g x[5]=%g\n",
+   pAGraph->x_vals[0],pAGraph->x_vals[1],pAGraph->x_vals[2],pAGraph->x_vals[3],
+   pAGraph->x_vals[4],pAGraph->x_vals[5]);
+#endif
+#if 1  /* check array actually is sorted correctly */
+ int errs=0;
+
+  for(int i=0;i<iCount-1;++i)
+	 if(pAGraph->x_vals[i]>pAGraph->x_vals[i+1])
+		errs++;
+  if(errs>0)
+	{rprintf("sortx: error %d values out of order\n",errs);
+	 ShowMessage("Error: sorting x values failed!\n");
+	}
+#endif
 }
 
 //------------------------------------------------------------------------------
@@ -2824,58 +2477,26 @@ void TScientificGraph::fnScales2Size()
 };
 
 //-----------------------------------------------------------------------------
-#if 1
+
 void TScientificGraph::fnClearAll()                //clear all graphs
 {
   int i;
   for (i=iNumberOfGraphs-1; i>=0; i--)
   {
-   fnDeleteGraph(i);// delete graphs 1 by 1, this changes  iNumberOfGraphs whihc is why for loop above is "strange"
+   fnDeleteGraph(i);// delete graphs 1 by 1, this changes  iNumberOfGraphs which is why for loop above is "strange"
   }
   pHistory->Clear();
   iNumberOfGraphs=0;
 };
-#else
-// original code - did not free all ram
-void TScientificGraph::fnClearAll()                //clear all graphs
-{
-  int i;
-  for (i=0; i<iNumberOfGraphs; i++)
-  {
-    ((SGraph*) pHistory->Items[i])->pDataList->Clear();
-    delete ((SGraph*) pHistory->Items[i])->pDataList;
-  }
-  pHistory->Clear();
-  iNumberOfGraphs=0;
-};
-#endif
+
 //------------------------------------------------------------------------------
 void TScientificGraph::fnDeleteGraph(int iGraphNumberF)     //deletes graph
 {
-/*
-        SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
-         TList *pAList = pAGraph->pDataList;
-         unsigned int iCount=pAList->Count;
-         if(iCount<2) return; // not enough data in graph to process
-         m=((SDataPoint*)pAList->Items[0])->dYValue; // initial value
-         lastx=((SDataPoint*)pAList->Items[0])->dXValue;
-         for (unsigned int i=0; i<iCount; i++)  // for all items in list
-                {
-                 y=((SDataPoint*)pAList->Items[i])->dYValue;
-                 x=((SDataPoint*)pAList->Items[i])->dXValue;
-
-*/
   if ((iGraphNumberF<iNumberOfGraphs)&&(iGraphNumberF>=0))
   { SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
-    TList *pAList = pAGraph->pDataList;
-    unsigned int iCount=pAList->Count;
-    for(unsigned int i=0;i< iCount;i++)
-        {
-         delete (SDataPoint*)pAList->Items[i]; // delete all the x,y points
-        }
-    ((SGraph*) pHistory->Items[iGraphNumberF])->pDataList->Clear(); // clear list that held points
-    delete ((SGraph*) pHistory->Items[iGraphNumberF])->pDataList;   // then delete it
-    delete (SGraph*) pHistory->Items[iGraphNumberF]; //  delete SGraph structure (see fnAddgraph() below)
+	if(pAGraph->x_vals !=NULL) free(pAGraph->x_vals);    // delete all data points
+	if(pAGraph->y_vals !=NULL) free(pAGraph->y_vals);
+	delete (SGraph*) pHistory->Items[iGraphNumberF]; //  delete SGraph structure (see fnAddgraph() below)
     pHistory->Delete(iGraphNumberF); // remove item from list
     pHistory->Capacity=pHistory->Count; // resize list
     iNumberOfGraphs--;
@@ -2883,7 +2504,7 @@ void TScientificGraph::fnDeleteGraph(int iGraphNumberF)     //deletes graph
 }
 //------------------------------------------------------------------------------
 
-int TScientificGraph::fnAddGraph()              //insert new graph
+int TScientificGraph::fnAddGraph(unsigned int max_points)              //insert new graph with nos_points datapoints (at most)
 {
   SGraph *pGraph;
 
@@ -2899,8 +2520,20 @@ int TScientificGraph::fnAddGraph()              //insert new graph
   pGraph->LineStyle=psSolid;
   pGraph->Caption="";
   pGraph->iTextSize=10;
-
-  pGraph->pDataList = new TList;               //allocate data container
+  // now create space for data points
+  pGraph->nos_vals=0; // currently no data points
+  pGraph->size_vals_arrays=max_points;
+  pGraph->x_vals=(float *)calloc(max_points,sizeof(float));
+  pGraph->y_vals=(float *)calloc(max_points,sizeof(float));
+  if(pGraph->y_vals==NULL && pGraph->x_vals!=NULL)
+	{ // out of space, but x_vals allocated ok
+	 free(pGraph->x_vals);
+	 pGraph->x_vals=NULL;
+	}
+  if(pGraph->x_vals==NULL)
+	{pGraph->size_vals_arrays=0; // no space allocated
+	 rprintf(" Warning: not enought ram for %d datapoints\n",max_points);
+	}
   pHistory->Add(pGraph);                       //add to history
 
   iNumberOfGraphs++;
@@ -2939,7 +2572,8 @@ void TScientificGraph::fnTextOut(double dx, double dy, AnsiString Text,
 }
 //------------------------------------------------------------------------------
 void TScientificGraph::fnSetCaption(AnsiString Caption, int iGraphNumberF)
-{((SGraph*)pHistory->Items[iGraphNumberF])->Caption=Caption;}
+{if(iGraphNumberF<0 || iGraphNumberF >=iNumberOfGraphs) return; // invalid graph number
+ ((SGraph*)pHistory->Items[iGraphNumberF])->Caption=Caption;}
 //------------------------------------------------------------------------------
 bool TScientificGraph::fnInScaleY(double d)
 { return (d<sScaleY.dMax && d>sScaleY.dMin);}
@@ -2957,19 +2591,9 @@ void TScientificGraph::fnAutoScale()
 
   if (iNumberOfGraphs>0)
   {
-#if 1
     // there might not be an Items[0] if the length is zero
     dXMax=dYMax=-MAXFLOAT;
-    dXMin=dYMin=MAXFLOAT;
-#else  // assume item 0 exists [ it might not!]
-    aGraph=(SGraph*) pHistory->Items[0];
-    dXMin=((SDataPoint*)aGraph->pDataList->Items[0])->dXValue;
-    dXMax=((SDataPoint*)aGraph->pDataList->Items[0])->dXValue;
-    dYMin=((SDataPoint*)aGraph->pDataList->Items[0])->dYValue;
-    dYMax=((SDataPoint*)aGraph->pDataList->Items[0])->dYValue;
-    max_graph=0;
-    min_graph=0;
-#endif
+	dXMin=dYMin=MAXFLOAT;
     X_for_minY=X_for_maxY=dXMin;
 
   }
@@ -2980,50 +2604,29 @@ void TScientificGraph::fnAutoScale()
   }
   for (i=0; i<iNumberOfGraphs; i++)              //search in all graphs for
   {                                              //extrema
-    aGraph=(SGraph*) pHistory->Items[i];
-    if(aGraph->pDataList->Count==0) continue; // if no values for this graph skip further processing
-#if 1 /* know x values are sorted so can move finding xmin/max outside of the loop for speed */
-    if (((SDataPoint*)aGraph->pDataList->Items[0])->dXValue<dXMin)
-        {dXMin=((SDataPoint*)aGraph->pDataList->Items[0])->dXValue;
+	aGraph=(SGraph*) pHistory->Items[i];
+	if(aGraph->nos_vals==0) continue; // if no values for this graph skip further processing
+ /* know x values are sorted so can move finding xmin/max outside of the loop for speed */
+	if (aGraph->x_vals[0]<dXMin)
+		{dXMin=aGraph->x_vals[0];
         }
-    if (((SDataPoint*)aGraph->pDataList->Items[(aGraph->pDataList->Count)-1])->dXValue>dXMax)
-        {dXMax=((SDataPoint*)aGraph->pDataList->Items[(aGraph->pDataList->Count)-1])->dXValue;
+	if (aGraph->x_vals[aGraph->nos_vals-1]>dXMax)
+		{dXMax=aGraph->x_vals[aGraph->nos_vals-1];
         }
-    // now loop over all elemnts to find y min/max
-    for (j=0; j<aGraph->pDataList->Count; j++)
-    { float y=((SDataPoint*)aGraph->pDataList->Items[j])->dYValue;
-      if (y<dYMin)
+	// now loop over all elemnts to find y min/max
+	for (j=0; j<aGraph->nos_vals; j++)
+	{ float y=aGraph->y_vals[j];
+	  if (y<dYMin)
         {dYMin=y;
          min_graph=i;
-         X_for_minY= ((SDataPoint*)aGraph->pDataList->Items[j])->dXValue;
-        }
+		 X_for_minY= aGraph->x_vals[j];
+		}
       if (y>dYMax)
         {dYMax=y;
-         max_graph=i;
-         X_for_maxY= ((SDataPoint*)aGraph->pDataList->Items[j])->dXValue;
+		 max_graph=i;
+		 X_for_maxY= aGraph->x_vals[j];
         }
-    }
-#else
-    for (j=0; j<aGraph->pDataList->Count; j++)
-    {
-      if (((SDataPoint*)aGraph->pDataList->Items[j])->dXValue<dXMin)
-        {dXMin=((SDataPoint*)aGraph->pDataList->Items[j])->dXValue;
-        }
-      if (((SDataPoint*)aGraph->pDataList->Items[j])->dXValue>dXMax)
-        {dXMax=((SDataPoint*)aGraph->pDataList->Items[j])->dXValue;
-        }
-      if (((SDataPoint*)aGraph->pDataList->Items[j])->dYValue<dYMin)
-        {dYMin=((SDataPoint*)aGraph->pDataList->Items[j])->dYValue;
-         min_graph=i;
-         X_for_minY= ((SDataPoint*)aGraph->pDataList->Items[j])->dXValue;
-        }
-      if (((SDataPoint*)aGraph->pDataList->Items[j])->dYValue>dYMax)
-        {dYMax=((SDataPoint*)aGraph->pDataList->Items[j])->dYValue;
-         max_graph=i;
-         X_for_maxY= ((SDataPoint*)aGraph->pDataList->Items[j])->dXValue;
-        }
-    }
-#endif
+	}
   }
   if(max_graph>=0)
         {aGraph=(SGraph*) pHistory->Items[max_graph];
@@ -3050,31 +2653,20 @@ void TScientificGraph::fnAutoScale()
 }
 //------------------------------------------------------------------------------
 long int TScientificGraph::fnGetNumberOfDataPoints(int iGraphNumberF)
-{
-  TList *pAList;
-
-                                      //adress of data list
-  pAList = ((SGraph*) pHistory->Items[iGraphNumberF])->pDataList;
-  pAList->Pack();                     //set count to real value,no Null-pointers
-  return (pAList->Count);
+{if(iGraphNumberF<0 || iGraphNumberF >=iNumberOfGraphs) return 0; // invalid graph number
+ return ((SGraph*) pHistory->Items[iGraphNumberF])->nos_vals ;
 }
 //------------------------------------------------------------------------------
 double TScientificGraph::fnGetDataPointYValue(long int iChannelF,
-                                                   int iGraphNumberF)
-{
-  TList *pAList;
-
-  if ((pHistory->Count-1)>=iGraphNumberF)
-  {
-                                      //adress of data list
-    pAList = ((SGraph*) pHistory->Items[iGraphNumberF])->pDataList;
-    if ((pAList->Count-1)>=iChannelF)
-    {
-      return (((SDataPoint*)pAList->Items[iChannelF])->dYValue);
-    }
-    else {return (-1);}
+												   int iGraphNumberF)
+{ SGraph *aGraph;
+  if ((pHistory->Count-1)>=iGraphNumberF && iGraphNumberF>=0)
+  { aGraph=(SGraph*) pHistory->Items[iGraphNumberF];
+	if(aGraph->nos_vals-1 >=iChannelF)
+		{return aGraph->x_vals[iChannelF];
+		}
   }
-  else {return (-1);}
+  return 0; // default value on error
 }
 //------------------------------------------------------------------------------
 bool TScientificGraph::fnPoint2Koord(int iPointX, int iPointY, double &dKoordX,
@@ -3110,19 +2702,7 @@ void TScientificGraph::fnSetScales(double dXMin, double dXMax, double dYMin,
 
   if (dXMin==dXMax) {dXMin=dXMin-0.1; dXMax=dXMax+0.1;}   //no zero ranges
   if (dYMin==dYMax) {dYMin=dYMin-0.1; dYMax=dYMax+0.1;}
-#if 0 /* not now needed as better trapping of max zoom in code elsewhere and this code limits much earlier than necessary */
-  // limit amount of zooming to a sensible value
-  if( (actual_dXMax-actual_dXMin)/(dXMax-dXMin)>MAXINT)
-        {// zoom too big , clip it
-          dXMax= dXMin+ (actual_dXMax-actual_dXMin)/MAXINT;
-          dXMin=dXMax-2.0*(actual_dXMax-actual_dXMin)/MAXINT;
-        }
-  if( (actual_dYMax-actual_dYMin)/(dYMax-dYMin)>MAXINT)
-        {// zoom too big , clip it
-          dYMax= dYMin+ (actual_dYMax-actual_dYMin)/MAXINT;
-          dYMin= dYMax- 2.0* (actual_dYMax-actual_dYMin)/MAXINT;
-        }
-#endif
+
 #if 1    /* expand a little so if we are very close to a power of 10 a tick will appear where we would expect one */
   temp= (dXMax-dXMin)*0.001;
   sScaleX.dMin=dXMin-temp;              //set scales slightly wider than limits
@@ -3312,47 +2892,47 @@ bool TScientificGraph::SaveCSV(char *filename,char *x_axis_name)
   {
     aGraph=(SGraph*) pHistory->Items[i];
     if(i==0)
-        {j=aGraph->pDataList->Count ; // nos items in trace 0
-        }
-    else
-        {if(j!= aGraph->pDataList->Count)
-                {snprintf(errorstr,sizeof(errorstr)-1,"Error on CSV save: lines on chart have different numbers of points (%d vs %d)!",aGraph->pDataList->Count,j);    // sizeof -1 as last character set to null above
-                 ShowMessage(errorstr);
-                 return false;
-                }
-        }
+		{j=aGraph->nos_vals ; // nos items in trace 0
+		}
+	else
+		{if(j!= aGraph->nos_vals)
+				{snprintf(errorstr,sizeof(errorstr)-1,"Error on CSV save: lines on chart have different numbers of points (%d vs %d)!",aGraph->nos_vals,j);    // sizeof -1 as last character set to null above
+				 ShowMessage(errorstr);
+				 return false;
+				}
+		}
    }
  // all graphs have the same number of elements - open file
  fp=fopen(filename,"wt");
  if(fp==NULL)
-        {snprintf(errorstr,sizeof(errorstr)-1,"Error on CSV save: cannot create file %s",filename);    // sizeof -1 as last character set to null above
-         ShowMessage(errorstr);
-         return false;
-        }
+		{snprintf(errorstr,sizeof(errorstr)-1,"Error on CSV save: cannot create file %s",filename);    // sizeof -1 as last character set to null above
+		 ShowMessage(errorstr);
+		 return false;
+		}
  // now write header line for csv file with names for each column
  fprintf(fp,"\"%s\"",x_axis_name);
  for (i=0; i<iNumberOfGraphs; i++)              //for all graphs
-    {aGraph=(SGraph*) pHistory->Items[i];
-     if( aGraph->Caption.c_str()[0]=='"')
-        {// caption already has "...", so don't add another set
-         fprintf(fp,",%s",aGraph->Caption.c_str());
-        }
-       else
-        {// no quotes at present, add them
-         fprintf(fp,",\"%s\"",aGraph->Caption.c_str());
-        }
-    }
+	{aGraph=(SGraph*) pHistory->Items[i];
+	 if( aGraph->Caption.c_str()[0]=='"')
+		{// caption already has "...", so don't add another set
+		 fprintf(fp,",%s",aGraph->Caption.c_str());
+		}
+	   else
+		{// no quotes at present, add them
+		 fprintf(fp,",\"%s\"",aGraph->Caption.c_str());
+		}
+	}
  fprintf(fp,"\n"); // end of header line
  // now print out main csv file
  xGraph=(SGraph*) pHistory->Items[0];
- for (j=0; j<xGraph->pDataList->Count; j++)
-	{ fprintf(fp,"%.9g", ((SDataPoint*)xGraph->pDataList->Items[j])->dXValue);    // %.9g (9sf) gives max resolution for a float
+ for (j=0; j<xGraph->nos_vals; j++)
+	{ fprintf(fp,"%.9g",xGraph->x_vals[j]);    // %.9g (9sf) gives max resolution for a float
 	  for (i=0; i<iNumberOfGraphs; i++)              //for all graphs
 		{aGraph=(SGraph*) pHistory->Items[i];
-		 fprintf(fp,",%.9g",((SDataPoint*)aGraph->pDataList->Items[j])->dYValue);
-        }
-      fprintf(fp,"\n");
-    }
+		 fprintf(fp,",%.9g",aGraph->y_vals[j]);
+		}
+	  fprintf(fp,"\n");
+	}
  fclose(fp);
  return true; // good exit
 }
