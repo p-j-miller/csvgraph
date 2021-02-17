@@ -27,6 +27,9 @@ The file csvgraph.pdf contains the full manual and a number of examples of its u
 1v3 – 3/2/2021	- more curve fitting options added, y=mx, y=mx+c with GMR , minimum absolute 
 error and minimum relative error, and y=a*x+b*sqrt(x)+c.
 
+2v0 – 17/2/2021 – Major internal changes to reduce RAM usage and improve speed. 
+No changes to function.
+
 
 
 # Installation
