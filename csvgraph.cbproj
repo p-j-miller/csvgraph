@@ -132,6 +132,12 @@
         <CppCompile Include="kiss_fftr.c">
             <BuildOrder>11</BuildOrder>
         </CppCompile>
+        <CppCompile Include="matrix.cpp">
+            <BuildOrder>12</BuildOrder>
+        </CppCompile>
+        <CppCompile Include="multiple-lin-reg-fn.cpp">
+            <BuildOrder>11</BuildOrder>
+        </CppCompile>
         <CppCompile Include="UDataPlotWindow.cpp">
             <Form>PlotWindow</Form>
             <FormType>dfm</FormType>
@@ -155,8 +161,8 @@
             <BuildOrder>10</BuildOrder>
         </CppCompile>
         <FormResources Include="UDataPlotWindow.dfm"/>
-        <FormResources Include="UScalesWindow.dfm"/>
         <FormResources Include="Unit1.dfm"/>
+        <FormResources Include="UScalesWindow.dfm"/>
         <FormResources Include="About.dfm"/>
         <BuildConfiguration Include="Release">
             <Key>Cfg_2</Key>

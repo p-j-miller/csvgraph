@@ -7,6 +7,7 @@
 #define UScientificGraphH
 
 #include <Graphics.hpp>
+// #define CHECK_DEPTH /* if defined check depth of recursion in myqsort() */
 
 enum LinregType  {LinLin,LinLin_GMR,LogLin,LinLog,LogLog,RecipLin,LinRecip,RecipRecip,SqrtLin};
 
@@ -156,12 +157,16 @@ public:
   void fnLinreg_origin( int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)); // fit y=mc
   void fnLinreg_abs(bool rel, int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)); // fit y=mx+c with min abs error or min abs relative error
   void fnLinreg_3(int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)); // fit y=a*x+b*sqrt(x)+c
+  void fnrat_3(int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)); // fits y=(a+bx)/(1+cx)
   void fnLinreg(enum LinregType type,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)); // apply 1st order linear regression (y=mx+c) to graph in place
   bool fnPolyreg(unsigned int order,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)); // fit polynomial of specified order regression to graph in place
   bool fnFFT(bool dBV_result,bool Hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)); // apply FFT to data. returns true if OK, false if failed.
   void compress_y(int iGraphNumberF); // compress by deleting points with equal y values except for 1st and last in a row
-  void my_swap(int iGraphNumberF, int i, int j) ; // part of myqsort
+#ifdef CHECK_DEPTH
+  void myqsort(int iGraphNumberF, int left, int right,int depth) ; // sort q line on graph to increasing x values
+#else
   void myqsort(int iGraphNumberF, int left, int right) ; // sort q line on graph to increasing x values
+#endif
   void sortx( int iGraphNumberF); // sort ordered on x values
   int fnAddGraph(unsigned int max_points) ;  // create new line for graph with at most max_points
 
@@ -193,6 +198,7 @@ public:
 
   //Get functions
   long int fnGetNumberOfDataPoints(int iGraphNumberF = 0);
+  unsigned int fnGetxyarr(float **x_arr,float **y_arr,int iGraphNumberF = 0); // allow access to x and y arrays, returns nos points
   double fnGetDataPointYValue(long int iChannelF, int iGraphNumberF = 0);
   double fnGetScaleXMin() {return sScaleX.dMin;}
   double fnGetScaleXMax() {return sScaleX.dMax;}

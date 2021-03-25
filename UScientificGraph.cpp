@@ -1033,12 +1033,43 @@ bool TScientificGraph::fnChangeXoffset(double dX) // change all X values by addi
 };
 
 
+#if 1
+float median3(float y0,float y1, float y2) // returns median of 3 values  with 2 or 3 comparisons base on Sort3 in Programming Classics page 162
+{float t;
+ if (y0 > y1)
+		{
+		 // swap y0 & y1   (both y0 and y1 are used below so actually do need to swap them)
+		 t = y0;
+		 y0 = y1;
+		 y1 = t;
+		}
+
+ if (y1 > y2)
+		{
+		 // swap y1 & y2  (don't need y2 so don't need to actually swap values)
+		 // t = y1;
+		 y1 = y2;
+		 // y2 = t;
+
+		 if (y0 > y1)
+			{
+			 // swap y0 & y1 (don't need y0 so don't need to actually swap values)
+			 y1=y0;
+			 // t = y0;
+			 // y0 = y1;
+			 // y1 = t;
+			}
+		}
+ // y1 always contains the median value
+ return y1;
+}
+#else
 float median3(float y0,float y1, float y2) // returns median of 3 values
 {if(y1<=y0 && y0<=y2) return y0; // y0 is middle value (median)
  if(y0<=y1 && y1<=y2) return y1; // y1 is middle value
  return y2; // y2 must be middle value
 }
-
+#endif
 /*
  *  This Quickselect routine is based on the algorithm described in
  *  "Numerical recipes in C", Second Edition,
@@ -1352,6 +1383,15 @@ void TScientificGraph::fnLinear_filt_time(double tc, int iGraphNumberF, void (*c
         }
 }
 
+unsigned int TScientificGraph::fnGetxyarr(float **x_arr,float **y_arr,int iGraphNumberF)
+ // allow access to x and y arrays of specified graph, returns nos points
+ {SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
+  unsigned int iCount=pAGraph->nos_vals ;
+  *x_arr=pAGraph->x_vals;
+  *y_arr=pAGraph->y_vals;
+  return iCount;
+ }
+
 void TScientificGraph::fnLinreg_origin( int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 { // straight line passing through origin    y=m*x
   // underlying equation for the best straight line through the origin=sum(XiYi)/sum(Xi^2) from Yang Feng (Columbia Univ) Simultaneous Inferences, pp 18/20.
@@ -1473,6 +1513,38 @@ void TScientificGraph::fnLinreg_3(int iGraphNumberF, void (*callback)(unsigned i
 		(*callback)((i),iCount); // update on progress
 	}
  rprintf("Best fit found is Y=%g*X%+g*sqrt(X)%+g\n",a,b,c);    // %+g always prints sign [+-]
+ rprintf("  Max abs error of above curve is %g\n",maxe);
+}
+
+
+void TScientificGraph::fnrat_3(int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+{ // fits y=(a+bx)/(1+cx)
+ SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
+ unsigned int iCount=pAGraph->nos_vals ;
+ if(iCount<2) return; // not enough data in graph to process
+ unsigned int i;
+ double yi,xi,e,maxe=0;
+ float *x_arr=pAGraph->x_vals ; // x values
+ float *y_arr=pAGraph->y_vals; // y values
+ double a,b,c;     // coefficients of equation
+ // void leastsquares_rat3(float *y,float *x,int start, int end, double *a, double *b, double *c); /* fits y=(a+bx)/(1+cx) */
+ leastsquares_rat3(y_arr, x_arr,0,iCount-1,&a,&b,&c);  // do all the hard work ...
+ // put new values back  y=(a+bx)/(1+cx)
+ for(i=0;i<iCount;++i)
+	{yi=y_arr[i];
+	 xi=x_arr[i];
+	 try{ // code below has tests for common issues, but use try to catch anything else
+		 y_arr[i]=(a+b*xi)/(1.0+c*xi);
+		 e=fabs(yi-y_arr[i]);
+		 if(e>maxe) maxe=e;
+		}
+	 catch(...)
+		{ y_arr[i]=0; // if something goes wrong put 0 in as a placeholder.
+		}
+	 if(callback!=NULL && (i & 0x3fffff)==0)
+		(*callback)((i),iCount); // update on progress
+	}
+ rprintf("Best fit found is Y=(%g%+g*X)/(1.0%+g*X)\n",a,b,c);    // %+g always prints sign [+-]
  rprintf("  Max abs error of above curve is %g\n",maxe);
 }
 
@@ -1618,19 +1690,22 @@ void TScientificGraph::fnLinreg(enum LinregType type, int iGraphNumberF, void (*
 			break;
 		 case LogLog:
 			// Power: Log(x) log(y) : y=a*x^b ; log(y)=log(a)+b*log(x)
-			pAGraph->y_vals[i]=c*pow(xi,m);
+			if(xi>0) pAGraph->y_vals[i]=c*pow(xi,m);
+			else pAGraph->y_vals[i]=0;
 			break;
 		 case RecipLin:
 			// 1/x : y=m/x+c
-			pAGraph->y_vals[i]=m*(xi==0? 3.4e38f : 1.0f/xi)+c;
+			pAGraph->y_vals[i]=m*(xi==0? 0.0 : 1.0f/xi)+c;
 			break;
 		 case LinRecip:
 			// 1/y : 1/y=m*x+c ;y=1/(m*x+c)
-			pAGraph->y_vals[i]=1.0/(m*xi+c);
+			if(m*xi+c==0) pAGraph->y_vals[i]=0.0;
+			else pAGraph->y_vals[i]=1.0/(m*xi+c);
 			break;
 		 case RecipRecip:
 			// Hyperbolic: 1/x,1/y : 1/y=m/x+c ;y=x/(m+c*x)
-			pAGraph->y_vals[i]=xi/(m+c*xi);
+			if(m+c*xi==0) pAGraph->y_vals[i]=0.0;
+			else pAGraph->y_vals[i]=xi/(m+c*xi);
 			break;
 		 case SqrtLin:
 			// sqrt(x): y=m*sqrt(x)+c
@@ -2086,84 +2161,597 @@ void TScientificGraph::compress_y(int iGraphNumberF) // compress by deleting poi
 
 
 // use my own version of quicksort as its not possible to easily use the built in version to sort x and keep y in the correct order
-void TScientificGraph::my_swap(int iGraphNumberF, int i, int j)
-{  // swap both x & y
- if(i==j) return; // just in case !
- SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
- float temp;
- temp = pAGraph->x_vals[i];
- pAGraph->x_vals[i] = pAGraph->x_vals[j];
- pAGraph->x_vals[j] = temp;
- temp = pAGraph->y_vals[i];
- pAGraph->y_vals[i] = pAGraph->y_vals[j];
- pAGraph->y_vals[j] = temp;
-}
+// #define CHECK_DEPTH /* this is defined (or not) in UScientificGraph.h file */
 
+// swap elements i and j - done as a macro for speed. Warning - uses xa[] and pAGraph directly.
+#define my_swap(i,j) {float temp;temp = xa[i];xa[i]=xa[j];xa[j]=temp;\
+  temp = pAGraph->y_vals[i];pAGraph->y_vals[i] = pAGraph->y_vals[j];pAGraph->y_vals[j] = temp;}
+
+  /* like my_swap(i,j) but checks i!=j before swap */
+#define my_swapc(i,j) if(i!=j){float temp;temp = xa[i];xa[i]=xa[j];xa[j]=temp;\
+  temp = pAGraph->y_vals[i];pAGraph->y_vals[i] = pAGraph->y_vals[j];pAGraph->y_vals[j] = temp;}
+
+  /* basic sort2(i,j) - does not check i<>j works on values p+i and p+j */
+#define Z(i,j) if(xa[p+i]>xa[p+j]){float temp;temp = xa[p+i];xa[p+i]=xa[p+j];xa[p+j]=temp;\
+  temp = pAGraph->y_vals[p+i];pAGraph->y_vals[p+i] = pAGraph->y_vals[p+j];pAGraph->y_vals[p+j] = temp;}
 
 /* myqsort: sort v[left]...v[right] into increasing order */
 /* this uses a quicksort algorithm
    It iterates to process the largest segment and uses recursive calls for the smallest segment so stack usage is small [ limited to log2(size) recursions max]
-   Uses random pivot element to avoid very bad worse case runtime thats possible with fixed or median pivot.
+   Uses random pivot element to avoid very bad worse case runtime (n^2) thats possible with fixed or median pivot.
+   When a segment has 32 elements or less an inline optimal sorting network is used
 */
+/* to convert to 64 bit we need to:
+ 1 - check _WIN64  where different code needed for 64 or 32 win addressing (eg random number generator in sort below)
+ 2 - use size_t for integers that need to be 32 or 64 bits depending on addressing mode
+ 3 - use 64 bit random number generator eg:
+ static uint64_t rn=UINT64_C(0xDEBADC7369FCA389); // non-zero 64 bit initialisation for random number generator
+
+uint64_t xorshift64()
+{
+	uint64_t x = rn;
+	x ^= x << 13;
+	x ^= x >> 7;
+	x ^= x << 17;
+	return rn = x;
+}
+
+*/
+static uint32_t rn=3103515245u; /* = 0xB8FB E26D non-zero initialisation for random number generator */
+#ifdef CHECK_DEPTH
+int maxdepth=0;
+void TScientificGraph::myqsort(int iGraphNumberF, int p, int r,int depth)
+{depth++;
+ if(depth>maxdepth) maxdepth=depth;
+#else
 void TScientificGraph::myqsort(int iGraphNumberF, int p, int r)
 {
+#endif
  SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
  float *xa=pAGraph->x_vals;
  float x;// pivot value
  int k;// pivot location  (left most)
- int l;
+ int r1;
  while(p < r)   /* iterate to process the largest segment */
-  {k=p;
-   l=r+1;
-   if (r == p + 1)
+  {r1=r-p;
+   switch(r1)
+   {// use optimal sorts for small sizes (2 to 32), each optimal sort terminates in a return statement
+	case 1:
 	 {  /* Two elements only - can trivially sort these */
 	  if (xa[p] > xa[r])
-		my_swap(iGraphNumberF,p,r);
+		my_swap(p,r);
 	  return ;
 	 }
-   /* select a random element to partition on - this should mean no sequence gives poor sorting performance */
-   /* this does add ~ 10% to sort time for the common case of "nearly sorted", but overall sort time is small so this is not really an issue */
-   static uint32_t rn=1103515245u; /* non-zero initialisation for random number generator */
-   uint32_t xn=rn; /* temp value for random number generator*/
-   /* Algorithm "xor" from p. 4 of Marsaglia, "Xorshift RNGs" coded inline for speed */
-   xn ^= xn << 13;
-   xn ^= xn >> 17;
-   xn ^= xn << 5;
-   rn= xn;
-   xn=p+xn%(r+1-p); // random value between p and r
-   my_swap(iGraphNumberF,p,xn);// swap random element to left  , does nothing if p==xn
+	case 2:
+	 {  /* Three elements only - can sort these inline from "Programming classics" page 162 section 6.1.2 Sort-3 */
+	  if (xa[p] > xa[p+1])
+		my_swap(p,p+1);   // X1, X2
+	  if (xa[p] > xa[r])
+		my_swap(p,r);     // X1, X3
+	  if (xa[p+1] > xa[r])
+		my_swap(p+1,r);   // X2,X3
+	  return ;
+	 }
+	case 3:
+	 {  /* four elements only - can sort these inline from "Programming classics" page 162 section 6.1.2 Sort-4 */
+	  if (xa[p] > xa[p+1])
+		my_swap(p,p+1);   // X1, X2
+	  if (xa[p+2] > xa[r])
+		my_swap(p+2,r);     // X3, X4
+	  if (xa[p] > xa[p+2])
+		my_swap(p,p+2);     // X1, X3
+	  if (xa[p+1] > xa[r])
+		my_swap(p+1,r);   // X2,X4
+	  if (xa[p+1] > xa[p+2])
+		my_swap(p+1,p+2);   // X2,X3
+	  return ;
+	 }
+	case 4:
+	{ /* five elements only - can sort these inline from "Programming classics" page 162 section 6.1.2 Sort-5 */
+	  /* sort3(X1,X2,X3) */
+	  if (xa[p] > xa[p+1])
+		my_swap(p,p+1);   // X1, X2
+	  if (xa[p] > xa[p+2])
+		my_swap(p,p+2);     // X1, X3
+	  if (xa[p+1] > xa[p+2])
+		my_swap(p+1,p+2);   // X2,X3
+	  // calls to sort(2)
+	  if (xa[p+3] > xa[p+4])
+		my_swap(p+3,p+4);   // X4, X5
+	  if (xa[p] > xa[p+3])
+		my_swap(p,p+3);   // X1 , X4
+	  if (xa[p+2] > xa[p+3])
+		my_swap(p+2,p+3);   // X3, X4
+	  if (xa[p+1] > xa[p+4])
+		my_swap(p+1,p+4);   // X2, X5
+	  if (xa[p+1] > xa[p+2])
+		my_swap(p+1,p+2);   // X2, X3
+	  if (xa[p+3] > xa[p+4])
+		my_swap(p+3,p+4);   // X4, X5
+	  return;
+	}
+	case 5:
+	{ /* six elements only - can sort these inline from "Programming classics" page 162 section 6.1.2 Sort-6 */
+	  /* sort3(X1,X2,X3) */
+	  if (xa[p] > xa[p+1])
+		my_swap(p,p+1);   // X1, X2
+	  if (xa[p] > xa[p+2])
+		my_swap(p,p+2);     // X1, X3
+	  if (xa[p+1] > xa[p+2])
+		my_swap(p+1,p+2);   // X2,X3
+	  /* sort3(X4,X5,X6) */
+	  if (xa[p+3] > xa[p+4])
+		my_swap(p+3,p+4);   // X4, X5
+	  if (xa[p+3] > xa[p+5])
+		my_swap(p+3,p+5);     // X4, X6
+	  if (xa[p+4] > xa[p+5])
+		my_swap(p+4,p+5);   // X5,X6
+	  // calls to sort(2)
+	  if (xa[p] > xa[p+3])
+		my_swap(p,p+3);   // X1 , X4
+	  if (xa[p+2] > xa[p+5])
+		my_swap(p+2,p+5);   // X3, X6
+	  if (xa[p+2] > xa[p+3])
+		my_swap(p+2,p+3);   // X3, X4
+	  if (xa[p+1] > xa[p+4])
+		my_swap(p+1,p+4);   // X2, X5
+	  if (xa[p+1] > xa[p+2])
+		my_swap(p+1,p+2);   // X2, X3
+	  if (xa[p+3] > xa[p+4])
+		my_swap(p+3,p+4);   // X4, X5
+	  return;
+	}
+	case 6: // sort7() from http://users.telenet.be/bertdobbelaere/SorterHunter/sorting_networks.html
+	{ 	Z(0,6);Z(2,3);Z(4,5);
+		Z(0,2);Z(1,4);Z(3,6);
+		Z(0,1);Z(2,5);Z(3,4);
+		Z(1,2);Z(4,6);
+		Z(2,3);Z(4,5);
+		Z(1,2);Z(3,4);Z(5,6);
+	  return;
+	}
+	case 7: // sort8() from http://users.telenet.be/bertdobbelaere/SorterHunter/sorting_networks.html
+	{ 	Z(0,2);Z(1,3);Z(4,6);Z(5,7);
+		Z(0,4);Z(1,5);Z(2,6);Z(3,7);
+		Z(0,1);Z(2,3);Z(4,5);Z(6,7);
+		Z(2,4);Z(3,5);
+		Z(1,4);Z(3,6);
+		Z(1,2);Z(3,4);Z(5,6);
+	  return;
+	}
+	case 8: // sort9() from http://users.telenet.be/bertdobbelaere/SorterHunter/sorting_networks.html
+	{ 	Z(0,3);Z(1,7);Z(2,5);Z(4,8);
+		Z(0,7);Z(2,4);Z(3,8);Z(5,6);
+		Z(0,2);Z(1,3);Z(4,5);Z(7,8);
+		Z(1,4);Z(3,6);Z(5,7);
+		Z(0,1);Z(2,4);Z(3,5);Z(6,8);
+		Z(2,3);Z(4,5);Z(6,7);
+		Z(1,2);Z(3,4);Z(5,6);
+	  return;
+	}
+	case 9: // sort10() from http://users.telenet.be/bertdobbelaere/SorterHunter/sorting_networks.html
+	{   Z(0,8);Z(1,9);Z(2,7);Z(3,5);Z(4,6);
+		Z(0,2);Z(1,4);Z(5,8);Z(7,9);
+		Z(0,3);Z(2,4);Z(5,7);Z(6,9);
+		Z(0,1);Z(3,6);Z(8,9);
+		Z(1,5);Z(2,3);Z(4,8);Z(6,7);
+		Z(1,2);Z(3,5);Z(4,6);Z(7,8);
+		Z(2,3);Z(4,5);Z(6,7);
+		Z(3,4);Z(5,6);
+	  return;
+	}
+	case 10: // sort11() from http://users.telenet.be/bertdobbelaere/SorterHunter/sorting_networks.html
+	{  	Z(0,9);Z(1,6);Z(2,4);Z(3,7);Z(5,8);
+		Z(0,1);Z(3,5);Z(4,10);Z(6,9);Z(7,8);
+		Z(1,3);Z(2,5);Z(4,7);Z(8,10);
+		Z(0,4);Z(1,2);Z(3,7);Z(5,9);Z(6,8);
+		Z(0,1);Z(2,6);Z(4,5);Z(7,8);Z(9,10);
+		Z(2,4);Z(3,6);Z(5,7);Z(8,9);
+		Z(1,2);Z(3,4);Z(5,6);Z(7,8);
+		Z(2,3);Z(4,5);Z(6,7);
+	  return;
+	}
+	case 11: // sort12() from http://users.telenet.be/bertdobbelaere/SorterHunter/sorting_networks.html
+	{   Z(0,8);Z(1,7);Z(2,6);Z(3,11);Z(4,10);Z(5,9);
+		Z(0,1);Z(2,5);Z(3,4);Z(6,9);Z(7,8);Z(10,11);
+		Z(0,2);Z(1,6);Z(5,10);Z(9,11);
+		Z(0,3);Z(1,2);Z(4,6);Z(5,7);Z(8,11);Z(9,10);
+		Z(1,4);Z(3,5);Z(6,8);Z(7,10);
+		Z(1,3);Z(2,5);Z(6,9);Z(8,10);
+		Z(2,3);Z(4,5);Z(6,7);Z(8,9);
+		Z(4,6);Z(5,7);
+		Z(3,4);Z(5,6);Z(7,8);
+	  return;
+	}
+	case 12: // sort13() from http://users.telenet.be/bertdobbelaere/SorterHunter/sorting_networks.html
+	{   Z(0,12);Z(1,10);Z(2,9);Z(3,7);Z(5,11);Z(6,8);
+		Z(1,6);Z(2,3);Z(4,11);Z(7,9);Z(8,10);
+		Z(0,4);Z(1,2);Z(3,6);Z(7,8);Z(9,10);Z(11,12);
+		Z(4,6);Z(5,9);Z(8,11);Z(10,12);
+		Z(0,5);Z(3,8);Z(4,7);Z(6,11);Z(9,10);
+		Z(0,1);Z(2,5);Z(6,9);Z(7,8);Z(10,11);
+		Z(1,3);Z(2,4);Z(5,6);Z(9,10);
+		Z(1,2);Z(3,4);Z(5,7);Z(6,8);
+		Z(2,3);Z(4,5);Z(6,7);Z(8,9);
+		Z(3,4);Z(5,6);
+	  return;
+	}
+	case 13: // sort14() from http://users.telenet.be/bertdobbelaere/SorterHunter/sorting_networks.html
+	{   Z(0,6);Z(1,11);Z(2,12);Z(3,10);Z(4,5);Z(7,13);Z(8,9);
+		Z(1,2);Z(3,7);Z(4,8);Z(5,9);Z(6,10);Z(11,12);
+		Z(0,4);Z(1,3);Z(5,6);Z(7,8);Z(9,13);Z(10,12);
+		Z(0,1);Z(2,9);Z(3,7);Z(4,11);Z(6,10);Z(12,13);
+		Z(2,5);Z(4,7);Z(6,9);Z(8,11);
+		Z(1,2);Z(3,4);Z(6,7);Z(9,10);Z(11,12);
+		Z(1,3);Z(2,4);Z(5,6);Z(7,8);Z(9,11);Z(10,12);
+		Z(2,3);Z(4,7);Z(6,9);Z(10,11);
+		Z(4,5);Z(6,7);Z(8,9);
+		Z(3,4);Z(5,6);Z(7,8);Z(9,10);
+	  return;
+	}
+	case 14: // sort15() from http://users.telenet.be/bertdobbelaere/SorterHunter/sorting_networks.html
+	{   Z(1,2);Z(3,10);Z(4,14);Z(5,8);Z(6,13);Z(7,12);Z(9,11);
+		Z(0,14);Z(1,5);Z(2,8);Z(3,7);Z(6,9);Z(10,12);Z(11,13);
+		Z(0,7);Z(1,6);Z(2,9);Z(4,10);Z(5,11);Z(8,13);Z(12,14);
+		Z(0,6);Z(2,4);Z(3,5);Z(7,11);Z(8,10);Z(9,12);Z(13,14);
+		Z(0,3);Z(1,2);Z(4,7);Z(5,9);Z(6,8);Z(10,11);Z(12,13);
+		Z(0,1);Z(2,3);Z(4,6);Z(7,9);Z(10,12);Z(11,13);
+		Z(1,2);Z(3,5);Z(8,10);Z(11,12);
+		Z(3,4);Z(5,6);Z(7,8);Z(9,10);
+		Z(2,3);Z(4,5);Z(6,7);Z(8,9);Z(10,11);
+		Z(5,6);Z(7,8);
+	  return;
+	}
+	case 15: // sort16() from http://users.telenet.be/bertdobbelaere/SorterHunter/sorting_networks.html
+	{   Z(0,13);Z(1,12);Z(2,15);Z(3,14);Z(4,8);Z(5,6);Z(7,11);Z(9,10);
+		Z(0,5);Z(1,7);Z(2,9);Z(3,4);Z(6,13);Z(8,14);Z(10,15);Z(11,12);
+		Z(0,1);Z(2,3);Z(4,5);Z(6,8);Z(7,9);Z(10,11);Z(12,13);Z(14,15);
+		Z(0,2);Z(1,3);Z(4,10);Z(5,11);Z(6,7);Z(8,9);Z(12,14);Z(13,15);
+		Z(1,2);Z(3,12);Z(4,6);Z(5,7);Z(8,10);Z(9,11);Z(13,14);
+		Z(1,4);Z(2,6);Z(5,8);Z(7,10);Z(9,13);Z(11,14);
+		Z(2,4);Z(3,6);Z(9,12);Z(11,13);
+		Z(3,5);Z(6,8);Z(7,9);Z(10,12);
+		Z(3,4);Z(5,6);Z(7,8);Z(9,10);Z(11,12);
+		Z(6,7);Z(8,9);
+	  return;
+	}
+	case 16: // sort17() from http://users.telenet.be/bertdobbelaere/SorterHunter/sorting_networks.html
+	{   Z(0,11);Z(1,15);Z(2,10);Z(3,5);Z(4,6);Z(8,12);Z(9,16);Z(13,14);
+		Z(0,6);Z(1,13);Z(2,8);Z(4,14);Z(5,15);Z(7,11);
+		Z(0,8);Z(3,7);Z(4,9);Z(6,16);Z(10,11);Z(12,14);
+		Z(0,2);Z(1,4);Z(5,6);Z(7,13);Z(8,9);Z(10,12);Z(11,14);Z(15,16);
+		Z(0,3);Z(2,5);Z(6,11);Z(7,10);Z(9,13);Z(12,15);Z(14,16);
+		Z(0,1);Z(3,4);Z(5,10);Z(6,9);Z(7,8);Z(11,15);Z(13,14);
+		Z(1,2);Z(3,7);Z(4,8);Z(6,12);Z(11,13);Z(14,15);
+		Z(1,3);Z(2,7);Z(4,5);Z(9,11);Z(10,12);Z(13,14);
+		Z(2,3);Z(4,6);Z(5,7);Z(8,10);
+		Z(3,4);Z(6,8);Z(7,9);Z(10,12);
+		Z(5,6);Z(7,8);Z(9,10);Z(11,12);
+		Z(4,5);Z(6,7);Z(8,9);Z(10,11);Z(12,13);
+	  return;
+	}
+	case 17: // sort18() from http://users.telenet.be/bertdobbelaere/SorterHunter/sorting_networks.html
+	{   Z(0,1);Z(2,3);Z(4,5);Z(6,7);Z(8,9);Z(10,11);Z(12,13);Z(14,15);Z(16,17);
+		Z(1,5);Z(2,6);Z(3,7);Z(4,10);Z(8,16);Z(9,17);Z(12,14);Z(13,15);
+		Z(0,8);Z(1,10);Z(2,12);Z(3,14);Z(6,13);Z(7,15);Z(9,16);Z(11,17);
+		Z(0,4);Z(1,9);Z(5,17);Z(8,11);Z(10,16);
+		Z(0,2);Z(1,6);Z(4,10);Z(5,9);Z(14,16);Z(15,17);
+		Z(1,2);Z(3,10);Z(4,12);Z(5,7);Z(6,14);Z(9,13);Z(15,16);
+		Z(3,8);Z(5,12);Z(7,11);Z(9,10);
+		Z(3,4);Z(6,8);Z(7,14);Z(9,12);Z(11,13);
+		Z(1,3);Z(2,4);Z(7,9);Z(8,12);Z(11,15);Z(13,16);
+		Z(2,3);Z(4,5);Z(6,7);Z(10,11);Z(12,14);Z(13,15);
+		Z(4,6);Z(5,8);Z(9,10);Z(11,14);
+		Z(3,4);Z(5,7);Z(8,9);Z(10,12);Z(13,14);
+		Z(5,6);Z(7,8);Z(9,10);Z(11,12);
+	  return;
+	}
+	case 18: // sort19() from http://users.telenet.be/bertdobbelaere/SorterHunter/sorting_networks.html
+	{   Z(0,12);Z(1,4);Z(2,8);Z(3,5);Z(6,17);Z(7,11);Z(9,14);Z(10,13);Z(15,16);
+		Z(0,2);Z(1,7);Z(3,6);Z(4,11);Z(5,17);Z(8,12);Z(10,15);Z(13,16);Z(14,18);
+		Z(3,10);Z(4,14);Z(5,15);Z(6,13);Z(7,9);Z(11,17);Z(16,18);
+		Z(0,7);Z(1,10);Z(4,6);Z(9,15);Z(11,16);Z(12,17);Z(13,14);
+		Z(0,3);Z(2,6);Z(5,7);Z(8,11);Z(12,16);
+		Z(1,8);Z(2,9);Z(3,4);Z(6,15);Z(7,13);Z(10,11);Z(12,18);
+		Z(1,3);Z(2,5);Z(6,9);Z(7,12);Z(8,10);Z(11,14);Z(17,18);
+		Z(0,1);Z(2,3);Z(4,8);Z(6,10);Z(9,12);Z(14,15);Z(16,17);
+		Z(1,2);Z(5,8);Z(6,7);Z(9,11);Z(10,13);Z(14,16);Z(15,17);
+		Z(3,6);Z(4,5);Z(7,9);Z(8,10);Z(11,12);Z(13,14);Z(15,16);
+		Z(3,4);Z(5,6);Z(7,8);Z(9,10);Z(11,13);Z(12,14);
+		Z(2,3);Z(4,5);Z(6,7);Z(8,9);Z(10,11);Z(12,13);Z(14,15);
+	  return;
+	}
+	case 19: // sort20() from http://users.telenet.be/bertdobbelaere/SorterHunter/sorting_networks.html
+	{   Z(0,3);Z(1,7);Z(2,5);Z(4,8);Z(6,9);Z(10,13);Z(11,15);Z(12,18);Z(14,17);Z(16,19);
+		Z(0,14);Z(1,11);Z(2,16);Z(3,17);Z(4,12);Z(5,19);Z(6,10);Z(7,15);Z(8,18);Z(9,13);
+		Z(0,4);Z(1,2);Z(3,8);Z(5,7);Z(11,16);Z(12,14);Z(15,19);Z(17,18);
+		Z(1,6);Z(2,12);Z(3,5);Z(4,11);Z(7,17);Z(8,15);Z(13,18);Z(14,16);
+		Z(0,1);Z(2,6);Z(7,10);Z(9,12);Z(13,17);Z(18,19);
+		Z(1,6);Z(5,9);Z(7,11);Z(8,12);Z(10,14);Z(13,18);
+		Z(3,5);Z(4,7);Z(8,10);Z(9,11);Z(12,15);Z(14,16);
+		Z(1,3);Z(2,4);Z(5,7);Z(6,10);Z(9,13);Z(12,14);Z(15,17);Z(16,18);
+		Z(1,2);Z(3,4);Z(6,7);Z(8,9);Z(10,11);Z(12,13);Z(15,16);Z(17,18);
+		Z(2,3);Z(4,6);Z(5,8);Z(7,9);Z(10,12);Z(11,14);Z(13,15);Z(16,17);
+		Z(4,5);Z(6,8);Z(7,10);Z(9,12);Z(11,13);Z(14,15);
+		Z(3,4);Z(5,6);Z(7,8);Z(9,10);Z(11,12);Z(13,14);Z(15,16);
+	  return;
+	}
+	case 20: // sort21() from http://users.telenet.be/bertdobbelaere/SorterHunter/sorting_networks.html
+	{   Z(0,7);Z(1,10);Z(3,5);Z(4,8);Z(6,13);Z(9,19);Z(11,14);Z(12,17);Z(15,16);Z(18,20);
+		Z(0,11);Z(1,15);Z(2,12);Z(3,4);Z(5,8);Z(6,9);Z(7,14);Z(10,16);Z(13,19);Z(17,20);
+		Z(0,6);Z(1,3);Z(2,18);Z(4,15);Z(5,10);Z(8,16);Z(11,17);Z(12,13);Z(14,20);
+		Z(2,6);Z(5,12);Z(7,18);Z(8,14);Z(9,11);Z(10,17);Z(13,19);Z(16,20);
+		Z(1,2);Z(4,7);Z(5,9);Z(6,17);Z(10,13);Z(11,12);Z(14,19);Z(15,18);
+		Z(0,2);Z(3,6);Z(4,5);Z(7,10);Z(8,11);Z(9,15);Z(12,16);Z(13,18);Z(14,17);Z(19,20);
+		Z(0,1);Z(2,3);Z(5,9);Z(6,12);Z(7,8);Z(11,14);Z(13,15);Z(16,19);Z(17,18);
+		Z(1,2);Z(3,9);Z(6,13);Z(10,11);Z(12,15);Z(16,17);Z(18,19);
+		Z(1,4);Z(2,5);Z(3,7);Z(6,10);Z(8,9);Z(11,12);Z(13,14);Z(17,18);
+		Z(2,4);Z(5,6);Z(7,8);Z(9,11);Z(10,13);Z(12,15);Z(14,16);
+		Z(3,4);Z(5,7);Z(6,8);Z(9,10);Z(11,13);Z(12,14);Z(15,16);
+		Z(4,5);Z(6,7);Z(8,9);Z(10,11);Z(12,13);Z(14,15);Z(16,17);
+	  return;
+	}
+	case 21: // sort22() from http://users.telenet.be/bertdobbelaere/SorterHunter/sorting_networks.html
+	{   Z(0,1);Z(2,3);Z(4,5);Z(6,7);Z(8,9);Z(10,11);Z(12,13);Z(14,15);Z(16,17);Z(18,19);Z(20,21);
+		Z(0,12);Z(1,13);Z(2,6);Z(3,7);Z(4,10);Z(8,20);Z(9,21);Z(11,17);Z(14,18);Z(15,19);
+		Z(0,2);Z(1,6);Z(3,12);Z(4,16);Z(5,17);Z(7,13);Z(8,14);Z(9,18);Z(15,20);Z(19,21);
+		Z(0,8);Z(1,15);Z(2,14);Z(3,9);Z(5,11);Z(6,20);Z(7,19);Z(10,16);Z(12,18);Z(13,21);
+		Z(0,4);Z(1,10);Z(3,8);Z(5,9);Z(7,14);Z(11,20);Z(12,16);Z(13,18);Z(17,21);
+		Z(1,3);Z(2,5);Z(4,8);Z(6,9);Z(7,10);Z(11,14);Z(12,15);Z(13,17);Z(16,19);Z(18,20);
+		Z(2,4);Z(3,12);Z(5,8);Z(6,11);Z(9,18);Z(10,15);Z(13,16);Z(17,19);
+		Z(1,2);Z(3,4);Z(5,7);Z(6,12);Z(8,11);Z(9,15);Z(10,13);Z(14,16);Z(17,18);Z(19,20);
+		Z(2,3);Z(4,5);Z(7,12);Z(8,10);Z(9,14);Z(11,13);Z(16,17);Z(18,19);
+		Z(4,6);Z(5,8);Z(9,11);Z(10,12);Z(13,16);Z(15,17);
+		Z(3,4);Z(6,7);Z(9,10);Z(11,12);Z(14,15);Z(17,18);
+		Z(5,6);Z(7,8);Z(10,11);Z(13,14);Z(15,16);
+		Z(6,7);Z(8,9);Z(12,13);Z(14,15);
+	  return;
+	}
+	case 22: // sort23() from http://users.telenet.be/bertdobbelaere/SorterHunter/sorting_networks.html
+	{   Z(0,20);Z(1,12);Z(2,16);Z(4,6);Z(5,10);Z(7,21);Z(8,14);Z(9,15);Z(11,22);Z(13,18);Z(17,19);
+		Z(0,3);Z(1,11);Z(2,7);Z(4,17);Z(5,13);Z(6,19);Z(8,9);Z(10,18);Z(12,22);Z(14,15);Z(16,21);
+		Z(0,1);Z(2,4);Z(3,12);Z(5,8);Z(6,9);Z(7,10);Z(11,20);Z(13,16);Z(14,17);Z(15,18);Z(19,21);
+		Z(2,5);Z(4,8);Z(6,11);Z(7,14);Z(9,16);Z(12,17);Z(15,19);Z(18,21);
+		Z(1,8);Z(3,14);Z(4,7);Z(9,20);Z(10,12);Z(11,13);Z(15,22);Z(16,19);
+		Z(0,7);Z(1,5);Z(3,4);Z(6,11);Z(8,15);Z(9,14);Z(10,13);Z(12,17);Z(18,22);Z(19,20);
+		Z(0,2);Z(1,6);Z(4,7);Z(5,9);Z(8,10);Z(13,15);Z(14,18);Z(16,19);Z(17,22);Z(20,21);
+		Z(2,3);Z(4,5);Z(6,8);Z(7,9);Z(10,11);Z(12,13);Z(14,16);Z(15,17);Z(18,19);Z(21,22);
+		Z(1,2);Z(3,6);Z(4,10);Z(7,8);Z(9,11);Z(12,14);Z(13,19);Z(15,16);Z(17,20);
+		Z(2,3);Z(5,10);Z(6,7);Z(8,9);Z(13,18);Z(14,15);Z(16,17);Z(20,21);
+		Z(3,4);Z(5,7);Z(10,12);Z(11,13);Z(16,18);Z(19,20);
+		Z(4,6);Z(8,10);Z(9,12);Z(11,14);Z(13,15);Z(17,19);
+		Z(5,6);Z(7,8);Z(9,10);Z(11,12);Z(13,14);Z(15,16);Z(17,18);
+	  return;
+	}
+	case 23: // sort24() from http://users.telenet.be/bertdobbelaere/SorterHunter/sorting_networks.html
+	{   Z(0,20);Z(1,12);Z(2,16);Z(3,23);Z(4,6);Z(5,10);Z(7,21);Z(8,14);Z(9,15);Z(11,22);Z(13,18);Z(17,19);
+		Z(0,3);Z(1,11);Z(2,7);Z(4,17);Z(5,13);Z(6,19);Z(8,9);Z(10,18);Z(12,22);Z(14,15);Z(16,21);Z(20,23);
+		Z(0,1);Z(2,4);Z(3,12);Z(5,8);Z(6,9);Z(7,10);Z(11,20);Z(13,16);Z(14,17);Z(15,18);Z(19,21);Z(22,23);
+		Z(2,5);Z(4,8);Z(6,11);Z(7,14);Z(9,16);Z(12,17);Z(15,19);Z(18,21);
+		Z(1,8);Z(3,14);Z(4,7);Z(9,20);Z(10,12);Z(11,13);Z(15,22);Z(16,19);
+		Z(0,7);Z(1,5);Z(3,4);Z(6,11);Z(8,15);Z(9,14);Z(10,13);Z(12,17);Z(16,23);Z(18,22);Z(19,20);
+		Z(0,2);Z(1,6);Z(4,7);Z(5,9);Z(8,10);Z(13,15);Z(14,18);Z(16,19);Z(17,22);Z(21,23);
+		Z(2,3);Z(4,5);Z(6,8);Z(7,9);Z(10,11);Z(12,13);Z(14,16);Z(15,17);Z(18,19);Z(20,21);
+		Z(1,2);Z(3,6);Z(4,10);Z(7,8);Z(9,11);Z(12,14);Z(13,19);Z(15,16);Z(17,20);Z(21,22);
+		Z(2,3);Z(5,10);Z(6,7);Z(8,9);Z(13,18);Z(14,15);Z(16,17);Z(20,21);
+		Z(3,4);Z(5,7);Z(10,12);Z(11,13);Z(16,18);Z(19,20);
+		Z(4,6);Z(8,10);Z(9,12);Z(11,14);Z(13,15);Z(17,19);
+		Z(5,6);Z(7,8);Z(9,10);Z(11,12);Z(13,14);Z(15,16);Z(17,18);
+	  return;
+	}
+	case 24: // sort25() from http://users.telenet.be/bertdobbelaere/SorterHunter/sorting_networks.html
+	{   Z(0,2);Z(1,8);Z(3,18);Z(4,17);Z(5,20);Z(6,19);Z(7,9);Z(10,11);Z(12,13);Z(14,16);Z(15,22);Z(21,23);
+		Z(0,3);Z(1,15);Z(2,18);Z(4,12);Z(5,21);Z(6,10);Z(7,14);Z(8,22);Z(9,16);Z(11,19);Z(13,17);Z(20,23);
+		Z(0,4);Z(1,7);Z(2,13);Z(3,12);Z(5,6);Z(8,14);Z(9,15);Z(10,21);Z(11,20);Z(16,22);Z(17,18);Z(19,23);
+		Z(0,5);Z(2,11);Z(3,6);Z(4,10);Z(7,16);Z(8,9);Z(12,21);Z(13,19);Z(14,15);Z(17,20);Z(18,23);
+		Z(2,7);Z(6,9);Z(8,11);Z(14,24);Z(18,21);
+		Z(3,8);Z(7,10);Z(11,12);Z(13,14);Z(15,21);Z(18,20);Z(22,24);
+		Z(4,13);Z(10,16);Z(11,15);Z(18,24);Z(19,22);
+		Z(1,4);Z(8,11);Z(9,19);Z(13,17);Z(14,18);Z(16,20);Z(23,24);
+		Z(0,1);Z(4,5);Z(6,13);Z(9,14);Z(10,17);Z(12,16);Z(18,19);Z(20,21);Z(22,23);
+		Z(2,6);Z(3,4);Z(5,13);Z(7,9);Z(12,18);Z(15,17);Z(16,19);Z(20,22);Z(21,23);
+		Z(1,2);Z(5,8);Z(6,7);Z(9,10);Z(11,13);Z(14,15);Z(17,20);Z(21,22);
+		Z(1,3);Z(2,4);Z(5,6);Z(7,11);Z(8,9);Z(10,13);Z(12,14);Z(15,16);Z(17,18);Z(19,20);
+		Z(2,3);Z(4,8);Z(6,7);Z(9,12);Z(10,11);Z(13,14);Z(15,17);Z(16,18);Z(20,21);
+		Z(3,5);Z(4,6);Z(7,8);Z(9,10);Z(11,12);Z(13,15);Z(14,17);Z(16,19);
+		Z(4,5);Z(6,7);Z(8,9);Z(10,11);Z(12,13);Z(14,15);Z(16,17);Z(18,19);
+	  return;
+	}
+	case 25: // sort26() from http://users.telenet.be/bertdobbelaere/SorterHunter/sorting_networks.html
+	{   Z(0,25);Z(1,3);Z(2,9);Z(4,19);Z(5,18);Z(6,21);Z(7,20);Z(8,10);Z(11,12);Z(13,14);Z(15,17);Z(16,23);Z(22,24);
+		Z(1,4);Z(2,16);Z(3,19);Z(5,13);Z(6,22);Z(7,11);Z(8,15);Z(9,23);Z(10,17);Z(12,20);Z(14,18);Z(21,24);
+		Z(1,5);Z(2,8);Z(3,14);Z(4,13);Z(6,7);Z(9,15);Z(10,16);Z(11,22);Z(12,21);Z(17,23);Z(18,19);Z(20,24);
+		Z(0,10);Z(1,6);Z(3,7);Z(4,11);Z(5,12);Z(13,20);Z(14,21);Z(15,25);Z(18,22);Z(19,24);
+		Z(0,4);Z(8,10);Z(12,13);Z(15,17);Z(21,25);
+		Z(0,2);Z(4,8);Z(10,12);Z(13,15);Z(17,21);Z(23,25);
+		Z(0,1);Z(2,3);Z(4,5);Z(8,14);Z(9,13);Z(11,17);Z(12,16);Z(20,21);Z(22,23);Z(24,25);
+		Z(1,4);Z(3,10);Z(6,9);Z(7,13);Z(8,11);Z(12,18);Z(14,17);Z(15,22);Z(16,19);Z(21,24);
+		Z(2,6);Z(3,8);Z(5,7);Z(9,12);Z(13,16);Z(17,22);Z(18,20);Z(19,23);
+		Z(1,2);Z(4,6);Z(5,9);Z(7,10);Z(11,12);Z(13,14);Z(15,18);Z(16,20);Z(19,21);Z(23,24);
+		Z(2,4);Z(3,5);Z(7,13);Z(8,9);Z(10,14);Z(11,15);Z(12,18);Z(16,17);Z(20,22);Z(21,23);
+		Z(3,4);Z(6,9);Z(7,11);Z(10,12);Z(13,15);Z(14,18);Z(16,19);Z(21,22);
+		Z(5,7);Z(6,8);Z(9,13);Z(10,11);Z(12,16);Z(14,15);Z(17,19);Z(18,20);
+		Z(5,6);Z(7,8);Z(9,10);Z(11,13);Z(12,14);Z(15,16);Z(17,18);Z(19,20);
+		Z(4,5);Z(6,7);Z(8,9);Z(10,11);Z(12,13);Z(14,15);Z(16,17);Z(18,19);Z(20,21);
+	  return;
+	}
+	case 26: // sort27() from http://users.telenet.be/bertdobbelaere/SorterHunter/sorting_networks.html
+	{   Z(0,9);Z(1,6);Z(2,4);Z(3,7);Z(5,8);Z(11,24);Z(12,23);Z(13,26);Z(14,25);Z(15,19);Z(16,17);Z(18,22);Z(20,21);
+		Z(0,1);Z(3,5);Z(4,10);Z(6,9);Z(7,8);Z(11,16);Z(12,18);Z(13,20);Z(14,15);Z(17,24);Z(19,25);Z(21,26);Z(22,23);
+		Z(1,3);Z(2,5);Z(4,7);Z(8,10);Z(11,12);Z(13,14);Z(15,16);Z(17,19);Z(18,20);Z(21,22);Z(23,24);Z(25,26);
+		Z(0,4);Z(1,2);Z(3,7);Z(5,9);Z(6,8);Z(11,13);Z(12,14);Z(15,21);Z(16,22);Z(17,18);Z(19,20);Z(23,25);Z(24,26);
+		Z(0,1);Z(2,6);Z(4,5);Z(7,8);Z(9,10);Z(12,13);Z(14,23);Z(15,17);Z(16,18);Z(19,21);Z(20,22);Z(24,25);
+		Z(0,11);Z(2,4);Z(3,6);Z(5,7);Z(8,9);Z(12,15);Z(13,17);Z(16,19);Z(18,21);Z(20,24);Z(22,25);
+		Z(1,2);Z(3,4);Z(5,6);Z(7,8);Z(13,15);Z(14,17);Z(20,23);Z(22,24);
+		Z(1,12);Z(2,3);Z(4,5);Z(6,7);Z(14,16);Z(17,19);Z(18,20);Z(21,23);
+		Z(2,13);Z(14,15);Z(16,17);Z(18,19);Z(20,21);Z(22,23);
+		Z(3,14);Z(4,15);Z(5,16);Z(10,21);Z(17,18);Z(19,20);
+		Z(6,17);Z(7,18);Z(8,19);Z(9,20);Z(10,13);Z(14,22);Z(15,23);Z(16,24);
+		Z(6,10);Z(7,14);Z(8,11);Z(9,12);Z(17,25);Z(18,26);Z(19,23);Z(20,24);
+		Z(4,8);Z(5,9);Z(11,15);Z(12,16);Z(13,17);Z(18,22);Z(21,25);Z(24,26);
+		Z(2,4);Z(3,5);Z(6,8);Z(7,9);Z(10,11);Z(12,14);Z(13,15);Z(16,18);Z(17,19);Z(20,22);Z(21,23);Z(25,26);
+		Z(1,2);Z(3,4);Z(5,6);Z(7,8);Z(9,10);Z(11,12);Z(13,14);Z(15,16);Z(17,18);Z(19,20);Z(21,22);Z(23,24);
+	  return;
+	}
+	case 27: // sort28() from http://users.telenet.be/bertdobbelaere/SorterHunter/sorting_networks.html
+	{   Z(0,9);Z(1,20);Z(2,21);Z(3,22);Z(4,19);Z(5,24);Z(6,25);Z(7,26);Z(8,23);Z(10,15);Z(11,13);Z(12,17);Z(14,16);Z(18,27);
+		Z(0,18);Z(1,7);Z(2,6);Z(3,5);Z(4,8);Z(9,27);Z(10,12);Z(11,14);Z(13,16);Z(15,17);Z(19,23);Z(20,26);Z(21,25);Z(22,24);
+		Z(1,2);Z(3,4);Z(5,19);Z(6,20);Z(7,21);Z(8,22);Z(9,18);Z(10,11);Z(12,14);Z(13,15);Z(16,17);Z(23,24);Z(25,26);
+		Z(0,3);Z(1,10);Z(5,8);Z(6,7);Z(11,13);Z(14,16);Z(17,26);Z(19,22);Z(20,21);Z(24,27);
+		Z(0,1);Z(2,7);Z(3,10);Z(4,8);Z(12,13);Z(14,15);Z(17,24);Z(19,23);Z(20,25);Z(26,27);
+		Z(1,3);Z(2,6);Z(4,5);Z(7,19);Z(8,20);Z(11,12);Z(13,14);Z(15,16);Z(21,25);Z(22,23);Z(24,26);
+		Z(2,4);Z(5,12);Z(7,8);Z(9,11);Z(10,14);Z(13,17);Z(15,22);Z(16,18);Z(19,20);Z(23,25);
+		Z(2,9);Z(4,11);Z(5,6);Z(7,13);Z(8,10);Z(14,20);Z(16,23);Z(17,19);Z(18,25);Z(21,22);
+		Z(1,2);Z(3,16);Z(4,9);Z(6,12);Z(10,14);Z(11,24);Z(13,17);Z(15,21);Z(18,23);Z(25,26);
+		Z(2,8);Z(3,5);Z(4,7);Z(6,16);Z(9,15);Z(11,21);Z(12,18);Z(19,25);Z(20,23);Z(22,24);
+		Z(2,3);Z(5,8);Z(7,9);Z(11,15);Z(12,16);Z(18,20);Z(19,22);Z(24,25);
+		Z(6,8);Z(10,12);Z(11,13);Z(14,16);Z(15,17);Z(19,21);
+		Z(5,6);Z(8,10);Z(9,11);Z(12,13);Z(14,15);Z(16,18);Z(17,19);Z(21,22);
+		Z(4,5);Z(6,7);Z(8,9);Z(10,11);Z(12,14);Z(13,15);Z(16,17);Z(18,19);Z(20,21);Z(22,23);
+		Z(3,4);Z(5,6);Z(7,8);Z(9,10);Z(11,12);Z(13,14);Z(15,16);Z(17,18);Z(19,20);Z(21,22);Z(23,24);
+	  return;
+	}
+	case 28: // sort29() from http://users.telenet.be/bertdobbelaere/SorterHunter/sorting_networks.html
+	{   Z(0,12);Z(1,10);Z(2,9);Z(3,7);Z(5,11);Z(6,8);Z(13,26);Z(14,25);Z(15,28);Z(16,27);Z(17,21);Z(18,19);Z(20,24);Z(22,23);
+		Z(1,6);Z(2,3);Z(4,11);Z(7,9);Z(8,10);Z(13,18);Z(14,20);Z(15,22);Z(16,17);Z(19,26);Z(21,27);Z(23,28);Z(24,25);
+		Z(0,4);Z(1,2);Z(3,6);Z(7,8);Z(9,10);Z(11,12);Z(13,14);Z(15,16);Z(17,18);Z(19,21);Z(20,22);Z(23,24);Z(25,26);Z(27,28);
+		Z(4,6);Z(5,9);Z(8,11);Z(10,12);Z(13,15);Z(14,16);Z(17,23);Z(18,24);Z(19,20);Z(21,22);Z(25,27);Z(26,28);
+		Z(0,5);Z(3,8);Z(4,7);Z(6,11);Z(9,10);Z(14,15);Z(16,25);Z(17,19);Z(18,20);Z(21,23);Z(22,24);Z(26,27);
+		Z(0,1);Z(2,5);Z(6,9);Z(7,8);Z(10,11);Z(14,17);Z(15,19);Z(18,21);Z(20,23);Z(22,26);Z(24,27);
+		Z(0,13);Z(1,3);Z(2,4);Z(5,6);Z(9,10);Z(15,17);Z(16,19);Z(22,25);Z(24,26);
+		Z(1,2);Z(3,4);Z(5,7);Z(6,8);Z(16,18);Z(19,21);Z(20,22);Z(23,25);
+		Z(1,14);Z(2,3);Z(4,5);Z(6,7);Z(8,9);Z(16,17);Z(18,19);Z(20,21);Z(22,23);Z(24,25);
+		Z(2,15);Z(3,4);Z(5,6);Z(10,23);Z(11,24);Z(12,25);Z(19,20);Z(21,22);
+		Z(3,16);Z(4,17);Z(5,18);Z(6,19);Z(7,20);Z(8,21);Z(9,22);Z(10,15);
+		Z(6,10);Z(8,13);Z(9,14);Z(11,16);Z(12,17);Z(18,26);Z(19,27);Z(20,28);
+		Z(4,8);Z(5,9);Z(7,11);Z(12,13);Z(14,18);Z(15,19);Z(16,20);Z(17,21);Z(22,26);Z(23,27);Z(24,28);
+		Z(2,4);Z(3,5);Z(6,8);Z(7,9);Z(10,12);Z(11,14);Z(13,15);Z(16,18);Z(17,19);Z(20,22);Z(21,23);Z(24,26);Z(25,27);
+		Z(1,2);Z(3,4);Z(5,6);Z(7,8);Z(9,10);Z(11,12);Z(13,14);Z(15,16);Z(17,18);Z(19,20);Z(21,22);Z(23,24);Z(25,26);Z(27,28);
+	  return;
+	}
+	case 29: // sort30() from http://users.telenet.be/bertdobbelaere/SorterHunter/sorting_networks.html
+	{   Z(1,2);Z(3,10);Z(4,14);Z(5,8);Z(6,13);Z(7,12);Z(9,11);Z(16,17);Z(18,25);Z(19,29);Z(20,23);Z(21,28);Z(22,27);Z(24,26);
+		Z(0,14);Z(1,5);Z(2,8);Z(3,7);Z(6,9);Z(10,12);Z(11,13);Z(15,29);Z(16,20);Z(17,23);Z(18,22);Z(21,24);Z(25,27);Z(26,28);
+		Z(0,7);Z(1,6);Z(2,9);Z(4,10);Z(5,11);Z(8,13);Z(12,14);Z(15,22);Z(16,21);Z(17,24);Z(19,25);Z(20,26);Z(23,28);Z(27,29);
+		Z(0,6);Z(2,4);Z(3,5);Z(7,11);Z(8,10);Z(9,12);Z(13,14);Z(15,21);Z(17,19);Z(18,20);Z(22,26);Z(23,25);Z(24,27);Z(28,29);
+		Z(0,3);Z(1,2);Z(4,7);Z(5,9);Z(6,8);Z(10,11);Z(12,13);Z(14,29);Z(15,18);Z(16,17);Z(19,22);Z(20,24);Z(21,23);Z(25,26);Z(27,28);
+		Z(0,1);Z(2,3);Z(4,6);Z(7,9);Z(10,12);Z(11,13);Z(15,16);Z(17,18);Z(19,21);Z(22,24);Z(25,27);Z(26,28);
+		Z(0,15);Z(1,2);Z(3,5);Z(8,10);Z(11,12);Z(13,28);Z(16,17);Z(18,20);Z(23,25);Z(26,27);
+		Z(1,16);Z(3,4);Z(5,6);Z(7,8);Z(9,10);Z(12,27);Z(18,19);Z(20,21);Z(22,23);Z(24,25);
+		Z(2,3);Z(4,5);Z(6,7);Z(8,9);Z(10,11);Z(17,18);Z(19,20);Z(21,22);Z(23,24);Z(25,26);
+		Z(2,17);Z(3,18);Z(4,19);Z(5,6);Z(7,8);Z(9,24);Z(10,25);Z(11,26);Z(20,21);Z(22,23);
+		Z(5,20);Z(6,21);Z(7,22);Z(8,23);Z(9,16);Z(10,17);Z(11,18);Z(12,19);
+		Z(5,9);Z(6,10);Z(7,11);Z(8,15);Z(13,20);Z(14,21);Z(18,22);Z(19,23);
+		Z(3,5);Z(4,8);Z(7,9);Z(12,15);Z(13,16);Z(14,17);Z(20,24);Z(21,25);
+		Z(2,4);Z(6,8);Z(10,12);Z(11,13);Z(14,15);Z(16,18);Z(17,19);Z(20,22);Z(21,23);Z(24,26);Z(25,27);
+		Z(1,2);Z(3,4);Z(5,6);Z(7,8);Z(9,10);Z(11,12);Z(13,14);Z(15,16);Z(17,18);Z(19,20);Z(21,22);Z(23,24);Z(25,26);Z(27,28);
+	  return;
+	}
+	case 30: // sort31() from http://users.telenet.be/bertdobbelaere/SorterHunter/sorting_networks.html
+	{   Z(0,1);Z(2,3);Z(4,5);Z(6,7);Z(8,9);Z(10,11);Z(12,13);Z(14,15);Z(16,17);Z(18,19);Z(20,21);Z(22,23);Z(24,25);Z(26,27);Z(28,29);
+		Z(0,2);Z(1,3);Z(4,6);Z(5,7);Z(8,10);Z(9,11);Z(12,14);Z(13,15);Z(16,18);Z(17,19);Z(20,22);Z(21,23);Z(24,26);Z(25,27);Z(28,30);
+		Z(0,4);Z(1,5);Z(2,6);Z(3,7);Z(8,12);Z(9,13);Z(10,14);Z(11,15);Z(16,20);Z(17,21);Z(18,22);Z(19,23);Z(24,28);Z(25,29);Z(26,30);
+		Z(0,8);Z(1,9);Z(2,10);Z(3,11);Z(4,12);Z(5,13);Z(6,14);Z(7,15);Z(16,24);Z(17,25);Z(18,26);Z(19,27);Z(20,28);Z(21,29);Z(22,30);
+		Z(0,16);Z(1,8);Z(2,4);Z(3,12);Z(5,10);Z(6,9);Z(7,14);Z(11,13);Z(17,24);Z(18,20);Z(19,28);Z(21,26);Z(22,25);Z(23,30);Z(27,29);
+		Z(1,2);Z(3,5);Z(4,8);Z(6,22);Z(7,11);Z(9,25);Z(10,12);Z(13,14);Z(17,18);Z(19,21);Z(20,24);Z(23,27);Z(26,28);Z(29,30);
+		Z(1,17);Z(2,18);Z(3,19);Z(4,20);Z(5,10);Z(7,23);Z(8,24);Z(11,27);Z(12,28);Z(13,29);Z(14,30);Z(21,26);
+		Z(3,17);Z(4,16);Z(5,21);Z(6,18);Z(7,9);Z(8,20);Z(10,26);Z(11,23);Z(13,25);Z(14,28);Z(15,27);Z(22,24);
+		Z(1,4);Z(3,8);Z(5,16);Z(7,17);Z(9,21);Z(10,22);Z(11,19);Z(12,20);Z(14,24);Z(15,26);Z(23,28);Z(27,30);
+		Z(2,5);Z(7,8);Z(9,18);Z(11,17);Z(12,16);Z(13,22);Z(14,20);Z(15,19);Z(23,24);Z(26,29);
+		Z(2,4);Z(6,12);Z(9,16);Z(10,11);Z(13,17);Z(14,18);Z(15,22);Z(19,25);Z(20,21);Z(27,29);
+		Z(5,6);Z(8,12);Z(9,10);Z(11,13);Z(14,16);Z(15,17);Z(18,20);Z(19,23);Z(21,22);Z(25,26);
+		Z(3,5);Z(6,7);Z(8,9);Z(10,12);Z(11,14);Z(13,16);Z(15,18);Z(17,20);Z(19,21);Z(22,23);Z(24,25);Z(26,28);
+		Z(3,4);Z(5,6);Z(7,8);Z(9,10);Z(11,12);Z(13,14);Z(15,16);Z(17,18);Z(19,20);Z(21,22);Z(23,24);Z(25,26);Z(27,28);
+	  return;
+	}
+	case 31: // sort32() from http://users.telenet.be/bertdobbelaere/SorterHunter/sorting_networks.html
+	{   Z(0,1);Z(2,3);Z(4,5);Z(6,7);Z(8,9);Z(10,11);Z(12,13);Z(14,15);Z(16,17);Z(18,19);Z(20,21);Z(22,23);Z(24,25);Z(26,27);Z(28,29);Z(30,31);
+		Z(0,2);Z(1,3);Z(4,6);Z(5,7);Z(8,10);Z(9,11);Z(12,14);Z(13,15);Z(16,18);Z(17,19);Z(20,22);Z(21,23);Z(24,26);Z(25,27);Z(28,30);Z(29,31);
+		Z(0,4);Z(1,5);Z(2,6);Z(3,7);Z(8,12);Z(9,13);Z(10,14);Z(11,15);Z(16,20);Z(17,21);Z(18,22);Z(19,23);Z(24,28);Z(25,29);Z(26,30);Z(27,31);
+		Z(0,8);Z(1,9);Z(2,10);Z(3,11);Z(4,12);Z(5,13);Z(6,14);Z(7,15);Z(16,24);Z(17,25);Z(18,26);Z(19,27);Z(20,28);Z(21,29);Z(22,30);Z(23,31);
+		Z(0,16);Z(1,8);Z(2,4);Z(3,12);Z(5,10);Z(6,9);Z(7,14);Z(11,13);Z(15,31);Z(17,24);Z(18,20);Z(19,28);Z(21,26);Z(22,25);Z(23,30);Z(27,29);
+		Z(1,2);Z(3,5);Z(4,8);Z(6,22);Z(7,11);Z(9,25);Z(10,12);Z(13,14);Z(17,18);Z(19,21);Z(20,24);Z(23,27);Z(26,28);Z(29,30);
+		Z(1,17);Z(2,18);Z(3,19);Z(4,20);Z(5,10);Z(7,23);Z(8,24);Z(11,27);Z(12,28);Z(13,29);Z(14,30);Z(21,26);
+		Z(3,17);Z(4,16);Z(5,21);Z(6,18);Z(7,9);Z(8,20);Z(10,26);Z(11,23);Z(13,25);Z(14,28);Z(15,27);Z(22,24);
+		Z(1,4);Z(3,8);Z(5,16);Z(7,17);Z(9,21);Z(10,22);Z(11,19);Z(12,20);Z(14,24);Z(15,26);Z(23,28);Z(27,30);
+		Z(2,5);Z(7,8);Z(9,18);Z(11,17);Z(12,16);Z(13,22);Z(14,20);Z(15,19);Z(23,24);Z(26,29);
+		Z(2,4);Z(6,12);Z(9,16);Z(10,11);Z(13,17);Z(14,18);Z(15,22);Z(19,25);Z(20,21);Z(27,29);
+		Z(5,6);Z(8,12);Z(9,10);Z(11,13);Z(14,16);Z(15,17);Z(18,20);Z(19,23);Z(21,22);Z(25,26);
+		Z(3,5);Z(6,7);Z(8,9);Z(10,12);Z(11,14);Z(13,16);Z(15,18);Z(17,20);Z(19,21);Z(22,23);Z(24,25);Z(26,28);
+		Z(3,4);Z(5,6);Z(7,8);Z(9,10);Z(11,12);Z(13,14);Z(15,16);Z(17,18);Z(19,20);Z(21,22);Z(23,24);Z(25,26);Z(27,28);
+	  return;
+	}
+
+   } // end of switch for optimal sort, if we cannot use an optimal sort then do a quicksort
+   k=p;
+   r1=r+1;
+   /* select a random element to partition on - this should mean no sequence gives poor sorting performance- use a fast inline random number generator */
+   {
+	uint32_t xn=rn; /* temp value for random number generator*/
+	/* Algorithm "xor" from p. 4 of Marsaglia, "Xorshift RNGs" coded inline for speed */
+	xn ^= xn << 13;
+	xn ^= xn >> 17;
+	xn ^= xn << 5;
+	rn= xn;
+	// warning the approach used below does not generate uniform random numbers between p and r ( see eg https://arxiv.org/abs/1805.10941 ) but is adaquate for selecting the pivot element in a quicksort
+	uint64_t u64=(uint64_t)xn*(uint64_t)(r+1-p);// use upper bits of random number gererator which might be more random and avoid % operator which is probably slow
+	xn=p+(u64>>32);   // this treats xn as lower 32 bits of fixed point number 32.32 , then after multiply integer part (upper 32 bits) is what we want
+	// rprintf(" qs:xn=%u(0x%x) p=%u(0x%x) r=%u(0x%x)\n",xn,xn,p,p,r,r);
+	my_swapc(k,xn);// swap random element to left  , does nothing if k==xn
+   }
    x=xa[k];
    do k++; while((xa[k]<=x) && (k<r));
-   do l--; while(xa[l]>x);
-   while(k<l)
-	{my_swap(iGraphNumberF,k,l);
+   do r1--; while(xa[r1]>x);
+   while(k<r1)
+	{my_swap(k,r1);  // k<r1 so no need to check for equal in swap
 	  do k++; while(xa[k]<=x);
-	  do l--; while(xa[l]>x);
+	  do r1--; while(xa[r1]>x);
 	}
-   my_swap(iGraphNumberF,p,l);
-   int q=l;
-   if(q-1 -p < r-q+1)
+   my_swapc(p,r1);
+   if(r1-1 -p < r-r1+1)    /* should be <; < gives max depth 16 with 16M line file, > gives 78 */
 	  {// sort smallest partition 1st  to limit stack usage
-	   myqsort(iGraphNumberF,p,q-1);    // recursive call for smallest segment
-	   p=q+1; ;    // iterate  to process larger segment
+#ifdef CHECK_DEPTH
+	   myqsort(iGraphNumberF,p,r1-1,depth);    // recursive call for smallest segment
+#else
+	   myqsort(iGraphNumberF,p,r1-1);    // recursive call for smallest segment
+#endif
+	   p=r1+1; ;    // iterate  to process larger segment
 	  }
    else
 	  {
-	   myqsort(iGraphNumberF,q+1,r);   // recursive call
-	   r=q-1;   // iterate
+#ifdef CHECK_DEPTH
+	   myqsort(iGraphNumberF,r1+1,r,depth);   // recursive call
+#else
+	   myqsort(iGraphNumberF,r1+1,r);   // recursive call
+#endif
+	   r=r1-1;   // iterate
 	  }
   }
  return;
 }
+#undef my_swap /* delete macros used above as they cannot be used elsewhere */
+#undef my_swapc
+#undef Z
 
 
 void TScientificGraph::sortx( int iGraphNumberF) // sort ordered on x values  (makes x values increasing)
 {
  SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
  unsigned int iCount=pAGraph->nos_vals ;
+ time_t start_t=clock();
+#ifdef CHECK_DEPTH
+ maxdepth=0;
+ rn=3103515245u; // initialise random number generator to the same value every time to get consistant sorts for the same data
+ myqsort( iGraphNumberF,0,iCount-1,0); // sort
+ rprintf(" sort finished in %g secs - max depth of recursion was %d\n",(clock()-start_t)/(double)CLOCKS_PER_SEC,maxdepth);
+#else
+ rn=3103515245u; // initialise random number generator to the same value every time to get consistant sorts for the same data
  myqsort( iGraphNumberF,0,iCount-1); // sort
-#if 0
- rprintf("sorting finished x[0]=%g x[1]=%g x[2]=%g x[4]=%g x[5]=%g\n",
+#endif
+#if 1
+ rprintf(" sort completed in %g secs\n",(clock()-start_t)/(double)CLOCKS_PER_SEC);
+#else
+ rprintf(" sorting finished in %g secs : x[0]=%g x[1]=%g x[2]=%g x[4]=%g x[5]=%g\n",(clock()-start_t)/(double)CLOCKS_PER_SEC,
    pAGraph->x_vals[0],pAGraph->x_vals[1],pAGraph->x_vals[2],pAGraph->x_vals[3],
    pAGraph->x_vals[4],pAGraph->x_vals[5]);
 #endif

@@ -5,8 +5,8 @@
 #include <tchar.h>
 //---------------------------------------------------------------------------
 USEFORM("UDataPlotWindow.cpp", PlotWindow);
-USEFORM("UScalesWindow.cpp", ScalesWindow);
 USEFORM("Unit1.cpp", Form1);
+USEFORM("UScalesWindow.cpp", ScalesWindow);
 USEFORM("About.cpp", AboutBox);
 //---------------------------------------------------------------------------
 #if 1  /* my version that picks up command line */

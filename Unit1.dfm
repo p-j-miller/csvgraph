@@ -22,10 +22,10 @@ object Form1: TForm1
   PixelsPerInch = 96
   TextHeight = 13
   object Results: TRichEdit
-    Left = 16
-    Top = 10
-    Width = 561
-    Height = 325
+    Left = 0
+    Top = 0
+    Width = 617
+    Height = 343
     Anchors = [akLeft, akTop, akRight, akBottom]
     Font.Charset = ANSI_CHARSET
     Font.Color = clWindowText

@@ -22,6 +22,8 @@
 #include <System.Actions.hpp>
 #include <System.ImageList.hpp>
 //---------------------------------------------------------------------------
+enum reg_types {reg_poly,reg_sqrt,reg_rat}; // type of linear regression
+
 class TPlotWindow : public TForm
 {
 __published:	// IDE-managed Components
@@ -177,7 +179,7 @@ public:		 // User declarations
   TScalesWindow *pScalesWindow;              //scales window object
 
   void fnReDraw();
-
+  void gen_lin_reg(enum reg_types r,int N,bool write_y,int iGraph); // fit defined type of function with N variables (ie for y=m*x+c N=2)  for trace iGraph
   __fastcall TPlotWindow(TComponent* Owner);
 BEGIN_MESSAGE_MAP
 MESSAGE_HANDLER(WM_DROPFILES,TWMDropFiles,WmDropFiles)

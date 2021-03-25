@@ -106,6 +106,7 @@ version 3.4 3-5-13    - added nextafterf() function
 version 3.5 2-8-13    - added general purpose hash functions
                       - added SetCursorToEnd()
 version 4.0 23-8-13   - changed so that does not need access to Form1 in this code (required so could be moved into "common-files")
+version 4.1 7-3-2021  - added void leastsquares_rat3(float *y,float *x,int start, int end, double *a, double *b, double *c)
 */
 // #include <vcl.h> /* for AnsiString etc - MUST come at start of file, followed by a #pragma hdrstop  */
 // #define USE_SPINEDIT  /* define to support spinedits in load/save code */
@@ -1620,13 +1621,51 @@ void leastsquares_reg3(float *y,float *x,int start, int end,double (*f)(float xp
   /* calculate demoninator as its the same in all cases */
   dom=((s1*s5-s2*s4)*s9+(s3*s4-s1*s6)*s8+(s2*s6-s3*s5)*s7);    /* equation from Maxima - see comments at head of this function */
   if(dom==0)
-        {/* cannot divide by zero so just set a default result */
+		{/* cannot divide by zero so just set a default result */
          *a=*b=*c=0;
          return;
         }
   *a=((s10*s5-s11*s2)*s9+(s11*s3-s10*s6)*s8+s12*s2*s6-s12*s3*s5)/dom;  /* equations from Maxima - see comments at head of this function */
   *b=  -((s10*s4-s1*s11)*s9+(s11*s3-s10*s6)*s7+s1*s12*s6-s12*s3*s4)/dom;
   *c= ((s10*s4-s1*s11)*s8+(s11*s2-s10*s5)*s7+s1*s12*s5-s12*s2*s4)/dom;
+  return;
+}
+
+/* variant of above that fits that rational function y=(a+bx)/(1+cx)
+   Note this cannot be done with leastsquares_reg3 as g() uses y as well as x.
+   y=a+b*x-c*x*y   so f(x)=x and g(x,y)=x*y
+*/
+void leastsquares_rat3(float *y,float *x,int start, int end, double *a, double *b, double *c)
+{long double s1=0,s2=0,s3=0,s4,s5=0,s6=0,s7,s8,s9=0,s10=0,s11=0,s12=0; /* see above, use long doubles for accuracy, but as x[] and y[] are float arrays it probably makes no difference */
+ long double dom;
+ int i;
+ for(i=start;i<=end;++i) /* 1st calculate sums */
+		{long double f=x[i],yi=y[i];
+		 long double g=f*yi;
+		 s1+=f*f;
+		 s2+=f*g;
+		 s3+=f;
+		 s5+=g*g;
+		 s6+=g;
+		 s9+=1;
+		 s10+= yi*f;
+		 s11+= yi*g;
+		 s12+= yi;
+		}
+  s4=s2; /* some duplicates set here (I tried avoiding these in maxima but the equations were basically unchanged)*/
+  s7=s3;
+  s8=s6;
+  /* calculate demoninator as its the same in all cases */
+  dom=((s1*s5-s2*s4)*s9+(s3*s4-s1*s6)*s8+(s2*s6-s3*s5)*s7);    /* equation from Maxima - see comments at head of this function */
+  if(dom==0)
+		{/* cannot divide by zero so just set a default result */
+		 *a=*b=*c=0;
+		 return;
+		}
+  // compared to leastsquares_reg3 above a=c, b=a, c=-b
+  *b=((s10*s5-s11*s2)*s9+(s11*s3-s10*s6)*s8+s12*s2*s6-s12*s3*s5)/dom;  /* equations from Maxima - see comments at head of this function */
+  *c=  ((s10*s4-s1*s11)*s9+(s11*s3-s10*s6)*s7+s1*s12*s6-s12*s3*s4)/dom;
+  *a= ((s10*s4-s1*s11)*s8+(s11*s2-s10*s5)*s7+s1*s12*s5-s12*s2*s4)/dom;
   return;
 }
 

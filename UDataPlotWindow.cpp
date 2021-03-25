@@ -28,6 +28,20 @@
 //               : sort optimised (worse case improved dramatically)
 //               : reading times (h:m:s) made more robust - will now read a general number as a float (secs) - but assumes no exponent present
 //               : warning - h:m:s date handling code assumes times are in order (all increasing), if they are not then day handling code may get confused...
+// 2v1 20/1/2021 : investigation into speedup for myqsort() - avoid % operator, and directly sort 3 elements inline.   Gives 7% speedup on average.
+//               : median3() function improved to use 2 or 3 compares (rather than 2 or 4).
+//               : myqsort() now sorts up to 4 elements inline and myswap is a macro - this gives 12% speedup over previous best.
+//               : option to check depth of recursion in myqsort - is < log2(nos_lines) as expected [ 16 for 16million line file].
+//               : myqsort random number generator reset before every sort to give consistent results.
+//               : myqsort() now sorts up to 6 elements inline this gives an additional 10% speedup.
+//               : myqsort now sorts upto 16 elements inline giving a small speedup
+//               : myqsort now sorts upto 32 elements inline gaining another 12% speedup.
+//               : added y=(a+bx)/(1+cx)  (least squares fit)
+//               : added general least squares multiple variable linear regression (multiple-lin-reg-fn.cpp)
+//               :  this allows y=a+b*sqrt(x)+c*x+d*x^1.5 and
+//               :   y=(a+b*x+c*x^2)/(1+d*x+e*x^2) to be fitted
+//               :  generic poly in sqrt(x) and rational function(poly/poly) fitting allowed with user specified order
+//               : better error trapping in basic linear regex (y=mx+c) for 1/x & log's
 //
 //---------------------------------------------------------------------------
 /*----------------------------------------------------------------------------
@@ -61,7 +75,6 @@
 #include <stdio.h>
 #include <Clipbrd.hpp>
 #pragma hdrstop
-
 #include "UScientificGraph.h"
 #include "UScalesWindow.h"
 #include "UDataPlotWindow.h"
@@ -84,14 +97,15 @@
 #include <dos.h>
 #include <stdlib.h>
 #include <float.h>
+#include "matrix.h" /* must come before include of multiple-lin-reg.h */
+#include "multiple-lin-reg-fn.h"
 
 extern TForm1 *Form1;
-const char * Prog_Name="CSVgraph (Github) 2v0";   // needs to be global as used in about box as well.
+const char * Prog_Name="CSVgraph (Github) 2v1s";   // needs to be global as used in about box as well.
 #if 1 /* if 1 then use fast_strtof() rather than atof() for floating point conversion. Note in this application this is only slightly faster (1-5%) */
 extern "C" float fast_strtof(const char *s,char **endptr); // if endptr != NULL returns 1st character thats not in the number
 #define strtod fast_strtof  /* set so we use it in place of strtod() */
 #endif
-extern "C" unsigned int count_lines(char *filename); // in lc.c - returnd number of lines in file (quickly)
 #define WHITE_BACKGROUND /* if defined then use a white background, otherwise use a black background*/
 #define UseVCLdialogs /* if defined used VCL dialogs, otherwise use "raw" windows ones */
 #define BIG_BUF_SIZE (128*1024) /* Should be a power of 2. 1024*1024=1MB . Testing showed 4K is the min for moderate performance, and after 256k performance gets slightly worse */
@@ -996,6 +1010,176 @@ void filter_callback(unsigned int i, unsigned int imax) // callback function fro
   // rprintf("%s\n",cstring);
 }
 
+
+void TPlotWindow::gen_lin_reg(enum reg_types r,int N,bool write_y,int iGraph)
+ // fit fn() with N variables (ie for y=m*x+c N=2)  for trace iGraph
+ // if write_y true then write back result of fit to y_values of trace
+ {// test code uses general linear least squares fitting
+  float *x_arr,*y_arr;
+  // test multiple_lin_reg_fn
+  unsigned int iCount=pScientificGraph->fnGetxyarr(&x_arr,&y_arr,iGraph); // allows access to x and y arrays of specified graph, returns nos points
+  matrix_ld S;// 2D matrix
+  long double *A;   // long double A[N+1]  A = average (mean)
+  long double *X; // long double X[N+1];
+  bool *U; // bool U[N+1];
+  long double T,C;
+  S=cr_matrix_ld(N+1,N+1);// S[N+1][N+1]
+  A=(long double *)calloc(N+1,sizeof(long double));
+  X=(long double *)calloc(N+1,sizeof(long double));
+  U=(bool *)calloc(N+1,sizeof(bool));
+  if(S==NULL || A==NULL || X==NULL || U==NULL)
+	{rprintf("Warning - gen_lin_reg() out of RAM\n");
+	 if(S!=NULL) fr_matrix_ld(S);
+	 if(A!=NULL) free(A);
+	 if(X!=NULL) free(X);
+	 if(U!=NULL) free(U);
+	 return;
+	}
+  filter_callback(0,3);
+  switch(r)
+	{case reg_poly: rprintf("Fitting data to polynomial using general least squares linear regression function order=%d:\n",N-1);
+					break;
+	 case reg_sqrt: rprintf("Fitting data to polynomial in sqrt(x) using general least squares linear regression function order=%d:\n",N-1);
+					break;
+	 case reg_rat: rprintf("Fitting data to rational function using general least squares linear regression function order=%d:\n",N-1);
+					break;
+	}
+  multi_regression(x_arr,y_arr,r,N,iCount,S,A,U,0.0,filter_callback); // fit specified function
+  C=A[1];// constant term in resultant equation
+  for(int j = 2;j<= N;++j)
+	{
+	 if(U[j] == true)
+		{
+		 // rprintf("  Var[%d] used, multiplier(value-mean)=%g mean=%g\n",j,S[j][1],A[j]);
+		 C-= S[j][1]*A[j];
+		}
+	 else S[j][1]=0.0; // if variable not used set it to zero (avoids needing to check for this case in code below)
+	}
+  // print equation
+  if(r==reg_poly)
+	{
+	 rprintf("  Y=%g",(double)C);
+	 for(int j = 2;j<= N;++j)
+		{
+		 T=S[j][1];
+		 if(j==2)
+			rprintf("%+g*X",(double)T);
+		 else
+			{ if(U[j]) // only print no-zero coeffs
+				rprintf("%+g*X^%d",(double)T,j-1);
+			}
+		}
+	 rprintf("\n");
+	}
+  else if(r==reg_sqrt)
+	{
+	 rprintf("  Y=%g",(double)C);
+	 for(int j = 2;j<= N;++j)
+		{
+		 T=S[j][1];
+		 if(j==2)
+			rprintf("%+g*sqrt(X)",(double)T);
+		 else if(j==3)
+			rprintf("%+g*X",(double)T);
+		 else
+			{ if(U[j]) // only print no-zero coeffs
+				rprintf("%+g*X^%g",(double)T,0.5*(j-1));
+			}
+		}
+	 rprintf("\n");
+	}
+  else if(r==reg_rat)
+	{int j;
+	 if(N==1) rprintf("  Y=%g\n",(double)C);
+	 else
+		{
+		 rprintf("  Y=(%g",(double)C);
+		 for(j = 2;j<= (N+1)/2;++j)
+			{
+			 T=S[j][1];
+			 if(j==2)
+				rprintf("%+g*X",(double)T);
+			 else
+				{ if(U[j]) // only print no-zero coeffs
+					rprintf("%+g*X^%d",(double)T,j-1);
+				}
+			}
+		 T=S[j][1];
+		 rprintf(")/(1.0%+g*X",(double)T);
+		 for(++j;j<=N;++j)
+			{
+			 T=S[j][1];
+			 if(U[j]) // only print no-zero coeffs
+				rprintf("%+g*X^%d",(double)T,j-(N+1)/2);
+			}
+		 rprintf(")\n");
+		}
+	}
+
+  long double max_err = 0.0; // max abs error
+  for(int i=0; i<iCount;++i)
+	{long double x=x_arr[i],y=y_arr[i];
+	 if(r==reg_rat)
+		{
+		 /* general case */
+		 int j;
+		 long double top,bott,P=x; // result = top/bott. P is power of x
+		 top=C;
+		 for(j = 2;j<= (N+1)/2;++j)
+			{
+			 T=S[j][1];
+			 top+=T*P;
+			 P*=x;
+			}
+		 bott=1.0;P=x;  // bott =1 + b1*x+b2*x^2
+		 for(;j<=N;++j)
+			{
+			 T=S[j][1];
+			 bott+=T*P;
+			 P*=x;
+			}
+		 if(bott==0)
+			X[1]=0;  // trap divide by zero
+		 else
+			X[1]=top/bott;
+		}
+	 else if(r==reg_poly)
+		{
+		 long double top,P=x; // result = top. P is power of x
+		 top=C;
+		 for(int j = 2;j<=N;++j)
+			{
+			 T=S[j][1];
+			 top+=T*P;
+			 P*=x;
+			}
+		 X[1]=top;
+		}
+	 else if(r==reg_sqrt)
+		{x=sqrt(x);
+		 long double top,P=x; // result = top. P is power of sqrt(x)
+		 top=C;
+		 for(int j = 2;j<=N;++j)
+			{
+			 T=S[j][1];
+			 top+=T*P;
+			 P*=x;
+			}
+		 X[1]=top;
+		}
+	 T = X[1] - y; // error
+	 if(T<0) T= -T; // T is now abs error
+	 if(T>max_err) max_err=T; // max abs error
+	 if(write_y) y_arr[i]=X[1]; // set y value to that calculated by the function
+	}
+  rprintf("  max abs error of general least squares fit is %g\n",(double)max_err);
+  filter_callback(3,3);
+  fr_matrix_ld(S);
+  free(A);free(X);free(U); // free up dynamically allocated arrays   we know none are NULL as this is trapped much earlier
+ }
+
+
+
 void __fastcall TPlotWindow::Button_add_trace1Click(TObject *Sender)
 {  // add graph
    // here we want to display a csv file
@@ -1042,15 +1226,15 @@ void __fastcall TPlotWindow::Button_add_trace1Click(TObject *Sender)
    else FString="" ; // "" means no filtering
    bool is_filter=strstr(FString.c_str(),"Filter")!= NULL;  // true if "filter" appears in the text
    bool is_fft=strstr(FString.c_str(),"FFT")!= NULL;  // true if "FFT" appears in the text
-   bool is_poly=strstr(FString.c_str(),"Polynomial")!= NULL;// true if "Polynomial" appears in string
+   bool is_order=strstr(FString.c_str(),"order:")!= NULL;// true if "order:" appears in string (ie order must be set by user)
    if(is_filter &&  median_ahead_t<=0)
 		{ShowMessage("Request to filter ignored as filter time constant has not been set");
 		 FString="";
 		}
-   else if(is_poly)
-		{// polynomial fit  , order = 0 is OK  and is unsigned so cannot go negative
-		 if(compress)  ShowMessage("Warning: both compress and polynomial fit requested so fitting will be done on compressed data");
-		 snprintf(cstring,sizeof(cstring)," order=%u",poly_order);
+   else if(is_order)
+		{// general poly or rational function fit , order = 0 is OK  and is unsigned so cannot go negative
+		 if(compress)  ShowMessage("Warning: both compress and fit requested so fitting will be done on compressed data");
+		 snprintf(cstring,sizeof(cstring)," %u",poly_order);
 		 FString=FString+cstring;
 		}
    else if(compress && FilterType->ItemIndex !=0)
@@ -1494,6 +1678,13 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
   t_string="0.0000000000001"; // 1e-13
   rprintf("gethms(%s) returns %g should be 1e-13\n",t_string,gethms(t_string));
 #endif
+#if 0
+   // check multiple_lin_reg_fn
+   test_multiregression(0);
+   test_multiregression(1);
+   test_multiregression(2);
+   test_multiregression(3);
+#endif
  // this is the normal working code
 
   reset_days(); // in case we are reading in times
@@ -1734,11 +1925,40 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
                         }
 				break;
 		case 4:
+
 				// lin regression y=mx
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg_origin(iGraph,filter_callback);
 				break;
 		case 5:
+#if 0
+				{
+				 // test code uses general linear least squares fitting , false arguments means y values are not changed
+				 gen_lin_reg(reg_poly,1,false,iGraph); // y=a
+				 gen_lin_reg(reg_poly,2,false,iGraph); // y=a+b*x
+				 gen_lin_reg(reg_poly,3,false,iGraph); // y=a+b*x+c*x^2
+				 gen_lin_reg(reg_poly,4,false,iGraph); // y=a+b*x+c*x^2+d*x^3
+				 gen_lin_reg(reg_poly,5,false,iGraph); // y=a+b*x+c*x^2+d*x^3+e*x^4
+				 gen_lin_reg(reg_poly,6,false,iGraph); // y=a+b*x+c*x^2+d*x^3+e*x^4+f*x^5
+				 gen_lin_reg(reg_poly,7,false,iGraph); // y=a+b*x+c*x^2+d*x^3+e*x^4+f*x^5+g*x^6
+
+				 gen_lin_reg(reg_sqrt,1,false,iGraph); // y=a
+				 gen_lin_reg(reg_sqrt,2,false,iGraph); // y=a+b*sqrt(x)
+				 gen_lin_reg(reg_sqrt,3,false,iGraph); // y=a+b*sqrt(x)+c*x
+				 gen_lin_reg(reg_sqrt,4,false,iGraph); // y=a+b*sqrt(x)+c*x+d*x^1.5
+				 gen_lin_reg(reg_sqrt,5,false,iGraph); // y=a+b*sqrt(x)+c*x+d*x^1.5+e*x^2
+				 gen_lin_reg(reg_sqrt,6,false,iGraph); // y=a+b*sqrt(x)+c*x+d*x^1.5+e*x^2+f*x^2.5
+				 gen_lin_reg(reg_sqrt,7,false,iGraph); // y=a+b*sqrt(x)+c*x+d*x^1.5+e*x^2+f*x^2.5+g*x^3
+
+				 gen_lin_reg(reg_rat,1,false,iGraph);  // N=1=> y=(a0)/(1)
+				 gen_lin_reg(reg_rat,2,false,iGraph);  // N=2=> y=(a0)/(1+b1*x)
+				 gen_lin_reg(reg_rat,3,false,iGraph);  // N=3=> y=(a0+a1*x)/(1+b1*x)
+				 gen_lin_reg(reg_rat,4,false,iGraph);  // N=4=> y=(a0+a1*x)/(1+b1*x+b2*x^2)
+				 gen_lin_reg(reg_rat,5,false,iGraph);  // N=5=> y=(a0+a1*x+a2*x^2)/(1+b1*x+b2*x^2)
+				 gen_lin_reg(reg_rat,6,false,iGraph);  // N=6=> y=(a0+a1*x+a2*x^2)/(1+b1*x+b2*x^2+b3*x^3)
+				 gen_lin_reg(reg_rat,7,false,iGraph);  // N=7=> y=(a0+a1*x+a2*x^2+a2*x^3)/(1+b1*x+b2*x^2+b3*x^3)
+				}
+#endif
 				// lin regression y=mx+c
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(LinLin,iGraph,filter_callback);
@@ -1798,14 +2018,40 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg_3(iGraph,filter_callback);
 				break;
-		case 17: //  general purpose polynomial fit   (least squares using orthogonal polynomials)
+
+		case 17:
+				// y=a+b*sqrt(x)+c*x+d*x^1.5
+				StatusText->Caption=FString;
+				gen_lin_reg(reg_sqrt,4,true,iGraph);
+				break;
+		case 18:
+				// y=(a+bx)/(1+cx)  (least squares fit)
+				StatusText->Caption=FString;
+				pScientificGraph->fnrat_3(iGraph,filter_callback);
+				break;
+		case 19:
+				// N=5=> y=(a0+a1*x+a2*x^2)/(1+b1*x+b2*x^2)
+				StatusText->Caption=FString;
+				gen_lin_reg(reg_rat,5,true,iGraph);
+				break;
+		case 20: //  general purpose polynomial fit   (least squares using orthogonal polynomials)
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnPolyreg(poly_order,iGraph,filter_callback))
 						{StatusText->Caption="Polynomial fit failed";
 						 ShowMessage("Warning: Polynomial fit failed - adding original trace to graph");
 						}
 				break;
-		case 18: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+		case 21:
+				// general purpose polynomial fit in sqrt(x) with user defined order
+				StatusText->Caption=FString;
+				gen_lin_reg(reg_sqrt,poly_order+1,true,iGraph);
+				break;
+		case 22:
+				// rational fit (poly1/poly2)  with user defined order
+				StatusText->Caption=FString;
+				gen_lin_reg(reg_rat,poly_order+1,true,iGraph);
+				break;
+		case 23: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 				// fft return ||
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnFFT(false,false,iGraph,filter_callback))
@@ -1813,7 +2059,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						 ShowMessage("Warning: FFT failed - adding original trace to graph");
 						}
 				break;
-		case 19: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+		case 24: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 				// fft return dBV
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnFFT(true,false,iGraph,filter_callback))
@@ -1821,7 +2067,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						 ShowMessage("Warning: FFT failed - adding original trace to graph");
 						}
 				break;
-		case 20: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+		case 25: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 				// fft with Hanning window, return ||
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnFFT(false,true,iGraph,filter_callback))
@@ -1829,7 +2075,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						 ShowMessage("Warning: FFT failed - adding original trace to graph");
 						}
 				break;
-		case 21: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+		case 26: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 				// fft with Hanning window return dBV
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnFFT(true,true,iGraph,filter_callback))
@@ -1865,7 +2111,8 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
                  addtraceactive=false;// finished
                  return;
                 }
-         StatusText->Caption="Reading next column...";
+		 StatusText->Caption="Reading next column...";
+         rprintf("\n");
          Application->ProcessMessages(); /* allow windows to update (but not go idle) */
          goto repeatcomma; // go and process next 
 		}
@@ -1944,7 +2191,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 		 snprintf(cstring,sizeof(cstring),"Added column %d in %1f secs. %uMB ram used",ycol,(end_t-start_t)/CLK_TCK,heapstatus.TotalAddrSpace/(1024*1024));
 		}
 #endif
-  rprintf("%s\n",cstring);
+  rprintf("%s\n\n",cstring);
   StatusText->Caption=cstring;
   addtraceactive=false;// finished
 }
