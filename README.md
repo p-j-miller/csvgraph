@@ -30,6 +30,9 @@ error and minimum relative error, and y=a*x+b*sqrt(x)+c.
 2v0 – 17/2/2021 – Major internal changes to reduce RAM usage and improve speed. 
 No changes to function.
 
+2v1 – 21/3/2021 – more curve fitting options added;  y=a+b*sqrt(x)+c*x+d*x^1.5, y=(a+bx)/(1+cx), 
+y=(a+bx+cx^2)/(1+dx+ex^2), polynomials on sqrt(x) of user defined order and rational functions (polynomial/polynomial) to a user defined order.
+
 
 
 # Installation
