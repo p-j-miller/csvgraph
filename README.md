@@ -33,6 +33,14 @@ No changes to function.
 2v1 – 21/3/2021 – more curve fitting options added;  y=a+b*sqrt(x)+c*x+d*x^1.5, y=(a+bx)/(1+cx), 
 y=(a+bx+cx^2)/(1+dx+ex^2), polynomials on sqrt(x) of user defined order and rational functions (polynomial/polynomial) to a user defined order.
 
+2v2 - 5/4/2021 - $T1 to Tn allowed in expressions to use values from existing traces on the graph.
+ Traces are numbered from 1. Invalid trace numbers (too big) return 0.
+User can now set order of the linear filter. This is implemented as a nth order Butterworth filter (10*order dB/decade). Order=0 gives no filtering. Order =1 gives same filtering as previously.
+"filters" for integral and derivative added.
+All filters now report progress as a % (previously min. abs error and min. relative error did not report progress and they can be quite slow).
+Option to skip N lines before csv header added for cases where csv header is not on the 1st row of the file
+Added column numbers to X column and Y column list boxes to make it easier to select columns when names are not very descriptive (or missing).
+
 
 
 # Installation
