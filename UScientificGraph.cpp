@@ -1019,6 +1019,16 @@ float TScientificGraph::fnAddDataPoint_nextx(int iGraphNumberF)    // returns ne
   return pAGraph_1->x_vals[i];     // value from previous trace
 };
 
+float TScientificGraph::fnAddDataPoint_thisy(int iGraphNumber)    // returns next y value of iGraphNumber (locn from current graph number)  used to do $T1
+{
+  if(iGraphNumber<0 || iGraphNumber >=iNumberOfGraphs-1) return 0; // invalid graph number (-1 as cannot refer to current trace
+  SGraph *pAGraph_add = ((SGraph*) pHistory->Items[iNumberOfGraphs-1]);
+  SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumber]); // previous trace added
+  int i=pAGraph_add->nos_vals; // current size
+  if(i >=pAGraph->nos_vals ) return 0; // past end of previous x array
+  return pAGraph->y_vals[i];     // value from previous trace
+};
+
 bool TScientificGraph::fnChangeXoffset(double dX) // change all X values by adding dX to the most recently added graph if at least 2 graphs defined
 {
   if( iNumberOfGraphs<2) return false;   // must be at least 2 graphs to do this
@@ -1082,7 +1092,7 @@ float median3(float y0,float y1, float y2) // returns median of 3 values
  */
 
 #define elem_type float
-#define ELEM_SWAP(a,b) { register elem_type t=(a);(a)=(b);(b)=t; }
+#define ELEM_SWAP(a,b) { elem_type t=(a);(a)=(b);(b)=t; }
 
 elem_type quick_select(elem_type arr[], int n)
 {
@@ -1452,7 +1462,7 @@ void TScientificGraph::fnLinreg_abs(bool rel, int iGraphNumberF, void (*callback
  float *y_arr=pAGraph->y_vals; // y values
 
  // void fit_min_abs_err_line(float *x, float *y,unsigned int nos_vals,bool rel_error,double *m_out, double *c_out,double *best_err_out)
- fit_min_abs_err_line(x_arr, y_arr,iCount,rel,&m,&c,&best_err);  // do all the hard work ...
+ fit_min_abs_err_line(x_arr, y_arr,iCount,rel,&m,&c,&best_err,callback);  // do all the hard work ...
 
  // now put new y values back, calculated as y=m*x+c
  for(i=0;i<iCount;++i)
@@ -1466,8 +1476,6 @@ void TScientificGraph::fnLinreg_abs(bool rel, int iGraphNumberF, void (*callback
 	 catch(...)
 		{ y_arr[i]=0; // if something goes wrong put 0 in as a placeholder.
 		}
-	 if(callback!=NULL && (i & 0x3fffff)==0)
-		(*callback)((i),iCount); // update on progress
 	}
  if(rel)
 	rprintf("Best min abs relative error straight line is Y=%g*X%+g (error=%g%%)\n",m,c,100.0*best_err);

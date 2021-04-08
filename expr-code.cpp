@@ -107,6 +107,7 @@ version 3.5 2-8-13    - added general purpose hash functions
                       - added SetCursorToEnd()
 version 4.0 23-8-13   - changed so that does not need access to Form1 in this code (required so could be moved into "common-files")
 version 4.1 7-3-2021  - added void leastsquares_rat3(float *y,float *x,int start, int end, double *a, double *b, double *c)
+version 4.2 27/3/2020 - added Allow_dollar_T option to allow variables of form $T1 to appresr in expressions
 */
 // #include <vcl.h> /* for AnsiString etc - MUST come at start of file, followed by a #pragma hdrstop  */
 // #define USE_SPINEDIT  /* define to support spinedits in load/save code */
@@ -898,7 +899,11 @@ static void fact(void) /* recognises constants, variables, (predefined) function
          pnlist v;
          int i;
          if(*e=='$')
-                {++e; /* skip $  */
+				{++e; /* skip $  */
+#ifdef Allow_dollar_T
+				 /* allow $T1 etc to refer to trace 1 */
+				 if(*e=='t' || *e=='T') ++e;   // just need to skip t here, code below checks that a number follows
+#endif
                  if(!isdigit(*e) || *e=='0')
                         {
                          flag=false; /* $ must be followed by an integer 1 or more [0 is not allowed] */
@@ -1198,7 +1203,7 @@ static double execute_rpn_from(int from)  /* execute rpn created by previous cal
                                         uvar.c[j]=rpn[++i];
 #ifdef Allow_dollar_vars_in_expr
                                 if(uvar.p->name[0]=='$')
-                                        stack[sp++]=get_dollar_var_value(uvar.p); /* get varibel of $ variable */
+										stack[sp++]=get_dollar_var_value(uvar.p); /* get variable of $ variable */
                                 else
 #endif
                                         stack[sp++]=uvar.p->value; /* value of "normal variable" */
@@ -1769,7 +1774,8 @@ static inline double calc_err(bool rel_error, double yi,double c) // returns rel
 // then searches these ranges for the minimum error.
 // Code designed so its normally fast, but it has a timeout just in case which should still give a reasonable result.
 // This algorithm was created by Peter Miller   May 2020.
-void fit_min_abs_err_line(float *x, float *y,unsigned int nos_vals,bool rel_error,double *m_out, double *c_out,double *best_err_out)
+// if callback is not NULL its called regularly to provide an update on progress
+void fit_min_abs_err_line(float *x, float *y,unsigned int nos_vals,bool rel_error,double *m_out, double *c_out,double *best_err_out,void (*callback)(unsigned int cnt,unsigned int maxcnt))
 {bool first=true;
  double m,c,bestm=0,bestc=0,err,besterr=0,e,sumerr,bestsumerr=0;
  double minm=0, maxm=0;
@@ -1790,7 +1796,8 @@ void fit_min_abs_err_line(float *x, float *y,unsigned int nos_vals,bool rel_erro
  	 *c_out=0;
  	 *best_err_out=0;
  	 return;
- 	}
+	}
+if(callback!=NULL) callback(0,100);   // 0%
 if(nos_vals<NOS_PTS_TO_USE_SEGS)
 	{
  	 // we know that the min sum abs error line passes through at least two datapoints (re wikipedia article/thesis) [note here we select line with min abs error, NOT min sum abs error ]
@@ -1928,6 +1935,7 @@ if(nos_vals<NOS_PTS_TO_USE_SEGS)
 			}
 		}
 	}
+ if(callback!=NULL) callback(10,100);   // 10%
  lin_reg_GMR(y,x,0,nos_vals-1,false,&m,&c,&r2);
  // got fit
  // now find max abs error of this line
@@ -1976,7 +1984,7 @@ if(nos_vals<NOS_PTS_TO_USE_SEGS)
 	 return;
 	}
  // use min/max m/c range found by fitting straight lines to all pairs of points, use 2000 steps between these for initial exploration
-
+ if(callback!=NULL) callback(20,100);   // 20%
  double tm,tc;
  tm=maxm-minm; // range of m from fitting straight lines by pairs of points
  maxm=bestm+tm;
@@ -2038,6 +2046,7 @@ if(nos_vals<NOS_PTS_TO_USE_SEGS)
    if(mz==maxm && cz==maxc) break; // out of resolution  on both loops, if one loop out of resolution we can still keep going refining the other one
    // now do general search
    rprintf("itn %-2d: search m from %g to %g step %g and c from %g to %g step %g\n",j,minm,maxm,tm/20.0,minc,maxc,tc/20.0);
+   if(callback!=NULL) callback(j+30,100);   // from 30% to 100%
    for(int im=-1;im<=40;++im)     // use ints for loop counters as mstep may be very small and give us resolution issues
 	{if(im<0) m=bestm; // make sure we already test bestm exactly
 	 else m=minm+tm*(double)im/20.0;  // from minm to maxm step tm/20

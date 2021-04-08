@@ -117,6 +117,9 @@ __published:	// IDE-managed Components
 	TLabel *Label14;
 	TAction *Action1;
 	TMenuItem *Action11;
+	TEdit *Edit_skip_lines;
+	TLabel *Label15;
+	TLabel *Label16;
         void __fastcall FormDestroy(TObject *Sender);
         void __fastcall FormClose(TObject *Sender, TCloseAction &Action);
         void __fastcall ResizeExecute(TObject *Sender);

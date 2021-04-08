@@ -3,6 +3,10 @@ object PlotWindow: TPlotWindow
   Top = 22
   Width = 1306
   Height = 1041
+  HorzScrollBar.Smooth = True
+  HorzScrollBar.Tracking = True
+  VertScrollBar.Smooth = True
+  VertScrollBar.Tracking = True
   Anchors = []
   AutoScroll = True
   BiDiMode = bdLeftToRight
@@ -26,7 +30,7 @@ object PlotWindow: TPlotWindow
   OnResize = FormResize
   DesignSize = (
     1290
-    1002)
+    982)
   PixelsPerInch = 96
   TextHeight = 13
   object Panel1: TPanel
@@ -347,8 +351,12 @@ object PlotWindow: TPlotWindow
   object Panel2: TScrollBox
     Left = 975
     Top = -1
-    Width = 291
+    Width = 295
     Height = 980
+    HorzScrollBar.Smooth = True
+    HorzScrollBar.Tracking = True
+    VertScrollBar.Smooth = True
+    VertScrollBar.Tracking = True
     Anchors = [akTop, akRight]
     AutoScroll = False
     AutoSize = True
@@ -359,10 +367,10 @@ object PlotWindow: TPlotWindow
     OnEndDock = Panel2EndDock
     OnResize = Panel2Resize
     DesignSize = (
-      287
+      291
       976)
     object Label3: TLabel
-      Left = 11
+      Left = 15
       Top = 487
       Width = 42
       Height = 13
@@ -370,7 +378,7 @@ object PlotWindow: TPlotWindow
       Caption = 'X column'
     end
     object Label4: TLabel
-      Left = 8
+      Left = 12
       Top = 655
       Width = 42
       Height = 13
@@ -378,7 +386,7 @@ object PlotWindow: TPlotWindow
       Caption = 'Y column'
     end
     object Label5: TLabel
-      Left = 0
+      Left = 4
       Top = 252
       Width = 61
       Height = 16
@@ -392,7 +400,7 @@ object PlotWindow: TPlotWindow
       ParentFont = False
     end
     object Label6: TLabel
-      Left = 24
+      Left = 28
       Top = 295
       Width = 25
       Height = 13
@@ -400,7 +408,7 @@ object PlotWindow: TPlotWindow
       Caption = 'Y (^)'
     end
     object Label7: TLabel
-      Left = 24
+      Left = 28
       Top = 319
       Width = 29
       Height = 13
@@ -408,7 +416,7 @@ object PlotWindow: TPlotWindow
       Caption = 'X (->)'
     end
     object Label8: TLabel
-      Left = 8
+      Left = 12
       Top = 351
       Width = 25
       Height = 16
@@ -422,7 +430,7 @@ object PlotWindow: TPlotWindow
       ParentFont = False
     end
     object Label9: TLabel
-      Left = 153
+      Left = 157
       Top = 487
       Width = 38
       Height = 13
@@ -430,7 +438,7 @@ object PlotWindow: TPlotWindow
       Caption = 'X offset'
     end
     object Label10: TLabel
-      Left = 162
+      Left = 166
       Top = 859
       Width = 45
       Height = 13
@@ -438,7 +446,7 @@ object PlotWindow: TPlotWindow
       Caption = 'filter time'
     end
     object Label11: TLabel
-      Left = 24
+      Left = 28
       Top = 274
       Width = 44
       Height = 13
@@ -446,7 +454,7 @@ object PlotWindow: TPlotWindow
       Caption = 'Font Size'
     end
     object Label12: TLabel
-      Left = 5
+      Left = 9
       Top = 814
       Width = 107
       Height = 13
@@ -454,7 +462,7 @@ object PlotWindow: TPlotWindow
       Caption = 'Processing of Y values'
     end
     object Label13: TLabel
-      Left = 162
+      Left = 166
       Top = 876
       Width = 75
       Height = 13
@@ -462,15 +470,31 @@ object PlotWindow: TPlotWindow
       Caption = 'constant (Secs)'
     end
     object Label14: TLabel
-      Left = 160
+      Left = 164
       Top = 898
       Width = 79
       Height = 13
       Anchors = [akTop, akRight]
       Caption = 'Polynomial order'
     end
+    object Label15: TLabel
+      Left = 184
+      Top = 400
+      Width = 43
+      Height = 13
+      Anchors = [akTop, akRight]
+      Caption = 'Skip lines'
+    end
+    object Label16: TLabel
+      Left = 189
+      Top = 419
+      Width = 88
+      Height = 13
+      Anchors = [akTop, akRight]
+      Caption = 'before csv header'
+    end
     object CheckBox1: TCheckBox
-      Left = 16
+      Left = 20
       Top = 231
       Width = 97
       Height = 17
@@ -482,7 +506,7 @@ object PlotWindow: TPlotWindow
       OnClick = ReDrawExecute
     end
     object RadioGroup2: TRadioGroup
-      Left = 16
+      Left = 20
       Top = 95
       Width = 121
       Height = 105
@@ -497,7 +521,7 @@ object PlotWindow: TPlotWindow
       TabOrder = 14
     end
     object RadioGroup3: TRadioGroup
-      Left = 16
+      Left = 20
       Top = 0
       Width = 121
       Height = 89
@@ -516,7 +540,7 @@ object PlotWindow: TPlotWindow
       TabOrder = 19
     end
     object CheckBox3: TCheckBox
-      Left = 16
+      Left = 20
       Top = 207
       Width = 105
       Height = 17
@@ -525,7 +549,7 @@ object PlotWindow: TPlotWindow
       TabOrder = 20
     end
     object Edit_xcol: TEdit
-      Left = 70
+      Left = 74
       Top = 479
       Width = 67
       Height = 21
@@ -540,7 +564,7 @@ object PlotWindow: TPlotWindow
       OnChange = Edit_xcolChange
     end
     object Edit_ycol: TEdit
-      Left = 70
+      Left = 74
       Top = 647
       Width = 214
       Height = 21
@@ -557,7 +581,7 @@ object PlotWindow: TPlotWindow
       OnChange = Edit_ycolChange
     end
     object StatusText: TStaticText
-      Left = 3
+      Left = 7
       Top = 960
       Width = 281
       Height = 16
@@ -568,7 +592,7 @@ object PlotWindow: TPlotWindow
       TabOrder = 15
     end
     object Edit_y: TEdit
-      Left = 56
+      Left = 60
       Top = 295
       Width = 231
       Height = 21
@@ -582,7 +606,7 @@ object PlotWindow: TPlotWindow
       OnChange = Edit_yChange
     end
     object Edit_x: TEdit
-      Left = 56
+      Left = 60
       Top = 319
       Width = 231
       Height = 21
@@ -596,7 +620,7 @@ object PlotWindow: TPlotWindow
       OnChange = Edit_xChange
     end
     object StaticText_filename: TEdit
-      Left = 37
+      Left = 41
       Top = 351
       Width = 250
       Height = 18
@@ -619,7 +643,7 @@ object PlotWindow: TPlotWindow
       Text = 'Not Set'
     end
     object Xcol_type: TRadioGroup
-      Left = 16
+      Left = 20
       Top = 375
       Width = 153
       Height = 97
@@ -636,7 +660,7 @@ object PlotWindow: TPlotWindow
       TabOrder = 5
     end
     object Edit_Xoffset: TEdit
-      Left = 210
+      Left = 214
       Top = 479
       Width = 60
       Height = 21
@@ -652,7 +676,7 @@ object PlotWindow: TPlotWindow
       OnChange = Edit_XoffsetChange
     end
     object Edit_median_len: TEdit
-      Left = 238
+      Left = 242
       Top = 868
       Width = 46
       Height = 21
@@ -668,7 +692,7 @@ object PlotWindow: TPlotWindow
     end
     object FilterType: TListBox
       Left = 0
-      Top = 834
+      Top = 833
       Width = 160
       Height = 93
       Hint = 
@@ -680,7 +704,7 @@ object PlotWindow: TPlotWindow
         'None'
         'Median Filter'
         'Median1 Filter'
-        'Linear Filter'
+        'Linear Filter order:'
         'Lin.regression (y=mx)'
         'Lin. regression (y=mx+c)'
         'GMR regression (y=mx+c)'
@@ -700,6 +724,8 @@ object PlotWindow: TPlotWindow
         'Polynomial fit order:'
         'Poly in sqrt(x) order:'
         'rational (poly/poly) order:'
+        'Derivative (dy/dx)'
+        'Integral (y dx)'
         'FFT returns |magnitude|'
         'FFT returns dBV'
         'FFT Hanning win |mag|'
@@ -709,7 +735,7 @@ object PlotWindow: TPlotWindow
       TabOrder = 3
     end
     object CSpinEdit_Fontsize: TCSpinEdit
-      Left = 80
+      Left = 84
       Top = 271
       Width = 50
       Height = 22
@@ -724,7 +750,7 @@ object PlotWindow: TPlotWindow
       OnChange = CSpinEdit_FontsizeChange
     end
     object ListBoxY: TListBox
-      Left = 0
+      Left = 4
       Top = 671
       Width = 270
       Height = 137
@@ -741,7 +767,7 @@ object PlotWindow: TPlotWindow
       OnClick = ListBoxYClick
     end
     object ListBoxX: TListBox
-      Left = 0
+      Left = 4
       Top = 506
       Width = 270
       Height = 137
@@ -757,7 +783,7 @@ object PlotWindow: TPlotWindow
       OnClick = ListBoxXClick
     end
     object CheckBox_Compress: TCheckBox
-      Left = 125
+      Left = 129
       Top = 809
       Width = 161
       Height = 25
@@ -766,7 +792,7 @@ object PlotWindow: TPlotWindow
       TabOrder = 17
     end
     object Button_Filename: TBitBtn
-      Left = 1
+      Left = 5
       Top = 929
       Width = 89
       Height = 25
@@ -779,7 +805,7 @@ object PlotWindow: TPlotWindow
       OnClick = Button_Filename1Click
     end
     object Button_add_trace: TBitBtn
-      Left = 96
+      Left = 100
       Top = 929
       Width = 89
       Height = 25
@@ -792,7 +818,7 @@ object PlotWindow: TPlotWindow
       OnClick = Button_add_trace1Click
     end
     object Button_clear_all_traces: TBitBtn
-      Left = 195
+      Left = 199
       Top = 929
       Width = 89
       Height = 25
@@ -802,7 +828,7 @@ object PlotWindow: TPlotWindow
       OnClick = Button_clear_all_traces1Click
     end
     object BitBtn_set_colour: TBitBtn
-      Left = 154
+      Left = 158
       Top = 120
       Width = 113
       Height = 25
@@ -815,7 +841,7 @@ object PlotWindow: TPlotWindow
       OnClick = BitBtn_set_colourClick
     end
     object Polyorder: TEdit
-      Left = 238
+      Left = 242
       Top = 895
       Width = 46
       Height = 21
@@ -823,6 +849,19 @@ object PlotWindow: TPlotWindow
       NumbersOnly = True
       TabOrder = 22
       Text = '2'
+    end
+    object Edit_skip_lines: TEdit
+      Left = 233
+      Top = 397
+      Width = 41
+      Height = 21
+      Hint = 'Enter number of lines to skip in csv file before  header line'
+      Anchors = [akTop, akRight]
+      NumbersOnly = True
+      ParentShowHint = False
+      ShowHint = True
+      TabOrder = 23
+      Text = '0'
     end
   end
   object ActionList1: TActionList
@@ -895,7 +934,7 @@ object PlotWindow: TPlotWindow
     Left = 304
     Top = 32
     Bitmap = {
-      494C01010A000E00680110001000FFFFFFFFFF10FFFFFFFFFFFFFFFF424D3600
+      494C01010A000E00880110001000FFFFFFFFFF10FFFFFFFFFFFFFFFF424D3600
       0000000000003600000028000000400000003000000001002000000000000030
       0000000000000000000000000000000000000000000000000000000000000000
       0000000000000000000000000000000000000000000000000000000000000000

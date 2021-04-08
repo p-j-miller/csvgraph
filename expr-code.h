@@ -34,6 +34,8 @@
 #endif
 
 #define Allow_dollar_vars_in_expr /* if defined allow variables of $1 .. like awk in xepr */
+#define Allow_dollar_T /* if defined (as well as above) allow variables like $T1 for "trace 1" */
+
 /* general purpose hash functions based on Fowler/Noll/Vo hash fnv-1a , with optional "mixing" at the end */
 void hash_reset(uint32_t *h); // reset hash h to its initial value
 void hash_add(char *s, uint32_t *h); // adds string s to hash h, updates h
@@ -99,7 +101,7 @@ void leastsquares_rat3(float *y,float *x,int start, int end, double *a, double *
 /* specialised versions of above - faster and more accurate that using general version above */
 void lin_reg_through_a_b(float a, float b,float *y,float *x, int start, int end, double *m, double *c); /* y=mx */
 void lin_reg_GMR(float *y,float *x, int start, int end, bool GMR,double *m, double *c, double *r2); // lin reg optional GMR
-void fit_min_abs_err_line(float *x, float *y,unsigned int nos_vals,bool rel_error,double *m_out, double *c_out,double *best_err_out); // fit min rel/abs error line
+void fit_min_abs_err_line(float *x, float *y,unsigned int nos_vals,bool rel_error,double *m_out, double *c_out,double *best_err_out,void (*callback)(unsigned int cnt,unsigned int maxcnt)); // fit min rel/abs error line
 void lin_reg(float *y,float *x, int start, int end, double *m, double *c, double *r2); /* linear regression */
 void log_reg(float *y,float *x, float yoff,float xoff,int start, int end, double *m, double *c, double *r2); /* linear regression on logx / logy*/
 /* yoff and xoff are subtracted from *y and *x this is useful as log(z) requires z>0 */

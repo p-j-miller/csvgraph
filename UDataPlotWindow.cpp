@@ -42,6 +42,12 @@
 //               :   y=(a+b*x+c*x^2)/(1+d*x+e*x^2) to be fitted
 //               :  generic poly in sqrt(x) and rational function(poly/poly) fitting allowed with user specified order
 //               : better error trapping in basic linear regex (y=mx+c) for 1/x & log's
+// 2v2 27/3/2021 : $T1 to Tn allowed in expressions to use values from existing traces on the graph. Traces are numbered from 1. Invalid trace numbers (too big) return 0
+//               : user can now set order of linear filter. Implements nth order Butterworth filter (10*order db/decade). Order=0 gives no filtering. Order =1 gives same filtering as previously.
+//               : "filters" for integral and derivative added
+//               : all filters now report progress as a % (previoulsy min abs error and min rel error did not report progress and they could be quite slow).
+//               : skip N lines before csv header option added for cases where csv header is not on the 1st row of the file
+//               : Added column numbers to X column and Y column listboxes  to make it easier to select columns when names are not very descriptive (or missing).
 //
 //---------------------------------------------------------------------------
 /*----------------------------------------------------------------------------
@@ -101,7 +107,7 @@
 #include "multiple-lin-reg-fn.h"
 
 extern TForm1 *Form1;
-const char * Prog_Name="CSVgraph (Github) 2v1s";   // needs to be global as used in about box as well.
+const char * Prog_Name="CSVgraph (Github) 2v2g";   // needs to be global as used in about box as well.
 #if 1 /* if 1 then use fast_strtof() rather than atof() for floating point conversion. Note in this application this is only slightly faster (1-5%) */
 extern "C" float fast_strtof(const char *s,char **endptr); // if endptr != NULL returns 1st character thats not in the number
 #define strtod fast_strtof  /* set so we use it in place of strtod() */
@@ -113,6 +119,7 @@ extern "C" float fast_strtof(const char *s,char **endptr); // if endptr != NULL 
 #define CL_BLOCK_SIZE (1024*1024) /* must be a bigish power of 2 , used for count_lines() function to quickly count lines in file 1M seems to be best on my PC */
 
 #define P_UNUSED(x) (void)x; /* a way to avoid warning unused parameter messages from the compiler */
+
 
 /* next 2 function used to support conversion to unicode vcl see https://blogs.embarcadero.com/migrating-legacy-c-builder-apps-to-c-builder-10-seattle/
 */
@@ -431,6 +438,9 @@ __fastcall TPlotWindow::TPlotWindow(TComponent* Owner) : TForm(Owner)
 		 Button_add_trace->Top-=voffset;
 		 Button_clear_all_traces->Top-=voffset;
 		 StatusText->Top-=voffset;
+		 Label15->Top-=voffset;
+		 Label16->Top-=voffset;
+		 Edit_skip_lines->Top-=voffset;
 		}
 	 // move all controls in bar on right
 	 RadioGroup3->Left+=ofset;
@@ -463,6 +473,9 @@ __fastcall TPlotWindow::TPlotWindow(TComponent* Owner) : TForm(Owner)
 	 Button_add_trace->Left +=ofset;
 	 Button_clear_all_traces->Left +=ofset;
 	 StatusText->Left +=ofset;
+	 Label5->Left+=ofset;
+	 Label6->Left+=ofset;
+	 Edit_skip_lines->Left+=ofset;
 	 // rprintf("updated ListBoxX: top=%d left=%d height=%d width=%d\n",ListBoxX->Top,ListBoxX->Left , ListBoxX->Height , ListBoxX->Width );
 	}
 
@@ -969,20 +982,34 @@ void __fastcall TPlotWindow::Button_clear_all_traces1Click(TObject *Sender)
 }
 //---------------------------------------------------------------------------
 
+
 #ifdef Allow_dollar_vars_in_expr
 double get_dollar_var_value(pnlist p) /* get value of $ variable */
         {char *v=p->name;
          unsigned int i=0;
-         static int count=10; // set to 10 to disbale debuging, 0 for debug
+		 static int count=10; // set to 10 to disable debuging, 0 for debug
          if(count<10)
 				{rprintf("call %d to get_dollar_var_value(),count, name=%s\n",count,v);
                  for(unsigned int j=0;j<MAX_COLS;++j)
 						rprintf("Col %-3d : %s\n",j+1,col_ptrs[j]);
                 }
          if(*v++!='$')
-                return 0; // oops should only be called for $nnn variables
+				return 0; // oops should only be called for $nnn variables
+#ifdef Allow_dollar_T
+		 bool dollar_T_found=false;
+		 if(*v=='t' || *v=='T')
+			{dollar_T_found=true;
+			 ++v;
+			 }
+#endif
          while(isdigit(*v)) i=i*10+(*v++ -'0'); // get number after $
-         i--; // internally $1 = array[0]
+		 i--; // internally $1 = array[0]
+		 if(dollar_T_found)
+			{// found $Tn
+			 // float fnAddDataPoint_thisy(int iGraphNumber)
+			 return Form1->pPlotWindow->pScientificGraph->fnAddDataPoint_thisy(i);
+			}
+		 // if not $Tn must just be $n
          if(col_ptrs==NULL || i>= MAX_COLS || col_ptrs[i]==NULL || *(col_ptrs[i])==0 ) return 0;
          if(count<10)
                 {rprintf("call to get_dollar_var_value(), i=%u, $i=%s (%g)\n",i,(i<MAX_COLS)?col_ptrs[i]:"error",(i<MAX_COLS)?atof(col_ptrs[i]):0.0);
@@ -1178,7 +1205,68 @@ void TPlotWindow::gen_lin_reg(enum reg_types r,int N,bool write_y,int iGraph)
   free(A);free(X);free(U); // free up dynamically allocated arrays   we know none are NULL as this is trapped much earlier
  }
 
-
+#if 1
+void deriv_trace(int iGraph)
+{ // take derivative of specified trace . No filtering (that can be applied using csvgraph if required then accessed with $Tn
+  // derivative is based on previous point and next point (that means the derivative is centered around the point)
+  // in general the results from this version "look better" that the alternative below
+  float *x_arr,*y_arr;
+  double d,ld;
+  unsigned int iCount=Form1->pPlotWindow->pScientificGraph->fnGetxyarr(&x_arr,&y_arr,iGraph); // allows access to x and y arrays of specified graph, returns nos points
+  int i,j,k;
+  if(iCount<2) return;
+  // 1st point - can only look forward to next point
+  if(x_arr[1]==x_arr[0]) ld=0;// avoid divide by zero when x value does not change
+  else ld=(y_arr[1]-y_arr[0])/(x_arr[1]-x_arr[0]); // slope
+  for(i=1; i<iCount-1;++i)  // for all points bar the first & last , use y values either side to calculate slope
+	{j=i+1;
+	 k=i-1;
+	 if(x_arr[j]==x_arr[k]) d=0;// avoid divide by zero when x value does not change
+	 else d=(y_arr[j]-y_arr[k])/(x_arr[j]-x_arr[k]); // slope
+	 y_arr[k]=ld; // can only write back values 1 step behind as orig value for [i] is needed on next iteration
+	 ld=d;
+	}
+  // last point can only look back to the point before before
+  k=i-1;
+  if(x_arr[i]==x_arr[k]) d=0;// avoid divide by zero when x value does not change
+  else d=(y_arr[i]-y_arr[k])/(x_arr[i]-x_arr[k]); // slope
+  y_arr[k]=ld; // previous point
+  y_arr[i]=d; // last point
+}
+#else
+void deriv_trace(int iGraph)
+{ // take derivative of specified trace . No filtering (that can be applied using csvgraph if required then accessed with $Tn
+  // derivative is based on current point and next point (so slope appears by eye to be ofset by ~ 1/2 a sample).
+  float *x_arr,*y_arr;
+  double d=0;
+  unsigned int iCount=Form1->pPlotWindow->pScientificGraph->fnGetxyarr(&x_arr,&y_arr,iGraph); // allows access to x and y arrays of specified graph, returns nos points
+  int i,j;
+  if(iCount<2) return;
+  for(i=0; i<iCount-1;++i)  // for all points bar the last
+	{j=i+1;
+	 if(x_arr[j]==x_arr[i]) d=0;// avoid divide by zero when x value does not change
+	 else d=(y_arr[j]-y_arr[i])/(x_arr[j]-x_arr[i]); // slope
+	 y_arr[i]=d;
+	}
+  y_arr[i]=d; // last point has same slope as the point before
+}
+#endif
+void integral_trace(int iGraph)
+{ // take integral of specified trace .  Uses trapezoidal rule for integration
+  float *x_arr,*y_arr,y_i;
+  double integral=0;
+  unsigned int iCount=Form1->pPlotWindow->pScientificGraph->fnGetxyarr(&x_arr,&y_arr,iGraph); // allows access to x and y arrays of specified graph, returns nos points
+  int i,j;
+  if(iCount<2) return;
+  y_i=y_arr[0]; // need this before its overwritten
+  y_arr[0]=0;         // 1st point has integral zero
+  for(i=0; i<iCount-1;++i)  // for all the rest of the points add in extra area between adjacent points
+	{j=i+1;
+	 integral+=0.5*(y_i+y_arr[j])*(x_arr[j]-x_arr[i]); // trapezoidal rule for integration
+	 y_i=y_arr[j];// this y[j] will be y[i] in the next iteration  (its about to be overwritten).
+	 y_arr[j]=integral;
+	}
+}
 
 void __fastcall TPlotWindow::Button_add_trace1Click(TObject *Sender)
 {  // add graph
@@ -1220,7 +1308,7 @@ void __fastcall TPlotWindow::Button_add_trace1Click(TObject *Sender)
          }
    compress=CheckBox_Compress->Checked;
    median_ahead_t=atof(AnsiOf(Edit_median_len->Text.c_str()));
-   poly_order=atoi(AnsiOf(Polyorder->Text.c_str()));  // polynomial order for poly fit
+   poly_order=_wtoi(Polyorder->Text.c_str());  // polynomial order for poly fit
    if(FilterType->ItemIndex>0)
 		FString=FilterType->Items->Strings[FilterType->ItemIndex]; // get name of filter user has specified directly from Listbox "FilterType"
    else FString="" ; // "" means no filtering
@@ -1234,8 +1322,13 @@ void __fastcall TPlotWindow::Button_add_trace1Click(TObject *Sender)
    else if(is_order)
 		{// general poly or rational function fit , order = 0 is OK  and is unsigned so cannot go negative
 		 if(compress)  ShowMessage("Warning: both compress and fit requested so fitting will be done on compressed data");
-		 snprintf(cstring,sizeof(cstring)," %u",poly_order);
-		 FString=FString+cstring;
+		 // change "order:" to "order %u "
+		 int so=FString.Pos("order:");
+		 int LF=FString.Length() ;
+		 AnsiString FS1=FString;
+		 FString.SetLength(so-1); // get rid of order:  and anything after it
+		 snprintf(cstring,sizeof(cstring),"order %u ",poly_order);  // replace "order: with new text
+		 FString=FString+cstring+FS1.SubString(so+6,LF-(so-1+6));      // add on origonal text that was after "order:" (length 6)
 		}
    else if(compress && FilterType->ItemIndex !=0)
 		{ShowMessage("Warning: both compress and filter requested so filtering will be done on compressed data");
@@ -1268,7 +1361,10 @@ void __fastcall TPlotWindow::Button_add_trace1Click(TObject *Sender)
    fstat(fileno(fin), &statbuf); // get filesize (etc)
 
   // rprintf("filename selected is %s\n",filename.c_str());
-  csv_line=readline(fin);
+  {int skip_initial_lines=_wtoi(Form1->pPlotWindow->Edit_skip_lines->Text.c_str());
+   for(int l=0;l<=skip_initial_lines;++l)    // need to read 1 line if skip=0, 2 lines for skip=1, etc
+	 csv_line=readline(fin);
+  }
   if(csv_line==NULL)
         {ShowMessage("Error: cannot read headers from file "+filename);
          fclose(fin);
@@ -1427,10 +1523,10 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
         {// not a number or $nnn so could be an expression  , if so need to set yexpr=true
           se=strdup(start_s); // take a copy of the potential expression
           char *sp=se;
-          while(*sp!=',' && *sp) ++sp; // look for a comma
+		  while(*sp!=',' && *sp) ++sp; // look for a comma
           if(*sp==',') *sp=0; // end of expression
           while(*ys!=',' && *ys) ++ys; // also need to move ys forward to next item
-          rprintf("Found an expression for y:%s\n",se);
+		  rprintf("Found an expression for y:%s\n",se);
           to_rpn(se); // compile expression to rpn
           if(last_expression_ok())
                 { yexpr=true; // flag expression as valid
@@ -1917,11 +2013,12 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
                         }
                 break;
         case 3:
-                // linear filter
+				// linear filter  with user specified time constant and order. No filtering is done if order=0
                 if(median_ahead_t>0.0)
 						{
 						 StatusText->Caption=FString;
-						 pScientificGraph->fnLinear_filt_time(median_ahead_t,iGraph,filter_callback);
+						 for(int i=0;i<poly_order;++i)
+							pScientificGraph->fnLinear_filt_time(median_ahead_t,iGraph,filter_callback);
                         }
 				break;
 		case 4:
@@ -2051,7 +2148,17 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 				StatusText->Caption=FString;
 				gen_lin_reg(reg_rat,poly_order+1,true,iGraph);
 				break;
-		case 23: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+		case 23:
+				// derivative
+				StatusText->Caption=FString;
+				deriv_trace(iGraph);
+				break;
+		case 24:
+				// integral
+				StatusText->Caption=FString;
+				integral_trace(iGraph);
+				break;
+		case 25: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 				// fft return ||
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnFFT(false,false,iGraph,filter_callback))
@@ -2059,7 +2166,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						 ShowMessage("Warning: FFT failed - adding original trace to graph");
 						}
 				break;
-		case 24: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+		case 26: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 				// fft return dBV
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnFFT(true,false,iGraph,filter_callback))
@@ -2067,7 +2174,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						 ShowMessage("Warning: FFT failed - adding original trace to graph");
 						}
 				break;
-		case 25: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+		case 27: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 				// fft with Hanning window, return ||
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnFFT(false,true,iGraph,filter_callback))
@@ -2075,7 +2182,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						 ShowMessage("Warning: FFT failed - adding original trace to graph");
 						}
 				break;
-		case 26: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+		case 28: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 				// fft with Hanning window return dBV
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnFFT(true,true,iGraph,filter_callback))
@@ -2101,8 +2208,13 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
   if(*ys==',')
         {// multiple items are comma seperated
          ++ys; // skip ,
-         rewind(fin); // back to start of file
-         if(readline(fin)==NULL)  // skip header line, and check file can be read again
+		 rewind(fin); // back to start of file
+		 char *text_first_line=NULL;
+		 {int skip_initial_lines=_wtoi(Form1->pPlotWindow->Edit_skip_lines->Text.c_str());
+		  for(int l=0;l<=skip_initial_lines;++l)    // need to read 1 line if skip=0, 2 lines for skip=1, etc
+				text_first_line=readline(fin);
+		 }
+		 if(text_first_line==NULL)  // check header line to check file can be read again
                 {
 				 ShowMessage("Error: cannot rewind input file to read next column");
 				 fclose(fin);
@@ -2206,7 +2318,7 @@ void set_ListboxXY(void) // highlight default columns in ListBoxX/Y (if valid co
 {
   int i;
   unsigned int nos_cols_in_file=Form1->pPlotWindow->ListBoxY->Items->Count ; // number of columns
-  i=atoi(AnsiOf(Form1->pPlotWindow->Edit_xcol->Text.c_str()))-1;
+  i=_wtoi(Form1->pPlotWindow->Edit_xcol->Text.c_str())-1;
   if(i>=0 && i<nos_cols_in_file)
 	Form1->pPlotWindow->ListBoxX->ItemIndex=i;// highlight default column (only 1 for x )
   // y is more complex as can be more than 1 column, comma seperated
@@ -2343,7 +2455,10 @@ void proces_open_filename(char *fn) // open filename - just to peek at header ro
 
   rcls();
   rprintf("filename selected is %s\n",filename.c_str());
-  csv_line=readline(fin);
+  {int skip_initial_lines=_wtoi(Form1->pPlotWindow->Edit_skip_lines->Text.c_str());
+   for(int l=0;l<=skip_initial_lines;++l)    // need to read 1 line if skip=0, 2 lines for skip=1, etc
+	 csv_line=readline(fin);
+  }
   if(csv_line==NULL)
         {ShowMessage("Error: cannot read headers from file "+filename);
          fclose(fin);
@@ -2437,9 +2552,16 @@ void proces_open_filename(char *fn) // open filename - just to peek at header ro
                         {if(s[1]==0 && *s=='"') *s=0;   // get rid of final "
                         }
 				}
-         rprintf("Col %-3d : %s  =%s,...\n",j+1,hdr_col_ptrs[j],col_ptrs[j]);// print col number, name of columd from header line and value from 2nd line
+		 rprintf("Col %-3d : %s  =%s,...\n",j+1,hdr_col_ptrs[j],col_ptrs[j]);// print col number, name of column from header line and value from 2nd line
+#if 1
+		 /* add text as column number:text from header . This helps if column headers are not very descriptive [or missing] */
+		 snprintf(str_buf,sizeof(str_buf)-1,"%d: %s",j+1,hdr_col_ptrs[j]);
+		 Form1->pPlotWindow->ListBoxX->Items->Add(str_buf);
+		 Form1->pPlotWindow->ListBoxY->Items->Add(str_buf);
+#else
 		 Form1->pPlotWindow->ListBoxX->Items->Add(hdr_col_ptrs[j]);
-         Form1->pPlotWindow->ListBoxY->Items->Add(hdr_col_ptrs[j]);
+		 Form1->pPlotWindow->ListBoxY->Items->Add(hdr_col_ptrs[j]);
+#endif
 		}
 
   fclose(fin);// only want 1st line here (just display headers so user can select ones to graph
@@ -2950,4 +3072,6 @@ void __fastcall TPlotWindow::Action1Execute(TObject *Sender)
   free(progname);
 }
 //---------------------------------------------------------------------------
+
+
 
