@@ -4,7 +4,7 @@
 //  Loosely based on an original public domain version by  Frank heinrich, mail@frank-heinrich.de
 //---------------------------------------------------------------------------
 /*----------------------------------------------------------------------------
- * Copyright (c) 2019 Peter Miller
+ * Copyright (c) 2019,2022 Peter Miller
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the

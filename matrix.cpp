@@ -8,7 +8,7 @@
 */
 
 /*----------------------------------------------------------------------------
- * Copyright (c) 2012, 2013 Peter Miller
+ * Copyright (c) 2012, 2013,2022 Peter Miller
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the

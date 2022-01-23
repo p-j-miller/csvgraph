@@ -48,10 +48,13 @@
 //               : all filters now report progress as a % (previoulsy min abs error and min rel error did not report progress and they could be quite slow).
 //               : skip N lines before csv header option added for cases where csv header is not on the 1st row of the file
 //               : Added column numbers to X column and Y column listboxes  to make it easier to select columns when names are not very descriptive (or missing).
+// 2v3 3/1/2022  : can optionally use yasort2() for sorting - this has a guarantee on worse case execution time and can use all available processors to speed up sorting
+//               : yamedian() used which can calculate median in place without needing to copy the array of y values (but will for speed if memory is available)
+//               : added linear regression y=m*x*log2(x)+c
 //
 //---------------------------------------------------------------------------
 /*----------------------------------------------------------------------------
- * Copyright (c) 2019,2020,2021 Peter Miller
+ * Copyright (c) 2019,2020,2021,2022 Peter Miller
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -107,7 +110,7 @@
 #include "multiple-lin-reg-fn.h"
 
 extern TForm1 *Form1;
-const char * Prog_Name="CSVgraph (Github) 2v2g";   // needs to be global as used in about box as well.
+const char * Prog_Name="CSVgraph (Github) 2v3";   // needs to be global as used in about box as well.
 #if 1 /* if 1 then use fast_strtof() rather than atof() for floating point conversion. Note in this application this is only slightly faster (1-5%) */
 extern "C" float fast_strtof(const char *s,char **endptr); // if endptr != NULL returns 1st character thats not in the number
 #define strtod fast_strtof  /* set so we use it in place of strtod() */
@@ -2111,54 +2114,59 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 				pScientificGraph->fnLinreg(SqrtLin,iGraph,filter_callback);
 				break;
 		case 16:
+				// nlog2(n) regression y=m*x*log2(x)+c
+				StatusText->Caption=FString;
+				pScientificGraph->fnLinreg(Nlog2nLin,iGraph,filter_callback);
+				break;
+		case 17:
 				// y=a*x+b*sqrt(x)+c  (least squares fit)
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg_3(iGraph,filter_callback);
 				break;
 
-		case 17:
+		case 18:
 				// y=a+b*sqrt(x)+c*x+d*x^1.5
 				StatusText->Caption=FString;
 				gen_lin_reg(reg_sqrt,4,true,iGraph);
 				break;
-		case 18:
+		case 19:
 				// y=(a+bx)/(1+cx)  (least squares fit)
 				StatusText->Caption=FString;
 				pScientificGraph->fnrat_3(iGraph,filter_callback);
 				break;
-		case 19:
+		case 20:
 				// N=5=> y=(a0+a1*x+a2*x^2)/(1+b1*x+b2*x^2)
 				StatusText->Caption=FString;
 				gen_lin_reg(reg_rat,5,true,iGraph);
 				break;
-		case 20: //  general purpose polynomial fit   (least squares using orthogonal polynomials)
+		case 21: //  general purpose polynomial fit   (least squares using orthogonal polynomials)
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnPolyreg(poly_order,iGraph,filter_callback))
 						{StatusText->Caption="Polynomial fit failed";
 						 ShowMessage("Warning: Polynomial fit failed - adding original trace to graph");
 						}
 				break;
-		case 21:
+		case 22:
 				// general purpose polynomial fit in sqrt(x) with user defined order
 				StatusText->Caption=FString;
 				gen_lin_reg(reg_sqrt,poly_order+1,true,iGraph);
 				break;
-		case 22:
+		case 23:
 				// rational fit (poly1/poly2)  with user defined order
 				StatusText->Caption=FString;
 				gen_lin_reg(reg_rat,poly_order+1,true,iGraph);
 				break;
-		case 23:
+		case 24:
 				// derivative
 				StatusText->Caption=FString;
 				deriv_trace(iGraph);
 				break;
-		case 24:
+		case 25:
 				// integral
 				StatusText->Caption=FString;
 				integral_trace(iGraph);
 				break;
-		case 25: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+		case 26: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 				// fft return ||
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnFFT(false,false,iGraph,filter_callback))
@@ -2166,7 +2174,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						 ShowMessage("Warning: FFT failed - adding original trace to graph");
 						}
 				break;
-		case 26: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+		case 27: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 				// fft return dBV
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnFFT(true,false,iGraph,filter_callback))
@@ -2174,7 +2182,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						 ShowMessage("Warning: FFT failed - adding original trace to graph");
 						}
 				break;
-		case 27: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+		case 28: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 				// fft with Hanning window, return ||
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnFFT(false,true,iGraph,filter_callback))
@@ -2182,7 +2190,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						 ShowMessage("Warning: FFT failed - adding original trace to graph");
 						}
 				break;
-		case 28: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+		case 29: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 				// fft with Hanning window return dBV
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnFFT(true,true,iGraph,filter_callback))
@@ -2194,20 +2202,20 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
   if(*ys!=',')
 	{// if this is the final trace then rescale & actually plot, otherwise skip this step to save time
 	 if(iGraph==0 || !zoomed)
-        { // if 1st graph or not already zoomed then autoscale, otherwise leave this to the user.
+		{ // if 1st graph or not already zoomed then autoscale, otherwise leave this to the user.
 		 StatusText->Caption="Autoscaling";
-         Application->ProcessMessages(); /* allow windows to update (but not go idle) */
-         pScientificGraph->fnAutoScale();
-        }
-     StatusText->Caption="Drawing graph";
-     Application->ProcessMessages(); /* allow windows to update (but not go idle) */
-     fnReDraw();
-    }
+		 Application->ProcessMessages(); /* allow windows to update (but not go idle) */
+		 pScientificGraph->fnAutoScale();
+		}
+	 StatusText->Caption="Drawing graph";
+	 Application->ProcessMessages(); /* allow windows to update (but not go idle) */
+	 fnReDraw();
+	}
   end_t=clock();
 
   if(*ys==',')
-        {// multiple items are comma seperated
-         ++ys; // skip ,
+		{// multiple items are comma seperated
+		 ++ys; // skip ,
 		 rewind(fin); // back to start of file
 		 char *text_first_line=NULL;
 		 {int skip_initial_lines=_wtoi(Form1->pPlotWindow->Edit_skip_lines->Text.c_str());
@@ -3072,6 +3080,7 @@ void __fastcall TPlotWindow::Action1Execute(TObject *Sender)
   free(progname);
 }
 //---------------------------------------------------------------------------
+
 
 
 

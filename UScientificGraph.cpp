@@ -7,7 +7,7 @@
 // 6/2/2021 for 2v0 major change to use float *x_vals,*y_vals rather than SDataPoints in a TLIST.
 //
 /*----------------------------------------------------------------------------
- * Copyright (c) 2019 Peter Miller
+ * Copyright (c) 2019,2022 Peter Miller
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -45,6 +45,8 @@
 #include <cmath>
 #include "kiss_fftr.h" // for fft
 #include "_kiss_fft_guts.h"
+#include "yasort2.h" /* needs to be set so we sort float's ie include "#define elem_type_sort2 float" */
+#include "yamedian.h" /* needs to be set to work on floats eg  #define elem_type_median float */
 
 // #define USE_double_to_str_exp /* define to use double_to_str_exp() for y axis with max 12 chars, if not defined use gcvt() */
 
@@ -1227,17 +1229,21 @@ void TScientificGraph::fnMedian_filt(unsigned int median_ahead, int iGraphNumber
 
                         }
                  if(i==0)
-                        {// do exact median by taking a copy of the values, and using quick_select() to find the median
-                         float *arr=(float *)calloc(endi,sizeof(float));
-                         if(arr!=NULL)
-                                {
-                                 for(unsigned int k=0; k<endi;++k)   // take a copy of all the y values that we want median of, also get min,max,average
-                                        {
+						{
+#if 1
+						 f=ya_median(pAGraph->y_vals,endi); // calculate median in place (don't change arr).
+#else                    // do exact median by taking a copy of the values, and using quick_select() to find the median
+						 float *arr=(float *)calloc(endi,sizeof(float));
+						 if(arr!=NULL)
+								{
+								 for(unsigned int k=0; k<endi;++k)   // take a copy of all the y values that we want median of, also get min,max,average
+										{
 										 arr[k]= pAGraph->y_vals[k];
-                                        }
-                                 f=quick_select( arr, endi); // initialise with actual median as its quick to calculate
-                                free(arr);
-                               }
+										}
+								 f=quick_select( arr, endi); // initialise with actual median as its quick to calculate
+								free(arr);
+							   }
+#endif
                         }
                  last_endi=endi; // ensure we don't check values we have already processed
                  if(endi>=maxi)
@@ -1315,7 +1321,10 @@ void TScientificGraph::fnMedian_filt(unsigned int median_ahead, int iGraphNumber
 				 this_endT=pAGraph->x_vals[i]+median_ahead_t; // time for the end of the look ahead
 				 for(endi=last_endi;endi<maxi && pAGraph->x_vals[endi] < this_endT;++endi); // search forward to find i that matches end of look ahead time
 				 if(i==0)
-						{// do exact median by taking a copy of the values, and using quick_select() to find the median
+						{
+#if 1
+						 m=ya_median(pAGraph->y_vals,endi); // calculate median in place (don't change arr).
+#else                    // do exact median by taking a copy of the values, and using quick_select() to find the median
 						 float *arr=(float *)calloc(endi,sizeof(float));
 						 if(arr!=NULL)
 								{
@@ -1326,6 +1335,7 @@ void TScientificGraph::fnMedian_filt(unsigned int median_ahead, int iGraphNumber
 								 m=quick_select( arr, endi); // initialise with actual median as its quick to calculate
 								free(arr);
 							   }
+#endif
 						}
 				 last_endi=endi; // ensure we don't check values we have already processed
 				 if(endi>=maxi)
@@ -1559,7 +1569,7 @@ void TScientificGraph::fnrat_3(int iGraphNumberF, void (*callback)(unsigned int 
 void TScientificGraph::fnLinreg(enum LinregType type, int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
  // apply 1st order least squares linear regression (y=mx+c) to graph in place
  // can also do GMR for a straight line when type = LinLin_GMR
- // enum LinregType  {LinLin,LogLin,LinLog,LogLog,RecipLin,LinRecip,RecipRecip,SqrtLin}; defines preprocessing of varibales before linear regression 1st is X 2nd is Y
+ // enum LinregType  {LinLin,LogLin,LinLog,LogLog,RecipLin,LinRecip,RecipRecip,SqrtLin}; defines preprocessing of variables before linear regression 1st is X 2nd is Y
  // results checked using csvfun3.csv. R^2 values (and coefficients) also checked against Excel for the fits excel can do.
 {// to save copying data this is done inline
  SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
@@ -1596,6 +1606,11 @@ void TScientificGraph::fnLinreg(enum LinregType type, int iGraphNumberF, void (*
 		 if(type== SqrtLin)
 			{if(xi<0 ) continue; // avoid sqrt of a negative number
 			 xi=sqrt(xi);
+			}
+		 if(type== Nlog2nLin)
+			{if(xi<=0 ) continue; // avoid ln of a negative number
+			 // M_LOG2E 1.44269504088896340736 is defined in math.h // 1/ln(2) as multiplication below is probably faster than division
+			 xi=xi*log(xi)*M_LOG2E;    // xi*log2(xi) = xi*ln(xi)/ln(2)
 			}
 		 ++N;
          meanx+= (xi-meanx)/(double) N; /* calculate means as mi+1=mi+(xi+1 - mi)/i+1 , this should give accurate results and avoids the possibility of the "sum" overflowing*/
@@ -1676,6 +1691,11 @@ void TScientificGraph::fnLinreg(enum LinregType type, int iGraphNumberF, void (*
 		// sqrt(x): y=m*sqrt(x)+c
 		rprintf("Best Least squares curve is Y=%g*sqrt(X)%+g which has an R^2 of %g\n",m,c,r2);
 		break;
+	 case Nlog2nLin:
+		// n*log2(n): y=m*x*log2(x)+c
+		rprintf("Best Least squares curve is Y=%g*X*log2(X)%+g which has an R^2 of %g\n",m,c,r2); // log base 2
+		rprintf("Best Least squares curve is Y=%g*X*log(X)%+g\n",m*M_LOG2E,c); // log base e
+		break;
 	}
  // now put new y values back, calculated as y=m*x+c
  for(i=0;i<iCount;++i)
@@ -1718,6 +1738,10 @@ void TScientificGraph::fnLinreg(enum LinregType type, int iGraphNumberF, void (*
 		 case SqrtLin:
 			// sqrt(x): y=m*sqrt(x)+c
 			pAGraph->y_vals[i]=m*(xi>=0?sqrt(xi):0.0f)+c;
+			break;
+		 case Nlog2nLin:
+			// n*log2(n): y=m*x*log2(x)+c
+			pAGraph->y_vals[i]=m*(xi>0?xi*log(xi)*M_LOG2E:0.0f)+c;
 			break;
 		}
 	   e=fabs(yi-pAGraph->y_vals[i]);
@@ -2741,12 +2765,19 @@ void TScientificGraph::myqsort(int iGraphNumberF, int p, int r)
 #undef my_swapc
 #undef Z
 
-
 void TScientificGraph::sortx( int iGraphNumberF) // sort ordered on x values  (makes x values increasing)
 {
  SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
  unsigned int iCount=pAGraph->nos_vals ;
  time_t start_t=clock();
+#if 1
+  /* sort using yasort2() */
+
+ float *xa=pAGraph->x_vals;
+ float *ya=pAGraph->y_vals;
+ yasort2(xa,ya,iCount);
+ rprintf(" sort (yasort2()) completed in %g secs\n",(clock()-start_t)/(double)CLOCKS_PER_SEC);
+#else /* original sorting code */
 #ifdef CHECK_DEPTH
  maxdepth=0;
  rn=3103515245u; // initialise random number generator to the same value every time to get consistant sorts for the same data
@@ -2762,6 +2793,7 @@ void TScientificGraph::sortx( int iGraphNumberF) // sort ordered on x values  (m
  rprintf(" sorting finished in %g secs : x[0]=%g x[1]=%g x[2]=%g x[4]=%g x[5]=%g\n",(clock()-start_t)/(double)CLOCKS_PER_SEC,
    pAGraph->x_vals[0],pAGraph->x_vals[1],pAGraph->x_vals[2],pAGraph->x_vals[3],
    pAGraph->x_vals[4],pAGraph->x_vals[5]);
+#endif
 #endif
 #if 1  /* check array actually is sorted correctly */
  int errs=0;

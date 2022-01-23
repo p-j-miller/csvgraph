@@ -160,9 +160,18 @@
             <DependentOn>UScientificGraph.h</DependentOn>
             <BuildOrder>10</BuildOrder>
         </CppCompile>
-        <FormResources Include="UDataPlotWindow.dfm"/>
+        <CppCompile Include="ya-median.c">
+            <BuildOrder>15</BuildOrder>
+        </CppCompile>
+        <CppCompile Include="ya-select.c">
+            <BuildOrder>14</BuildOrder>
+        </CppCompile>
+        <CppCompile Include="ya-sort2.c">
+            <BuildOrder>13</BuildOrder>
+        </CppCompile>
         <FormResources Include="Unit1.dfm"/>
         <FormResources Include="UScalesWindow.dfm"/>
+        <FormResources Include="UDataPlotWindow.dfm"/>
         <FormResources Include="About.dfm"/>
         <BuildConfiguration Include="Release">
             <Key>Cfg_2</Key>

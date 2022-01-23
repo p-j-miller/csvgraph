@@ -9,7 +9,7 @@
 #include <Graphics.hpp>
 // #define CHECK_DEPTH /* if defined check depth of recursion in myqsort() */
 
-enum LinregType  {LinLin,LinLin_GMR,LogLin,LinLog,LogLog,RecipLin,LinRecip,RecipRecip,SqrtLin};
+enum LinregType  {LinLin,LinLin_GMR,LogLin,LinLog,LogLog,RecipLin,LinRecip,RecipRecip,SqrtLin,Nlog2nLin};
 
 // class for scientific plots
 
@@ -149,6 +149,7 @@ public:
   bool fnAddDataPoint(float dXValueF, float dYValueF,
 	   int iGraphNumberF = 0); // returns true if added OK else false
   float fnAddDataPoint_nextx(int iGraphNumberF);    // returns next x value for this graph assuming its the same as the previous graph
+  float fnAddDataPoint_thisy(int iGraphNumber);    // returns next y value of iGraphNumber (locn from current graph number)  used to do $T1
   bool fnChangeXoffset(double dX); // change all X values by adding dX to the most recently added graph if at least 2 graphs defined
   void fnMedian_filt(unsigned int median_ahead, int iGraphNumberF = 0); // apply median filter to graph in place , lookahead defined in samples
   void fnMedian_filt_time1(double median_ahead_t, int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)); // new algorithm apply median filter to graph in place  , lookahead defined in time
