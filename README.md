@@ -41,6 +41,8 @@ All filters now report progress as a % (previously min. abs error and min. relat
 Option to skip N lines before csv header added for cases where csv header is not on the 1st row of the file
 Added column numbers to X column and Y column list boxes to make it easier to select columns when names are not very descriptive (or missing).
 
+2v3 - 23-1-2022 added y=m*x*log(x)+c curve fitting.
+ Sort and median functions improved to make them faster - sort will use all available processors to improve its execution speed.
 
 
 # Installation
