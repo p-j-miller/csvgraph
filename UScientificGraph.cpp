@@ -47,6 +47,7 @@
 #include "_kiss_fft_guts.h"
 #include "yasort2.h" /* needs to be set so we sort float's ie include "#define elem_type_sort2 float" */
 #include "yamedian.h" /* needs to be set to work on floats eg  #define elem_type_median float */
+#include "interpolate.h"
 
 // #define USE_double_to_str_exp /* define to use double_to_str_exp() for y axis with max 12 chars, if not defined use gcvt() */
 
@@ -1021,6 +1022,17 @@ float TScientificGraph::fnAddDataPoint_nextx(int iGraphNumberF)    // returns ne
   return pAGraph_1->x_vals[i];     // value from previous trace
 };
 
+#if 1  /* use interpolation to find matching y value to current x value even if current x value is not actually in the array */
+float TScientificGraph::fnAddDataPoint_thisy(int iGraphNumber)    // returns next y value of iGraphNumber (locn from current graph number)  used to do $T1
+{  extern float xval; // x value of current point
+  if(iGraphNumber<0 || iGraphNumber >=iNumberOfGraphs-1) return 0; // invalid graph number (-1 as cannot refer to current trace
+  SGraph *pAGraph_add = ((SGraph*) pHistory->Items[iNumberOfGraphs-1]);
+  SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumber]); // previous trace added
+  int i=pAGraph_add->nos_vals; // current size
+  // float interp1D(float *xa, float *ya, int size, float x, bool clip)
+  return interp1D(pAGraph->x_vals,pAGraph->y_vals,pAGraph->nos_vals ,xval,false);
+};
+#else /* original code - does not work if x values need to be sorted afterwards */
 float TScientificGraph::fnAddDataPoint_thisy(int iGraphNumber)    // returns next y value of iGraphNumber (locn from current graph number)  used to do $T1
 {
   if(iGraphNumber<0 || iGraphNumber >=iNumberOfGraphs-1) return 0; // invalid graph number (-1 as cannot refer to current trace
@@ -1030,7 +1042,7 @@ float TScientificGraph::fnAddDataPoint_thisy(int iGraphNumber)    // returns nex
   if(i >=pAGraph->nos_vals ) return 0; // past end of previous x array
   return pAGraph->y_vals[i];     // value from previous trace
 };
-
+#endif
 bool TScientificGraph::fnChangeXoffset(double dX) // change all X values by adding dX to the most recently added graph if at least 2 graphs defined
 {
   if( iNumberOfGraphs<2) return false;   // must be at least 2 graphs to do this

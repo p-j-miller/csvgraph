@@ -51,7 +51,7 @@
 // 2v3 3/1/2022  : can optionally use yasort2() for sorting - this has a guarantee on worse case execution time and can use all available processors to speed up sorting
 //               : yamedian() used which can calculate median in place without needing to copy the array of y values (but will for speed if memory is available)
 //               : added linear regression y=m*x*log2(x)+c
-//
+// 2v4 2/2/2022  : Fixed bug - using $Tn in situations where input x values needed to be sorted did not work correctly - fixed. Now also interpolates y value for $Tn if x values are different for new trace and $Tn
 //---------------------------------------------------------------------------
 /*----------------------------------------------------------------------------
  * Copyright (c) 2019,2020,2021,2022 Peter Miller
@@ -110,7 +110,7 @@
 #include "multiple-lin-reg-fn.h"
 
 extern TForm1 *Form1;
-const char * Prog_Name="CSVgraph (Github) 2v3";   // needs to be global as used in about box as well.
+const char * Prog_Name="CSVgraph (Github) 2v4";   // needs to be global as used in about box as well.
 #if 1 /* if 1 then use fast_strtof() rather than atof() for floating point conversion. Note in this application this is only slightly faster (1-5%) */
 extern "C" float fast_strtof(const char *s,char **endptr); // if endptr != NULL returns 1st character thats not in the number
 #define strtod fast_strtof  /* set so we use it in place of strtod() */
@@ -152,6 +152,7 @@ bool zoomed=false; // set when zoomed in to stop autoscaling when new traces add
 bool user_set_trace_colour=false;
 TColor user_trace_colour;
 unsigned int nos_lines_in_file=0; // number of lines in last file opened
+float yval,xval; // current values being added to graph, xval is set before yval
 
 // dynamic number of columns
 static char **col_ptrs=NULL,**hdr_col_ptrs=NULL; // pointers to strings for each field
@@ -1007,11 +1008,13 @@ double get_dollar_var_value(pnlist p) /* get value of $ variable */
 #endif
          while(isdigit(*v)) i=i*10+(*v++ -'0'); // get number after $
 		 i--; // internally $1 = array[0]
+#ifdef Allow_dollar_T
 		 if(dollar_T_found)
 			{// found $Tn
 			 // float fnAddDataPoint_thisy(int iGraphNumber)
 			 return Form1->pPlotWindow->pScientificGraph->fnAddDataPoint_thisy(i);
 			}
+#endif
 		 // if not $Tn must just be $n
          if(col_ptrs==NULL || i>= MAX_COLS || col_ptrs[i]==NULL || *(col_ptrs[i])==0 ) return 0;
          if(count<10)
@@ -1820,31 +1823,8 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
                         }
                  Application->ProcessMessages(); /* allow windows to update (but not go idle), do this regularly [not just every 2 secs] */
 				}
-		 float yval,xval;
-		 if(yexpr)
-				{try
-						{
-						 yval=execute_rpn(); // expression - excute it
-						}
-				 catch (...)   // assume the issue is an error in the expression
-						{yval=0;
-						}
-				}
-         else
-                {st=col_ptrs[ycol-1];
-                 while(isspace(*st)) ++st; // skip any leading whitespace
-                 if(*st=='"')
-                        {++st;// skip " if present
-                         while(isspace(*st)) ++st; // skip any more whitespace
-                        }
-				 // now hope we have a number left - strtod() will terminate at the end of the number so any trailing whitespace or " will be ignored
-                 char *end;
-				 yval= strtod(st,&end);   // just a column number - get value for this column
-                 if(st==end) continue;    // no valid number found
-                 // rprintf("yval (col %d) %s=>%g\n",ycol,st,yval);
-                }
-         gotyvalue=true;// if we get here we have a valid y value
-		 // now get x value
+
+		 // get x value
 		 if(nos_traces_added>1 && xmonotonic && !compress )
 			{xval=pScientificGraph->fnAddDataPoint_nextx(iGraph); // same value as previous graph loaded  as this is faster than decoding it again
 			}
@@ -1908,6 +1888,30 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 				}
 			 if(!_finite(xval) || !_finite(yval)) continue; // need 2 valid numbers [eg ignore "inf" ]
 			}
+		 if(yexpr)
+				{try
+						{
+						 yval=execute_rpn(); // expression - excute it
+						}
+				 catch (...)   // assume the issue is an error in the expression
+						{yval=0;
+						}
+				}
+         else
+                {st=col_ptrs[ycol-1];
+                 while(isspace(*st)) ++st; // skip any leading whitespace
+                 if(*st=='"')
+                        {++st;// skip " if present
+                         while(isspace(*st)) ++st; // skip any more whitespace
+                        }
+				 // now hope we have a number left - strtod() will terminate at the end of the number so any trailing whitespace or " will be ignored
+                 char *end;
+				 yval= strtod(st,&end);   // just a column number - get value for this column
+                 if(st==end) continue;    // no valid number found
+                 // rprintf("yval (col %d) %s=>%g\n",ycol,st,yval);
+                }
+         gotyvalue=true;// if we get here we have a valid y value
+
 		 if(firstxvalue)
 				{firstxvalue=false;
 				 previousxvalue=xval;
