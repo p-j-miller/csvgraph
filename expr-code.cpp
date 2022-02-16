@@ -1284,16 +1284,17 @@ bool getfloatge0(char *s, float *d)
 /* functions to deal with time input */
 #if 1
 /* this is a faster version that tries to avoid floating point maths, this reduced load time of 2 columns from 67 secs to 51 secs */
-float gethms(char *s)
-{/* read a time of the format hh:mm:ss.s , returns it as a float value in seconds */
+double gethms(char *s)
+{/* read a time of the format hh:mm:ss.s , returns it as a double value in seconds */
  /* if just a number is found this will be treated as seconds (which can include a decimal point and digits after the dp)
 	if aa:bb is found this will be treated as aa mins and bb secs  (which can include a decimal point and digits after the dp)
 	if aa:bb:cc is found this will be treated as aa hours, bb mins and cc secs (which can include a decimal point and digits after the dp)
 	returns 0 if does not start with a number, otherwise converts as much as possible based on the above format
 	This means in particular that trailing whitespace and "'s are ignored
+	23:59:59 => 86399 secs which is well within the capability of a uint32
  */
  uint32_t sec=0,sec1=0;  // sec1 is current set of digits, sec is previous total
- int pow10=0; // exponent
+ int power10=0; // exponent
  if(!isdigit(*s)) return 0; /* must start with a number */
  sec1=(*s++ -'0'); // ascii->decimal for 1st digit
  while(isdigit(*s))
@@ -1304,7 +1305,7 @@ float gethms(char *s)
 			sec1=sec1*10+(uint32_t)(*s++ -'0'); // ascii->decimal in general
 		 else
 			{s++;
-			 pow10++; // too many digits - keep track of decimal point
+			 power10++; // too many digits - keep track of decimal point
 			}
 		}
 	if(*s==':' && isdigit(s[1]))
@@ -1313,24 +1314,25 @@ float gethms(char *s)
 		 ++s; // skip :
 		}
 	}
- if(pow10!=0)
-	{return (float)(sec+sec1)*pow(10.0f,pow10);// already have too many sf so we can ignore dp if its present
+ if(power10!=0)
+	{return ((double)sec+(double)sec1)*pow10(power10);// already have too many sf so we can ignore dp if its present
+		/* was  pow(10.0,power10), replaced with pow10(power10)   */
 	}
  if(*s=='.')
 	{ // seconds contains dp , so we now need to keep track of dp and watch out for uint32 overflowing - we have at most 59 secs in sec1 so we have plenty of resolution
 	 ++s; // skip dp
 	 while(isdigit(*s) && (sec1&0xf0000000) == 0   )
 		{sec1=sec1*10+(uint32_t)(*s++ -'0');
-		 pow10++; // keep track of decimal point position
+		 power10++; // keep track of decimal point position
 		}
 	 if(isdigit(*s) && *s>='5') sec1++; // round if more digits present
-	 return (float)sec+(float)sec1/pow(10.0f,pow10);
+	 return (double)sec+(double)sec1/pow10(power10);
 	}
- return (float)(sec+sec1);  // if seconds is an integer
+ return (double)sec+(double)sec1;  // if seconds is an integer
 }
 
 static unsigned int days=0;
-static float last_time_secs=0;
+static double last_time_secs=0;
 static bool skip=false; // skip 1st number in a big step
 void reset_days(void)  /* reset static variables for gethms_days() - should be used before using gethms_days() to read times from a file  */
 {days=0;
@@ -1339,13 +1341,14 @@ void reset_days(void)  /* reset static variables for gethms_days() - should be u
 }
 
 double gethms_days(char *s) /* read time in format hh:mm:ss.s , assumed to be called in sequence and accounts for days when time wraps around. Returns secs, or -ve number on error */
-    /* this has to return a double as we could have a lot of days and we would quickly run out of resolution with a float */
-{float t;
+	/* this has to return a double as we could have a lot of days and we would quickly run out of resolution with a float */
+{double t;
  if(!isdigit(*s)) return -1; /* should start with a number, return -1 to flag this is an error  */
  t=gethms(s);
  if(t<last_time_secs)
-		{
-		 if((last_time_secs - t) > 64800.0f )   // 64800=18.0*60.0*60.0
+		{if(last_time_secs-t <= 1.0)
+			skip=false; // allow up to 1 second backwards, data will need to be sorted to get correct order but is possibly OK (eg it could be due to a leap second?).
+		 else if((last_time_secs - t) > 64800.0 )   // 64800=18.0*60.0*60.0
 				{
 				 days++; /* if time appears to have  gone > 18 hours backwards  assume this is because we have passed into a new day */
 				 skip=false;  // assume time is valid
@@ -1353,6 +1356,7 @@ double gethms_days(char *s) /* read time in format hh:mm:ss.s , assumed to be ca
 		 else
 				{if(!skip)
 						{skip=true;
+						 // rprintf("gethms_days(%s): last_time_secs=%.9g t=%.9g\n",s,last_time_secs,t);
 						 t= -2;/* time has gone backwards for no reason - return -2 to indicate an error */
 						}
 				 else skip=false; // repeated , accept value  (could be due to a gap in the log [power cut?] that crossed midnight)
@@ -1364,7 +1368,7 @@ double gethms_days(char *s) /* read time in format hh:mm:ss.s , assumed to be ca
 		{ // -ve value of t indicate an error
 		 last_time_secs=t;
 		 if(days!=0)
-			return (double)t+86400.0*(double)days; /* 86400=24.0*60.0*60.0 , 24 hours a day, 3600 secs in a hour */
+			return t+86400.0*(double)days; /* 86400=24.0*60.0*60.0 , 24 hours a day, 3600 secs in a hour */
 		}
  return t;
  }

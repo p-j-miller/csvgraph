@@ -52,6 +52,12 @@
 //               : yamedian() used which can calculate median in place without needing to copy the array of y values (but will for speed if memory is available)
 //               : added linear regression y=m*x*log2(x)+c
 // 2v4 2/2/2022  : Fixed bug - using $Tn in situations where input x values needed to be sorted did not work correctly - fixed. Now also interpolates y value for $Tn if x values are different for new trace and $Tn
+// 2v5a 10/2/2022: Fixed bug - if reading multiple columns at once optimisation that used x values from previous pass would fail if some lines were skipped  - now trapped and optimisation not done in this case
+// 2v5b 12/2/2022: Improved code for handling errors while reading csv files, used to just ignore errors, but now 1st 2 errors are reported in detail and total count displayed.
+//               : Date/time handling also improved, time is now read fully as a double and errors reported. A backwards step of up to 1 sec (eg a leap second) is allowed.
+//               : Any backwards step in time will cause data to be sorted, so this is visible to users even if its not directly reported as an error.
+// 2v5d 14/2/2022 : files of size >2^31 bytes would give silly % complete values , final graph was OK - fixed.
+// 2.5e 16/2/2022 : added "start times from 0" tick box to gui.
 //---------------------------------------------------------------------------
 /*----------------------------------------------------------------------------
  * Copyright (c) 2019,2020,2021,2022 Peter Miller
@@ -110,7 +116,7 @@
 #include "multiple-lin-reg-fn.h"
 
 extern TForm1 *Form1;
-const char * Prog_Name="CSVgraph (Github) 2v4";   // needs to be global as used in about box as well.
+const char * Prog_Name="CSVgraph (Github) 2v5";   // needs to be global as used in about box as well.
 #if 1 /* if 1 then use fast_strtof() rather than atof() for floating point conversion. Note in this application this is only slightly faster (1-5%) */
 extern "C" float fast_strtof(const char *s,char **endptr); // if endptr != NULL returns 1st character thats not in the number
 #define strtod fast_strtof  /* set so we use it in place of strtod() */
@@ -152,6 +158,7 @@ bool zoomed=false; // set when zoomed in to stop autoscaling when new traces add
 bool user_set_trace_colour=false;
 TColor user_trace_colour;
 unsigned int nos_lines_in_file=0; // number of lines in last file opened
+bool start_time_from_0=false; // if true use 1st time read is as ofset
 float yval,xval; // current values being added to graph, xval is set before yval
 
 // dynamic number of columns
@@ -1285,23 +1292,27 @@ void __fastcall TPlotWindow::Button_add_trace1Click(TObject *Sender)
   static char cstring[64]; // small buffer  to use with snprintf
   TColor Col;
   FILE *fin;
-  int lines_in_file;
+  int lines_in_file;  // line number within file being read
   char *csv_line;// line of csv file
   char *st;
   int xcol,ycol;
-  struct stat statbuf;    // gives filesize which is then used to show progress as a %
+  __int64 filesize;    // gives filesize which is then used to show progress as a %
   bool xmonotonic=true; // true is trace is monotonic in x
   bool firstxvalue; // true on 1st x value
   bool gotyvalue; // set to true when a valid number found for y value
   bool skipy; // set to true if we skip a string of identical y values
   bool compress;
   bool showsortmessage=true; // only show "sort message" once per press of the "add traces" button
+  bool showerrmessage=true; // ditto for message to warn users of errors in format of csv file
   float previousxvalue,previousyvalue;
   double median_ahead_t; // >0 for median filtering to be used
   int poly_order;
   double first_time; // used when reading times in for x axis, store times relative to 1st time
   int nos_traces_added=0;
+  bool allvalidxvals=true;
   clock_t start_t,end_t;
+  int nos_errs=0; // count of errors found when reading values
+#define MAX_ERRS 2 /* max errors that will be displayyed in full */
   start_t=clock(); // want total execution time
   if(xchange_running!=-1) return; // still processing a change in x offset
   if(addtraceactive) return; // if still processing a previous call of addtrace
@@ -1360,11 +1371,13 @@ void __fastcall TPlotWindow::Button_add_trace1Click(TObject *Sender)
 		 addtraceactive=false;// finished
 		 return;
 		}
+  fseek(fin, 0, SEEK_END);  // seek to end of file
+  filesize=_ftelli64(fin); // get size of file
+  fseek(fin,0,SEEK_SET); // back to start of file
 #ifdef BIG_BUF_SIZE
    if( read_buf!=NULL)
 		setvbuf(fin,read_buf,_IOFBF,BIG_BUF_SIZE); // buffer input if we have free RAM
 #endif
-   fstat(fileno(fin), &statbuf); // get filesize (etc)
 
   // rprintf("filename selected is %s\n",filename.c_str());
   {int skip_initial_lines=_wtoi(Form1->pPlotWindow->Edit_skip_lines->Text.c_str());
@@ -1791,6 +1804,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 
   reset_days(); // in case we are reading in times
   lines_in_file=0;
+  nos_errs=0;  // count of errors for this "column" as thats how its reported to user
   clock_t begin_t,end_t2s;
   begin_t=clock();
   while(1)
@@ -1811,10 +1825,10 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 								begin_t+=2*CLK_TCK; // move forward 2 secs  (unless 1st line in file)
 #if 1
 						 if(yexpr)
-								{snprintf(cstring,sizeof(cstring),"%.0f %% read",100.0*(double)ftell(fin)/(double)statbuf.st_size);
+								{snprintf(cstring,sizeof(cstring),"%.0f %% read",100.0*(double)_ftelli64(fin)/(double)filesize);
 								}
 						  else
-								{snprintf(cstring,sizeof(cstring),"%.0f %% read of column %d",100.0*(double)ftell(fin)/(double)statbuf.st_size,ycol);
+								{snprintf(cstring,sizeof(cstring),"%.0f %% read of column %d",100.0*(double)_ftelli64(fin)/(double)filesize,ycol);
 								}
 #else
 						 snprintf(cstring,sizeof(cstring),"%d lines read",lines_in_file);
@@ -1825,8 +1839,14 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 				}
 
 		 // get x value
-		 if(nos_traces_added>1 && xmonotonic && !compress )
+		 if(allvalidxvals && nos_traces_added>1 && xmonotonic && !compress )  // This optimisation disabled if lines with invalid xvals found (and skipped)
 			{xval=pScientificGraph->fnAddDataPoint_nextx(iGraph); // same value as previous graph loaded  as this is faster than decoding it again
+			 if(!firstxvalue && xval<previousxvalue)
+				{if(++nos_errs<=MAX_ERRS)
+					rprintf("Error: adding x value from previous trace and values not monotonic at line %d xval=%g\n",lines_in_file+1,xval);
+				 xval=previousxvalue; // try and fix issue
+				 allvalidxvals=false; // stop problem repeating by turning off this optimisation
+				}
 			}
 		 else
 			{
@@ -1864,13 +1884,27 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						// convert time into seconds , gethms_days() ignores trailing whitespace and "'s
 
 						ti=gethms_days(st);  // note we called reset_days above so we always start correctly at 0 days
-						if(ti<0) continue;   // gethms_days() returns a -ve value when it find an error, so ignore this line when that happens
-						if(firstxvalue) first_time=ti;  // remember 1st value, and use as ofset for the rest of the values
-#if 0 /* line below assumes times are in increasing order which is NOT guaranteed ! */
-						xval=ti-first_time;  // ofset time by time of 1st value (so we maximise resolution in the float xval)
-#else
-                        xval=ti; // can loose resolution for big times, but we are limited by storing xvalues as floats.
-#endif
+						if(ti<0)
+							{allvalidxvals=false;
+							 if(++nos_errs<=MAX_ERRS)
+								{if(ti==-1)
+									rprintf("(xval) Line %d has an invalid date/time (time does not start with a number): %s\n",lines_in_file+1,col_ptrs[xcol-1]);
+								 else
+									rprintf("(xval) Line %d has an invalid date/time (time goes backwards!): %s\n",lines_in_file+1,col_ptrs[xcol-1]);
+								}
+							 continue;   // gethms_days() returns a -ve value when it finds an error, so ignore this line when that happens
+							}
+						if(firstxvalue) first_time=ti;  // remember 1st value, and potentially use as ofset for the rest of the values
+						if(start_time_from_0)
+							{
+							 /* line below assumes times are in increasing order which is NOT guaranteed ! */
+							 /* However, first_time is a double, as is ti so this potentially offers higher resolution as the difference is stored as a float */
+							 xval=ti-first_time;  // ofset time by time of 1st value (so we maximise resolution in the float xval)
+							}
+						  else
+							{
+							 xval=ti; // can loose resolution for big times, but we are limited by storing xvalues as floats.
+							}
 						break;
 				 default: // should only be "2" - value in specified column
 						st=col_ptrs[xcol-1];
@@ -1882,11 +1916,15 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						char *end;
 						xval= strtod(st,&end);   // get value for this column
 						// rprintf("Xval: xcol=%d string=%s =%g\n",xcol,st,xval);
-						if(st==end) continue;    // no valid number found
+						if(st==end)
+							{allvalidxvals=false;
+							 if(++nos_errs<=MAX_ERRS)
+								rprintf("(xval) Line %d has an invalid number: %s\n",lines_in_file+1,col_ptrs[xcol-1]);
+							 continue;    // no valid number found
+							}
 						// if(xval!=yval) rprintf("**** xval (col %d) %s=>%g\n",xcol,st,xval);
 						break;
 				}
-			 if(!_finite(xval) || !_finite(yval)) continue; // need 2 valid numbers [eg ignore "inf" ]
 			}
 		 if(yexpr)
 				{try
@@ -1907,11 +1945,23 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 				 // now hope we have a number left - strtod() will terminate at the end of the number so any trailing whitespace or " will be ignored
                  char *end;
 				 yval= strtod(st,&end);   // just a column number - get value for this column
-                 if(st==end) continue;    // no valid number found
-                 // rprintf("yval (col %d) %s=>%g\n",ycol,st,yval);
-                }
-         gotyvalue=true;// if we get here we have a valid y value
-
+				 if(st==end)
+					{allvalidxvals=false; // line skipped
+					 if(++nos_errs<=MAX_ERRS)
+							rprintf("(yval) Line %d has an invalid number: %s\n",lines_in_file+1,col_ptrs[ycol-1]);
+					 continue;    // no valid number found
+					}
+				 // rprintf("yval (col %d) %s=>%g\n",ycol,st,yval);
+				}
+		 gotyvalue=true;// if we get here we have a valid y value
+		 if(!_finite(xval) || !_finite(yval))
+			{allvalidxvals=false; // line skipped
+			 if(!_finite(xval) && ++nos_errs<=MAX_ERRS)
+				rprintf("(xval) Line %d has an invalid number: %s\n",lines_in_file+1,col_ptrs[xcol-1]);
+			 if( !_finite(yval) && ++nos_errs<=MAX_ERRS)
+				rprintf("(yval) Line %d has an invalid number: %s\n",lines_in_file+1,col_ptrs[ycol-1]);
+			 continue; // need 2 valid numbers [eg ignore "inf" ]
+			}
 		 if(firstxvalue)
 				{firstxvalue=false;
 				 previousxvalue=xval;
@@ -1962,7 +2012,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 				 return;
 				}
 		}
-  rprintf("%d lines read from csv file\n",lines_in_file);
+  rprintf("%d lines read from csv file(%d lines skipped dues to errors)\n",lines_in_file,nos_errs);
   if(*ys!=',') fclose(fin);
   if(!gotyvalue)
         {// no valid y values found
@@ -1971,26 +2021,34 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
         }
   else if(firstxvalue)
         {// no valid x values found
-         strncat(cap_str,": Warning: no valid numbers found for x values of column",sizeof(cap_str)-1-strlen(cap_str));
-         ShowMessage(cap_str);
-        }
+		 strncat(cap_str,": Warning: no valid numbers found for x values of column",sizeof(cap_str)-1-strlen(cap_str));
+		 ShowMessage(cap_str);
+		}
+  else if(nos_errs>0 && showerrmessage)
+		{// errors found in file just read in , tell user (just once)
+		 char temp_str[100];
+		 showerrmessage=false;
+		 snprintf(temp_str,sizeof(temp_str),": Warning: %d errors found while reading file",nos_errs);
+		 strncat(cap_str,temp_str,sizeof(cap_str)-1-strlen(cap_str));
+		 ShowMessage(cap_str);
+		}
   if(!xmonotonic)
-        {StatusText->Caption="X Values need sorting";
-         Application->ProcessMessages(); /* allow windows to update (but not go idle) */
+		{StatusText->Caption="X Values need sorting";
+		 Application->ProcessMessages(); /* allow windows to update (but not go idle) */
 
-         if(showsortmessage)
-                {ShowMessage("Warning: X values just read in are not always increasing - about to sort values.");
-                 showsortmessage=false; // only show it once for a given press of "add Traces" button as x axis data is the same for all added traces
-                }
-         StatusText->Caption="Sorting...";
-         Application->ProcessMessages(); /* allow windows to update (but not go idle) */
-         pScientificGraph->sortx(iGraph); // sort on x values
-         StatusText->Caption="X values sorted";
-         Application->ProcessMessages(); /* allow windows to update (but not go idle) */
-        }
+		 if(showsortmessage)
+				{ShowMessage("Warning: X values just read in are not always increasing - about to sort values.");
+				 showsortmessage=false; // only show it once for a given press of "add Traces" button as x axis data is the same for all added traces
+				}
+		 StatusText->Caption="Sorting...";
+		 Application->ProcessMessages(); /* allow windows to update (but not go idle) */
+		 pScientificGraph->sortx(iGraph); // sort on x values
+		 StatusText->Caption="X values sorted";
+		 Application->ProcessMessages(); /* allow windows to update (but not go idle) */
+		}
 #if 1    /* general purpose compression - works well but does require all data for the trace is read into ram , then excess is returned so peak ram is high */
    if(compress && !(nos_traces_added>1 && xmonotonic) ) // && ! bit traps cases that can be done when reading the trace data in (above)
-        {StatusText->Caption="Compressing...";
+		{StatusText->Caption="Compressing...";
          Application->ProcessMessages(); /* allow windows to update (but not go idle) */
          pScientificGraph->compress_y(iGraph); // compress by deleting points with equal y values except for 1st and last in a row
          StatusText->Caption="Compression completed";
@@ -2361,7 +2419,7 @@ unsigned int count_lines(char *filename, double filesize)
 	char *cp;
 	DWORD nBytesRead = 0;
 	BOOL bResult   = FALSE;
-	long total_bytes_read=0;
+	double total_bytes_read=0;
 	clock_t begin_t;
 	begin_t=clock();
 	//rprintf("count_lines: Filename=%s BLOCK_SIZE=%u\n",filename,BLOCK_SIZE);
@@ -2442,7 +2500,7 @@ void proces_open_filename(char *fn) // open filename - just to peek at header ro
   unsigned int j;
   AnsiString basename;
   char str_buf[100];  // temp buffer
-  struct stat statbuf;    // gives filesize which is then used to show progress as a %
+  __int64 filesize;    // gives filesize which is then used to show progress as a %
   nos_lines_in_file=0; // we need to count the number of lines in the file
   if(addtraceactive) return; // currently adding traces so cannot change filename
   if(fn==NULL || strcmp(fn,"")==0)
@@ -2463,7 +2521,9 @@ void proces_open_filename(char *fn) // open filename - just to peek at header ro
          return;
 		}
 
-  fstat(fileno(fin), &statbuf); // get filesize (etc)
+  fseek(fin, 0, SEEK_END);  // seek to end of file
+  filesize=_ftelli64(fin); // get size of file
+  fseek(fin,0,SEEK_SET); // back to start of file
 
   rcls();
   rprintf("filename selected is %s\n",filename.c_str());
@@ -2583,7 +2643,7 @@ void proces_open_filename(char *fn) // open filename - just to peek at header ro
   addtraceactive=true;  // stop user adding traces until we have counted the number of lines in the file
   Form1->pPlotWindow->StatusText->Caption="Counting lines in file..." ;
   clock_t begin_t=clock();
-  nos_lines_in_file=count_lines(filename.c_str(),statbuf.st_size);  // this will keep user updated on its progress by updating status line message every 2 secs
+  nos_lines_in_file=count_lines(filename.c_str(),filesize);  // this will keep user updated on its progress by updating status line message every 2 secs
   addtraceactive=false;
   rprintf(" File has %u lines (file read in %g secs)\n",nos_lines_in_file,(double)(clock()-begin_t)/CLK_TCK);
   snprintf(str_buf,sizeof(str_buf),"Ready : %u lines found in file",nos_lines_in_file);
@@ -3087,4 +3147,10 @@ void __fastcall TPlotWindow::Action1Execute(TObject *Sender)
 
 
 
+
+void __fastcall TPlotWindow::Time_from0Click(TObject *Sender)
+{
+  start_time_from_0=Time_from0->State==cbChecked;
+}
+//---------------------------------------------------------------------------
 

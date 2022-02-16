@@ -70,7 +70,7 @@ bool getfloat(char *s, float *d); /*reads a floating point number returns true i
 bool getfloatgt0(char *s, float *d);/* as above but requires number to be >0 */
 bool getfloatge0(char *s, float *d);/* as above but requires number to be >0 */
 
-float gethms(char *s); /* read a time of format hh:mm:ss.s , returns time in seconds */
+double gethms(char *s); /* read a time of format hh:mm:ss.s , returns time in seconds */
 void reset_days(void);  /* reset static variables for gethms_days() - should be used before using gethms_days() to read times from a file  */
 double gethms_days(char *s); /* read time in format hh:mm:ss.s , assumed to be called in sequence and accounts for days when time wraps around. Returns secs */
 

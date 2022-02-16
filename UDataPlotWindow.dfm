@@ -30,7 +30,7 @@ object PlotWindow: TPlotWindow
   OnResize = FormResize
   DesignSize = (
     1290
-    1002)
+    982)
   PixelsPerInch = 96
   TextHeight = 13
   object Panel1: TPanel
@@ -479,7 +479,7 @@ object PlotWindow: TPlotWindow
     end
     object Label15: TLabel
       Left = 184
-      Top = 400
+      Top = 378
       Width = 43
       Height = 13
       Anchors = [akTop, akRight]
@@ -487,7 +487,7 @@ object PlotWindow: TPlotWindow
     end
     object Label16: TLabel
       Left = 189
-      Top = 419
+      Top = 397
       Width = 88
       Height = 13
       Anchors = [akTop, akRight]
@@ -853,7 +853,7 @@ object PlotWindow: TPlotWindow
     end
     object Edit_skip_lines: TEdit
       Left = 233
-      Top = 397
+      Top = 375
       Width = 41
       Height = 21
       Hint = 'Enter number of lines to skip in csv file before  header line'
@@ -863,6 +863,20 @@ object PlotWindow: TPlotWindow
       ShowHint = True
       TabOrder = 23
       Text = '0'
+    end
+    object Time_from0: TCheckBox
+      Left = 179
+      Top = 420
+      Width = 109
+      Height = 17
+      Hint = 
+        'Tick this box to start time from zero (based on the first date/t' +
+        'ime in the csv file)'
+      Caption = 'Start time from 0'
+      ParentShowHint = False
+      ShowHint = True
+      TabOrder = 24
+      OnClick = Time_from0Click
     end
   end
   object ActionList1: TActionList
@@ -935,7 +949,7 @@ object PlotWindow: TPlotWindow
     Left = 304
     Top = 32
     Bitmap = {
-      494C01010A000E00A40110001000FFFFFFFFFF10FFFFFFFFFFFFFFFF424D3600
+      494C01010A000E00B80110001000FFFFFFFFFF10FFFFFFFFFFFFFFFF424D3600
       0000000000003600000028000000400000003000000001002000000000000030
       0000000000000000000000000000000000000000000000000000000000000000
       0000000000000000000000000000000000000000000000000000000000000000

@@ -120,6 +120,7 @@ __published:	// IDE-managed Components
 	TEdit *Edit_skip_lines;
 	TLabel *Label15;
 	TLabel *Label16;
+	TCheckBox *Time_from0;
         void __fastcall FormDestroy(TObject *Sender);
         void __fastcall FormClose(TObject *Sender, TCloseAction &Action);
         void __fastcall ResizeExecute(TObject *Sender);
@@ -168,6 +169,7 @@ __published:	// IDE-managed Components
 	void __fastcall Edit_xcolChange(TObject *Sender);
 	void __fastcall Edit_ycolChange(TObject *Sender);
 	void __fastcall Action1Execute(TObject *Sender);
+	void __fastcall Time_from0Click(TObject *Sender);
 private:	 // User declarations
         int iShape1X,iShape1Y;
         void virtual  __fastcall WmDropFiles(TWMDropFiles& Message);     // for drag n drop

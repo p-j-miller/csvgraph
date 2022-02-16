@@ -1018,7 +1018,10 @@ float TScientificGraph::fnAddDataPoint_nextx(int iGraphNumberF)    // returns ne
   SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
   SGraph *pAGraph_1 = ((SGraph*) pHistory->Items[iGraphNumberF-1]); // previous trace added
   int i=pAGraph->nos_vals; // current size
-  if(i >=pAGraph_1->nos_vals ) return 0; // past end of previous x array
+  if(i >=pAGraph_1->nos_vals )
+	{rprintf("Warning:fnAddDataPoint_nextx(%d): pAGraph->nos_vals=%d pAGraph_1->nos_vals=%d\n",iGraphNumberF,i,pAGraph_1->nos_vals);
+	 return 0; // past end of previous x array
+	}
   return pAGraph_1->x_vals[i];     // value from previous trace
 };
 
@@ -3270,12 +3273,12 @@ void TScientificGraph::fnAutoScale()
   }
   if(max_graph>=0)
         {aGraph=(SGraph*) pHistory->Items[max_graph];
-         rprintf("Maximum value = %g found on trace %d (%s) at X=%g\n",dYMax,max_graph,aGraph->Caption.c_str(),X_for_maxY);
+		 rprintf("Maximum value = %g found on trace %d (%s) at X=%g\n",dYMax,max_graph+1,aGraph->Caption.c_str(),X_for_maxY);
         }
   else  dXMax=dYMax=1;
   if(min_graph>=0)
         {aGraph=(SGraph*) pHistory->Items[min_graph];
-         rprintf("Minimum value = %g found on trace %d (%s) at X=%g\n",dYMin,min_graph,aGraph->Caption.c_str(),X_for_minY);
+         rprintf("Minimum value = %g found on trace %d (%s) at X=%g\n",dYMin,min_graph+1,aGraph->Caption.c_str(),X_for_minY);
         }
   else dXMin=dYMin=0;
   d=dYMax-dYMin;     //space to axis
