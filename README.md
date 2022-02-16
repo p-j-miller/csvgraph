@@ -44,9 +44,11 @@ Added column numbers to X column and Y column list boxes to make it easier to se
 2v3 - 23-1-2022 added y=m*x*log(x)+c curve fitting.
  Sort and median functions improved to make them faster - sort will use all available processors to improve its execution speed.
 
-2v4 - 3-2-2022 bug fix, using variables $Tn in an expression with a set of x-axis values that were 
-not in numerically increasing order (and so needed to be sorted) did not work correctly in 2v2 and 2v3 – sorry.
+2v4 - 3-2-2022 bug fix, using variables $Tn in an expression with a set of x-axis values that were
 
+  not in numerically increasing order (and so needed to be sorted) did not work correctly in 2v2 and 2v3 – sorry.
+
+2v5 - 16-2-2022 Better reporting of invalid lines in csv files. When reading times, made starting at zero time optional.
 
 # Installation
 Cvsgraph is a portable program which does not need installation.
