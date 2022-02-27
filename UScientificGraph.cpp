@@ -112,11 +112,11 @@ TScientificGraph::TScientificGraph(int iBitmapWidthK, int iBitmapHeightK)
   XLabel="Horizontal axis title";
   YLabel1="Vertical";
   YLabel2="axis title";
-
-  dLegendStartX=0.5; // was 0.88
+             /* note these defaults are changed in UDataPlotWindow.cpp */
+  dLegendStartX=0.5; // was 0.5
   dLegendStartY=0.95; // was 0.95
-  dCaptionStartX=0.5;  // was 0.6
-  dCaptionStartY=0.5;  // was 0.9
+  dCaptionStartX=0.5;  // was 0.5
+  dCaptionStartY=0.5;  // was 0.5
 
   iSkipLineLevel=2; // adjacent points
 
@@ -1097,75 +1097,6 @@ float median3(float y0,float y1, float y2) // returns median of 3 values
  return y2; // y2 must be middle value
 }
 #endif
-/*
- *  This Quickselect routine is based on the algorithm described in
- *  "Numerical recipes in C", Second Edition,
- *  Cambridge University Press, 1992, Section 8.5, ISBN 0-521-43108-5
- *  This code by Nicolas Devillard - 1998. Public domain.
- * [ Note the Numerical recipees code works on an array indixed from 1..n rather than the normal c usage of 0...n-1, so while this code uses the same algorithm its implementation is different]
- *  Note this code changes the contents of arr , and assumes n is odd (ie it just finds the middle value)
- *  code has been (significantly) reformated by Peter Miller to make indentation correct !
-  * takes time proportional to n (ie is fast!)
- */
-
-#define elem_type float
-#define ELEM_SWAP(a,b) { elem_type t=(a);(a)=(b);(b)=t; }
-
-elem_type quick_select(elem_type arr[], int n)
-{
-    int low, high ;
-    int median;
-    int middle, ll, hh;
-
-    low = 0 ; high = n-1 ; median = (low + high) / 2;
-    for (;;)
-       {
-        if (high <= low) /* One element only */
-            return arr[median] ;
-
-        if (high == low + 1)
-           {  /* Two elements only */
-            if (arr[low] > arr[high])
-                ELEM_SWAP(arr[low], arr[high]) ;
-            return arr[median] ;
-           }
-
-        /* Find median of low, middle and high items; swap into position low */
-        middle = (low + high) / 2;
-        if (arr[middle] > arr[high])    ELEM_SWAP(arr[middle], arr[high]) ;
-        if (arr[low] > arr[high])       ELEM_SWAP(arr[low], arr[high]) ;
-        if (arr[middle] > arr[low])     ELEM_SWAP(arr[middle], arr[low]) ;
-
-        /* Swap low item (now in position middle) into position (low+1) */
-        ELEM_SWAP(arr[middle], arr[low+1]) ;
-
-        /* Nibble from each end towards middle, swapping items when stuck */
-        ll = low + 1;
-        hh = high;
-        for (;;)
-                {
-                 do ll++; while (arr[low] > arr[ll]) ;
-                 do hh--; while (arr[hh]  > arr[low]) ;
-
-                 if (hh < ll)
-                        break;
-
-                 ELEM_SWAP(arr[ll], arr[hh]) ;
-                }
-
-        /* Swap middle item (in position low) back into correct position */
-        ELEM_SWAP(arr[low], arr[hh]) ;
-
-        /* Re-set active partition */
-        if (hh <= median)
-                low = ll;
-        if (hh >= median)
-                high = hh - 1;
-       }
-}
-
-#undef ELEM_SWAP
-#undef elem_type
 
 
 void TScientificGraph::fnMedian_filt(unsigned int median_ahead, int iGraphNumberF ) // apply median filter to graph in place
@@ -1196,8 +1127,164 @@ void TScientificGraph::fnMedian_filt(unsigned int median_ahead, int iGraphNumber
 
 
 
- //        U S E   T H I S    V E R S I O N  !!!
- //        =====================================  (normally - see comments of this and alternatives)
+#if 1 /* new version of the median 1 filter for 2v6 - this uses "binning" to give a defined accuracy for the median */
+ /* This code created 20/2/2022 by Peter Miler */
+
+ #define NOS_BINS 4096 /* number of bins to use, ideally a (power of 2) -1 to make cache friendly 4095 seems to be a good choice */
+ #define MED1MAX_EXACT 10000 /* max number of data points for which we will use exact algorithm (which is slower) */
+void TScientificGraph::fnMedian_filt_time1(double median_ahead_t, int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)) // apply median filter to graph in place  , lookahead defined in time
+{
+ // callback() is called periodically to let caller know progress   . This is done based on time (once/sec).
+ time_t lastT;
+ size_t i,j,k;
+ SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
+ unsigned int maxi=pAGraph->nos_vals ;
+ float miny,maxy,medy;
+ float firstx,tmax;
+ float *yp=pAGraph->y_vals;
+ float *xp=pAGraph->x_vals;// we know this is already sorted into ascending order
+ if(median_ahead_t<=0 || maxi<3) // need at least 3 points for initial median and need a positive value for the look ahead time
+	return;
+ if( (xp[maxi-1]-xp[0])<=median_ahead_t )
+	{// just take (exact) median and set all values to this
+	 medy=ya_median(pAGraph->y_vals,maxi);
+	 rprintf("Median1: Exact median=%g: all y values set to this\n",medy);
+	 for(i=0;i<maxi;++i)
+		yp[i]=medy;
+	 return;
+	}
+ lastT=clock(); // used to keep callbacks at uniform time intervals
+ if(maxi<=MED1MAX_EXACT)
+	{ // if only a small number of points calculate medians exactly (this approach is slower than the "binning" approach below).
+	 // space for new y values (need old values after new ones are calculated)
+	 rprintf("Median1: using exact algorithm\n");
+	 float *newy=(float *)malloc(maxi*sizeof(float));
+	 if(newy==NULL)
+		{rprintf("Median1: Not enough ram to calculate median1 (0)\n");
+		 return;
+		}
+	 size_t lasti=0;
+	 // now process the values till x gets to the end
+	 tmax=xp[maxi-1];
+	 size_t firsti=0;
+	 for(i=0;i<maxi && xp[i]<=tmax;++i)
+		{
+		 if(callback!=NULL && (i & 0x3ff)==0 && (clock()-lastT)>= CLOCKS_PER_SEC)
+			{lastT=clock();   // update on progress every second (approximately - use i & 0xff to keep average overhead of time() check very low
+			 (*callback)(i,maxi); // give user an update on progress
+			}
+		 firstx=xp[i]-(median_ahead_t);
+		 // subtract values for bin corresponding to those x values that are now too old
+		 while(firsti<maxi && xp[firsti]<firstx)
+			{
+			 firsti++;
+			}
+		 // now add in new y value(s)
+		 while(lasti<maxi && xp[lasti]<=xp[i]+(median_ahead_t))
+			{
+			 ++lasti;// value time+med_ahead_t
+			}
+		 medy=ya_median(yp+firsti,lasti-firsti); // calculate required median
+		 newy[i]=medy;
+		}
+	 free(yp);
+	 pAGraph->y_vals=newy;// put in new y values
+	 return; // all done
+	}
+ // else approximate median using binning algorithm
+
+ rprintf("Median1: using approximate \"binning\" algorithm\n");
+ // first find miny/maxy
+ miny=maxy=yp[0];
+ for(i=1;i<maxi;++i)
+	{float y=yp[i];
+	 if(y<miny) miny=y;
+	 if(y>maxy) maxy=y;
+	}
+ // rprintf("Median1: miny=%g maxy=%g\n",miny,maxy);
+ if(miny==maxy) return; // all values the same, they are all equal to the median so we are done
+
+ // space for new y values (need old values after new ones are calculated)
+ float *newy=(float *)malloc(maxi*sizeof(float));
+ if(newy==NULL)
+	{rprintf("Median1: Not enough ram to calculate median1 (1)\n");
+	 return;
+	}
+
+ // zero all bins
+ size_t *bincounts=(size_t *)calloc(NOS_BINS+1,sizeof(size_t));// allocates memory and sets to all zero
+ if(newy==NULL)
+	{rprintf("Median1: Not enough ram to calculate median1 (2)\n");
+	 free(newy);
+	 return;
+	}
+
+ const double scalefactor = (double)NOS_BINS/((double)maxy-(double)miny);  // we know maxy!=miny as this was trapped above
+ // rprintf("Median1: Width of a bin is %g\n",1.0/scalefactor);
+ size_t nos_vals=0;
+ size_t lasti=0;
+
+ // now process the values till x gets to the end
+ tmax=xp[maxi-1];
+ // rprintf("Median1: tmax=%g\n",tmax);
+ size_t firsti=0;
+ for(i=0;i<maxi && xp[i]<=tmax;++i)
+	{
+	 if(callback!=NULL && (i & 0xffff)==0 && (clock()-lastT)>= CLOCKS_PER_SEC)
+			{lastT=clock();   // update on progress every second (approximately - use i & 0xff to keep average overhead of time() check very low
+			 (*callback)(i,maxi); // give user an update on progress
+			}
+	 firstx=xp[i]-(median_ahead_t);
+	 // subtract values for bin corresponding to those x values that are now too old
+	 while(firsti<maxi && xp[firsti]<firstx)
+		{size_t bin=(size_t)(((double)yp[firsti]-(double)miny) * scalefactor);
+		 if(bincounts[bin]>0 && nos_vals>0 )
+			{bincounts[bin]--;
+			 nos_vals--; // keep track of number of active values in bins
+			}
+		 firsti++;
+		}
+	 //rprintf("firstx=%g firsti=%u about to add in \n",firstx,(unsigned)firsti);
+	 // now add in new y value(s)
+	 while(lasti<maxi && xp[lasti]<=xp[i]+(median_ahead_t))
+		{
+		 bincounts[(size_t)(((double)yp[lasti]-(double)miny) * scalefactor)]++;// new bin value
+		 nos_vals++; // account for the added value into bins
+		 ++lasti;// value time+med_ahead_t
+		}
+	 j = (nos_vals+1)/2;
+	 k=0;
+#if 0  /* for debug */
+	 if(i<5)
+		{rprintf("i=%u: nos_vals=%u j=%u\nBincounts[]=",(unsigned)i,(unsigned)nos_vals,(unsigned)j);
+		 for(size_t m=0;m<10;++m)
+			rprintf(" [%u]=%u",(unsigned)m,(unsigned)bincounts[m]);
+		 rprintf("\n");
+		}
+#endif
+	 while(k<NOS_BINS && j>bincounts[k])
+		{
+		 j-=bincounts[k]; // j is unsigned, but we already know j>bincounts[k] so this must give a value >0
+		 k++;  // k can goto NOS_BINS at which point the loop terminates, this is still a valid index of bincounts[]
+		}
+	 // rprintf("i=%u: (nos_vals+1)/2=%u j=%u k=%u bincounts[%u]=%u\n",(unsigned)i,(unsigned)((nos_vals+1)/2),(unsigned)j,(unsigned)k,(unsigned)k,(unsigned)bincounts[k]);
+	 // approx median of values till  median_ahead_t
+	 if(j==bincounts[k])
+		{medy=(k+0.5)/scalefactor+miny;  // 1/2 way point when we are at the end to give a smoother transition
+		}
+	 else
+		{
+		 medy=(k)/scalefactor+miny;
+		}
+	 newy[i]=medy;
+	}
+ free(yp);
+ pAGraph->y_vals=newy;// put in new y values
+ free(bincounts);
+ return; // all done
+}
+
+#else /* the version below was used for the median1 filter till 2v5 */
  // This code was written from scratch 28/12/2019 Peter Miller
  // code looks ahead from the end of the previous lookahead so that portion of the code examines each x value once.
  // knowing starting and ending value of range (from above) we can take equally spaced samples and then another set of samples with a "prime" period to the 1st
@@ -1218,55 +1305,42 @@ void TScientificGraph::fnMedian_filt(unsigned int median_ahead, int iGraphNumber
  if(median_ahead_t>0 && maxi>=3) // need at least 3 points for initial median and need a positive value for the look ahead time
 		{f=m=median3(pAGraph->y_vals[0],pAGraph->y_vals[1],pAGraph->y_vals[2]);
 		 //rprintf("initial median of 1st 3 points (%g,%g,%g) selected as %g\n",((SDataPoint*)pAList->Items[0])->dYValue,((SDataPoint*)pAList->Items[1])->dYValue,((SDataPoint*)pAList->Items[2])->dYValue,m);
-         for(i=0;i<maxi;++i)
-                {// process all points one by one
-                 if(callback!=NULL && (i & 0xffff)==0 && (clock()-lastT)>= CLOCKS_PER_SEC)
-                        {lastT=clock();   // update on progress every second (approximately - use i & 0xff to keep average overhead of time() check very low
-                         (*callback)(i,maxi);
-                        }
+		 for(i=0;i<maxi;++i)
+				{// process all points one by one
+				 if(callback!=NULL && (i & 0xffff)==0 && (clock()-lastT)>= CLOCKS_PER_SEC)
+						{lastT=clock();   // update on progress every second (approximately - use i & 0xff to keep average overhead of time() check very low
+						 (*callback)(i,maxi);
+						}
 				 this_endT=pAGraph->x_vals[i]+median_ahead_t; // time for the end of the look ahead
 				 if(last_endi!=0) lastx=pAGraph->x_vals[last_endi-1];
 				 for(endi=last_endi;endi<maxi &&pAGraph->x_vals[endi] < this_endT;++endi) // search forward to find i that matches end of look ahead time
 						{ // update linear filter while we do this so it "runs" median_ahead_t in advance of current location so approximately gives average of +/-median_ahead_t around current time
-                         if(i!=0) // if i==0 don't do anything here as we will calculate the actual median below and use this to initialise f
+						 if(i!=0) // if i==0 don't do anything here as we will calculate the actual median below and use this to initialise f
 								{x= pAGraph->x_vals[endi];
-                                 dt= x - lastx;
-                                 lastx=x;
+								 dt= x - lastx;
+								 lastx=x;
                                  if(dt>0)
-                                        {// above if avoids possible divide by zero below
+										{// above if avoids possible divide by zero below
                                          if(dt!=lastdt) // only calculate k when dt changes [ saves ~ 1 sec ]
-                                                {k=1.0-exp(-(dt)/(2.0*median_ahead_t)); // *2.0 as we want to look forward and back by median_ahead_t
+												{k=1.0-exp(-(dt)/(2.0*median_ahead_t)); // *2.0 as we want to look forward and back by median_ahead_t
                                                  lastdt=dt;
-                                                }
+												}
 										 f+=k*(pAGraph->y_vals[endi]-f);
-                                        }
+										}
                                 }
 
                         }
-                 if(i==0)
+				 if(i==0)
 						{
-#if 1
 						 f=ya_median(pAGraph->y_vals,endi); // calculate median in place (don't change arr).
-#else                    // do exact median by taking a copy of the values, and using quick_select() to find the median
-						 float *arr=(float *)calloc(endi,sizeof(float));
-						 if(arr!=NULL)
-								{
-								 for(unsigned int k=0; k<endi;++k)   // take a copy of all the y values that we want median of, also get min,max,average
-										{
-										 arr[k]= pAGraph->y_vals[k];
-										}
-								 f=quick_select( arr, endi); // initialise with actual median as its quick to calculate
-								free(arr);
-							   }
-#endif
                         }
-                 last_endi=endi; // ensure we don't check values we have already processed
+				 last_endi=endi; // ensure we don't check values we have already processed
                  if(endi>=maxi)
-                        {// lookahead goes beyond end of data , in this case we assume the limits are unbounded and leave current median value alone
+						{// lookahead goes beyond end of data , in this case we assume the limits are unbounded and leave current median value alone
 						  pAGraph->y_vals[i]=f; // put back current filtered value
 						  continue;
                         }
-                 // now we need to process from i to endi, if this is a lot of points limit to max 63 [range 63 jinc=1 (63 points), range 64 jinc=2 (32 points)  ]
+				 // now we need to process from i to endi, if this is a lot of points limit to max 63 [range 63 jinc=1 (63 points), range 64 jinc=2 (32 points)  ]
                  jinc=1+(endi-i)/64;  // 64 is a power of 2 for efficiency, but also visibally seems to give sensible results, while being faster than the original code
 				 // now search for min,max,nearest y
 				 maxy=miny=nearesty= pAGraph->y_vals[i];  // this is 1st value so loop below start on 2nd value
@@ -1274,40 +1348,40 @@ void TScientificGraph::fnMedian_filt(unsigned int median_ahead, int iGraphNumber
                  for(j=i+jinc;j<maxi && j<endi;j+=jinc)
 						{y= pAGraph->y_vals[j];
                          if(y>maxy) maxy=y;
-                         if(y<miny) miny=y;
+						 if(y<miny) miny=y;
                          if(fabs(y-f)<fabs(nearesty-f)) nearesty=y; // nearest to f
-                        }
+						}
                  if(jinc>1) //  if it was 1 we have already sampled every point, otherwise take a 2nd pass
-                        {
+						{
                          // now make another pass taking more samples (but less numerically than loop above) that are not (very) harmonicaly related to those taken above
-                         jinc++;
+						 jinc++;
                          while(jinc&(jinc-1)) jinc&=jinc-1; // decrease jinc by deleting lower order bits until its a power of 2
-                         jinc=(jinc<<1)-1; // a power of 2 -1 is frequently prime, at least its unlikley to have common factors with the original jinc used above
+						 jinc=(jinc<<1)-1; // a power of 2 -1 is frequently prime, at least its unlikley to have common factors with the original jinc used above
                          // for example if jinc was 2 originally on this 2nd pass it will become 3, if it was 3,4,5 or 6  it will become 7
-                         for(j=i+jinc;j<maxi && j<endi;j+=jinc)
+						 for(j=i+jinc;j<maxi && j<endi;j+=jinc)
 								{y= pAGraph->y_vals[j];
-                                 if(y>maxy) maxy=y;
+								 if(y>maxy) maxy=y;
                                  if(y<miny) miny=y;
-                                 if(fabs(y-m)<fabs(nearesty-m)) nearesty=y;
+								 if(fabs(y-m)<fabs(nearesty-m)) nearesty=y;
                                 }
-                        }
+						}
                  // approximate median must be between miny and maxy
-                 if(f<miny)
+				 if(f<miny)
                         {f=m=miny;
-                        }
+						}
                  else
-                       {if(f>maxy)
+					   {if(f>maxy)
                             {f=m=maxy;
-                            }
+							}
                         else
-                            {m=f; //  use filtered value directly
+							{m=f; //  use filtered value directly
                             }
-                       }
+					   }
 				 pAGraph->y_vals[i]=m; // put back filtered value
 				}
          }
  }
-
+#endif
 
 
 // This code was written from scratch 28/12/2019 Peter Miller
@@ -1337,20 +1411,7 @@ void TScientificGraph::fnMedian_filt(unsigned int median_ahead, int iGraphNumber
 				 for(endi=last_endi;endi<maxi && pAGraph->x_vals[endi] < this_endT;++endi); // search forward to find i that matches end of look ahead time
 				 if(i==0)
 						{
-#if 1
 						 m=ya_median(pAGraph->y_vals,endi); // calculate median in place (don't change arr).
-#else                    // do exact median by taking a copy of the values, and using quick_select() to find the median
-						 float *arr=(float *)calloc(endi,sizeof(float));
-						 if(arr!=NULL)
-								{
-								 for(unsigned int k=0; k<endi;++k)   // take a copy of all the y values that we want median of, also get min,max,average
-										{
-										 arr[k]=pAGraph->y_vals[k];
-										}
-								 m=quick_select( arr, endi); // initialise with actual median as its quick to calculate
-								free(arr);
-							   }
-#endif
 						}
 				 last_endi=endi; // ensure we don't check values we have already processed
 				 if(endi>=maxi)

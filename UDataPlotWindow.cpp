@@ -58,6 +58,8 @@
 //               : Any backwards step in time will cause data to be sorted, so this is visible to users even if its not directly reported as an error.
 // 2v5d 14/2/2022 : files of size >2^31 bytes would give silly % complete values , final graph was OK - fixed.
 // 2.5e 16/2/2022 : added "start times from 0" tick box to gui.
+// 2v6  20/2/2022 : new median1 algorithm based on binning (or exact for a relatively small number of data points)
+//                : X position of ledgends for the traces moved left to allow longer text to be read
 //---------------------------------------------------------------------------
 /*----------------------------------------------------------------------------
  * Copyright (c) 2019,2020,2021,2022 Peter Miller
@@ -116,7 +118,7 @@
 #include "multiple-lin-reg-fn.h"
 
 extern TForm1 *Form1;
-const char * Prog_Name="CSVgraph (Github) 2v5";   // needs to be global as used in about box as well.
+const char * Prog_Name="CSVgraph (Github) 2v6";   // needs to be global as used in about box as well.
 #if 1 /* if 1 then use fast_strtof() rather than atof() for floating point conversion. Note in this application this is only slightly faster (1-5%) */
 extern "C" float fast_strtof(const char *s,char **endptr); // if endptr != NULL returns 1st character thats not in the number
 #define strtod fast_strtof  /* set so we use it in place of strtod() */
@@ -372,17 +374,19 @@ __fastcall TPlotWindow::TPlotWindow(TComponent* Owner) : TForm(Owner)
   Label2->Font->Color= pScientificGraph->ColText;
   Color=clBtnFace ;
 #endif
+#define   dLegendStartX_val 0.3  /* start position for graph ledgends X and Y */
+#define   dLegendStartY_val 0.99
 #if 1  /* scale positions based on size */
  // 0.1*initial_Panel1_Width/Panel1->ClientWidth;
   pScientificGraph->fLeftBorder = 0.1*BASE_PWIDTH/initial_Panel1_Width;      //Borders of Plot in Bitmap in %/100  was 0.2
   pScientificGraph->fBottomBorder = 0.1*BASE_HEIGHT/initial_Panel1_Height;   // was 0.25
-  pScientificGraph->dLegendStartX=0.6; // Top left positions of trace legends in %/100 in Plot was 0.8 - don't need this to change if user rescaled main window
-  pScientificGraph->dLegendStartY=0.99; // was 0.95
+  pScientificGraph->dLegendStartX=dLegendStartX_val; // Top left positions of trace legends in %/100 in Plot was 0.8 - don't need this to change if user rescaled main window
+  pScientificGraph->dLegendStartY=dLegendStartY_val; // was 0.95
 #else
   pScientificGraph->fLeftBorder = 0.1;      //Borders of Plot in Bitmap in %/100  was 0.2
   pScientificGraph->fBottomBorder = 0.1;   // was 0.25
-  pScientificGraph->dLegendStartX=0.6;     //Legend position in %/100 in Plot was 0.8
-  pScientificGraph->dLegendStartY=0.99;    // was 0.95
+  pScientificGraph->dLegendStartX=dLegendStartX_val;     //Legend position in %/100 in Plot was 0.8
+  pScientificGraph->dLegendStartY=dLegendStartY_val;    // was 0.95
 #endif
   pScientificGraph->bZeroLine=true;        //zero line in plot
   Edit_x->Text=default_x_label;            // set default x label
@@ -522,13 +526,13 @@ __fastcall TPlotWindow::TPlotWindow(TComponent* Owner) : TForm(Owner)
  // 0.1*initial_Panel1_Width/Panel1->ClientWidth;
   pScientificGraph->fLeftBorder = 0.1*BASE_PWIDTH/initial_Panel1_Width;      //Borders of Plot in Bitmap in %/100  was 0.2
   pScientificGraph->fBottomBorder = 0.1*BASE_HEIGHT/initial_Panel1_Height;   // was 0.25
-  pScientificGraph->dLegendStartX=0.6; // Top left positions of trace legends in %/100 in Plot was 0.8 - don't need this to change if user rescaled main window
-  pScientificGraph->dLegendStartY=0.99; // was 0.95
+  pScientificGraph->dLegendStartX=dLegendStartX_val; // Top left positions of trace legends in %/100 in Plot was 0.8 - don't need this to change if user rescaled main window
+  pScientificGraph->dLegendStartY=dLegendStartY_val; // was 0.95
 #else
   pScientificGraph->fLeftBorder = 0.1;      //Borders of Plot in Bitmap in %/100  was 0.2
   pScientificGraph->fBottomBorder = 0.1;   // was 0.25
-  pScientificGraph->dLegendStartX=0.6;     //Legend position in %/100 in Plot was 0.8
-  pScientificGraph->dLegendStartY=0.99;    // was 0.95
+  pScientificGraph->dLegendStartX=dLegendStartX_val;     //Legend position in %/100 in Plot was 0.8
+  pScientificGraph->dLegendStartY=dLegendStartY_val;    // was 0.95
 #endif
   pScientificGraph->bZeroLine=true;        //zero line in plot
   Edit_x->Text=default_x_label;            // set default x label
