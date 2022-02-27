@@ -50,6 +50,8 @@ Added column numbers to X column and Y column list boxes to make it easier to se
 
 2v5 - 16-2-2022 Better reporting of invalid lines in csv files. When reading times, made starting at zero time optional.
 
+2v6 – 27/2/2022 – Median1 filter improved, for <=10,000 data points its now exact and it's (much) more for accurate traces with a larger number of data points. Position of trace legends moved left so more text can be seen.
+
 # Installation
 Cvsgraph is a portable program which does not need installation.
 
