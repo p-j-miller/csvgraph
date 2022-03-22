@@ -1128,13 +1128,19 @@ void TScientificGraph::fnMedian_filt(unsigned int median_ahead, int iGraphNumber
 
 
 #if 1 /* new version of the median 1 filter for 2v6 - this uses "binning" to give a defined accuracy for the median */
- /* This code created 20/2/2022 by Peter Miler */
+/* This implements an standard median filter.
+   It will use an exact algorithm if the run-time will not be too large, otherwise it uses an approximation based on a histogram (binning) approach.
+   The binning approcah is designed to look indentical to the exact approach when viewed at the default scaling (not zoomed in).
+   The implementation is by Peter Miller 20-2-2022
+   See the paper "MEDIAN FILTERS THEORY AND APPLICATIONS" by Milan STORK for the definition of a standard median filter
+   and the pro's and con's compared to a recursive median filter (implemented as fnMedian_filt_time() below.
+*/
 
  #define NOS_BINS 4096 /* number of bins to use, ideally a (power of 2) -1 to make cache friendly 4095 seems to be a good choice */
  #define MED1MAX_EXACT 10000 /* max number of data points for which we will use exact algorithm (which is slower) */
 void TScientificGraph::fnMedian_filt_time1(double median_ahead_t, int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)) // apply median filter to graph in place  , lookahead defined in time
 {
- // callback() is called periodically to let caller know progress   . This is done based on time (once/sec).
+ // callback() is called periodically to let caller know progress. This is done based on time (once/sec).
  time_t lastT;
  size_t i,j,k;
  SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
@@ -1157,7 +1163,7 @@ void TScientificGraph::fnMedian_filt_time1(double median_ahead_t, int iGraphNumb
  if(maxi<=MED1MAX_EXACT)
 	{ // if only a small number of points calculate medians exactly (this approach is slower than the "binning" approach below).
 	 // space for new y values (need old values after new ones are calculated)
-	 rprintf("Median1: using exact algorithm\n");
+	 rprintf("Median1 (standard median filter): using exact algorithm - lookahead = %g seconds\n",median_ahead_t);
 	 float *newy=(float *)malloc(maxi*sizeof(float));
 	 if(newy==NULL)
 		{rprintf("Median1: Not enough ram to calculate median1 (0)\n");
@@ -1192,8 +1198,7 @@ void TScientificGraph::fnMedian_filt_time1(double median_ahead_t, int iGraphNumb
 	 return; // all done
 	}
  // else approximate median using binning algorithm
-
- rprintf("Median1: using approximate \"binning\" algorithm\n");
+ rprintf("Median1 (standard median filter): using approximate \"binning\" algorithm - lookahead = %g seconds\n",median_ahead_t);
  // first find miny/maxy
  miny=maxy=yp[0];
  for(i=1;i<maxi;++i)
@@ -1383,7 +1388,127 @@ void TScientificGraph::fnMedian_filt_time1(double median_ahead_t, int iGraphNumb
  }
 #endif
 
+#if 1 /* new recursive median filter for 2v7, if 0 use earlier (approximate) version */
+/* This implements an exact recursive median filter, but if the execution time starts to get large it swaps to an approximate sampling scheme
+   The implementation is by Peter Miller 22-3-2022
+   See the paper "MEDIAN FILTERS THEORY AND APPLICATIONS" by Milan STORK for the definition of a recursive median filter
+   and the pro's and con's compared to a standard median filter (implemented as fnMedian_filt_time1() above
+*/
+void TScientificGraph::fnMedian_filt_time(double median_ahead_t, int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)) // apply median filter to graph in place  , lookahead defined in time
+{
+ // callback() is called periodically to let caller know progress   . This is done based on time (once/sec).
+ time_t lastT;
+ size_t i,j,k,lasti=0;
+ SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
+ unsigned int maxi=pAGraph->nos_vals ;
+ unsigned int time_taken_secs=0;
+ float miny,maxy,medy;
+ size_t miny_pos=0,maxy_pos=0;// positions of min/max
+ float firstx,tmax;
+ float *yp=pAGraph->y_vals;
+ float *xp=pAGraph->x_vals;// we know this is already sorted into ascending order
+ if(median_ahead_t<=0 || maxi<3) // need at least 3 points for initial median and need a positive value for the look ahead time
+	return;
+ if( (xp[maxi-1]-xp[0])<=median_ahead_t )
+	{// just take (exact) median and set all values to this
+	 medy=ya_median(pAGraph->y_vals,maxi);
+	 rprintf("Median: Exact median=%g: all y values set to this\n",medy);
+	 for(i=0;i<maxi;++i)
+		yp[i]=medy;
+	 return;
+	}
+ lastT=clock(); // used to keep callbacks at uniform time intervals
+ miny=maxy=medy=yp[0];   // initial value
+ // y[n]=medy=median(medy,maxy[n->n+lookahead],miny[n->n+lookahead]
+ rprintf("Median: using exact algorithm for recursive median filter - lookahead=%g seconds\n",median_ahead_t);
+ // now process the whole array, each time looking ahead median_ahead_t
+ bool exact_median_cals=true;
+ for(i=0;i<maxi ;++i)
+		{
+		 if(callback!=NULL && (i & 0xff)==0 && (clock()-lastT)>= CLOCKS_PER_SEC)
+			{
+			 (*callback)(i,maxi); // give user an update on progress
+			  time_taken_secs+=(clock()-lastT)/CLOCKS_PER_SEC;// this could be well over 1 sec if the loops are very slow
+			  if(exact_median_cals && time_taken_secs>=3 )
+				{exact_median_cals=false;
+				 rprintf("Median: exact calculations are taking a long time so swapping to an approximate (sampling) algorithm\n");
+				}
+			 lastT=clock();   // update on progress every second (approximately - use i & 0xff to keep average overhead of time() check very low
+			}
+		 /* look ahead finding local min/max */
+		 float lmaxy,lminy;
+		 size_t lmaxy_pos,lminy_pos,start_lasti;
+		 if(lasti>=maxi) lasti=maxi-1;// make sure we don't go past the end of the array
+		 lmaxy=lminy=yp[lasti];
+		 lmaxy_pos=lminy_pos=lasti;
+		 start_lasti=lasti;
+		 if(lasti+1<maxi && xp[lasti+1]<=xp[i]+(median_ahead_t) )
+			{
+			 for(lasti++;lasti<maxi && xp[lasti]<=xp[i]+(median_ahead_t);++lasti)
+				{// look ahead from end of previous lookahead, updating min/max if we can
+				 float t=yp[lasti];
+				 if(t>=lmaxy)
+					{lmaxy=t; // update max and min. Use >= as we want to update _pos on equal
+					 lmaxy_pos=lasti;
+					}
+				 if(t<=lminy)
+					{lminy=t;
+					 lminy_pos=lasti;
+					}
+				}
+			}
+		 if(lmaxy>=maxy) // we found a new max during lookahead
+			{maxy=lmaxy;
+			 maxy_pos=lmaxy_pos;
+			}
+		 if(lminy<=miny) // we found a new min during lookahead
+			{miny=lminy;
+			 miny_pos=lminy_pos;
+			}
+		 if(maxy_pos<i || miny_pos<i)
+			{// need to recalculate min/max as previous values are too old
+			 maxy=miny=yp[i];
+			 maxy_pos=miny_pos=i;
+			 k=1; // k is increment. If 1 all values are used (exact calculation) if k>1 data is sampled and we have an approximate algorithm
+			 if(time_taken_secs<=2)
+				k=1;// for 1st (almost) 3 seconds exact calculation - look at all values
+			 else if(time_taken_secs<=3)
+				k=2; // 3-4 secs increase increment so we sample elements rather than examine them all (calculation is now approximate)
+			 else if(time_taken_secs<20)
+				k=(start_lasti-i)/((20-time_taken_secs)*5); // take a progressively smaller sample the longer it takes
+			 else k=(start_lasti-i)/5; // trap very long execution times, k=0 might also happen due to divides above
+			 if(k!=0)
+			  {// if k=0 use yp[i] (1st value) only - thats already set above,otherwise loop to get min/max with k defining sample size
+			   for(j=i+1; j<start_lasti && j<maxi ;j+=k )// only loop to start_lasti as we have already got results beyond there
+				{float t=yp[j];
+				 if(t>=maxy)
+					{maxy=t; // update max and min
+					 maxy_pos=j;
+					}
+				 if(t<=miny)
+					{miny=t;
+					 miny_pos=j;
+					}
+				}
+			  }
+			 if(lmaxy>=maxy) // we found a new max during lookahead
+				{maxy=lmaxy;
+				 maxy_pos=lmaxy_pos;
+				}
+			 if(lminy<=miny) // we found a new min during lookahead
+				{miny=lminy;
+				 miny_pos=lminy_pos;
+				}
+			}
+		 /* yp[i]=medy=median3(medy,maxy,miny), but we know maxy>miny so we can optimise calculation:*/
+		 if(medy>maxy) medy=maxy;
+		 else if(medy<miny) medy=miny;
+		 yp[i]=medy;
+		}
+  return; // all done
 
+ }
+#else  /* approximate a recursive median filter */
 // This code was written from scratch 28/12/2019 Peter Miller
  // code looks ahead from the end of the previous lookahead so that portion of the code examines each x value once.
  // knowing starting and ending value of range (from above) we can take equally spaced samples and then another set of samples with a "prime" period to the 1st
@@ -1449,6 +1574,7 @@ void TScientificGraph::fnMedian_filt_time1(double median_ahead_t, int iGraphNumb
 				}
 		 }
  }
+#endif
 
 void TScientificGraph::fnLinear_filt_time(double tc, int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt)) // apply linear filter to graph in place
 {// f(t)+=k*(y(t)+f(t-1))

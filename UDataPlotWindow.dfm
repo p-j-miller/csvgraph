@@ -30,7 +30,7 @@ object PlotWindow: TPlotWindow
   OnResize = FormResize
   DesignSize = (
     1290
-    1002)
+    982)
   PixelsPerInch = 96
   TextHeight = 13
   object Panel1: TPanel
@@ -702,8 +702,8 @@ object PlotWindow: TPlotWindow
       ItemHeight = 13
       Items.Strings = (
         'None'
-        'Median Filter'
-        'Median1 Filter'
+        'Recursive Median Filter'
+        'Standard Median Filter'
         'Linear Filter order:'
         'Lin.regression: y=mx'
         'Lin. regression: y=mx+c'
@@ -949,7 +949,7 @@ object PlotWindow: TPlotWindow
     Left = 304
     Top = 32
     Bitmap = {
-      494C01010A000E00D00110001000FFFFFFFFFF10FFFFFFFFFFFFFFFF424D3600
+      494C01010A000E00E80110001000FFFFFFFFFF10FFFFFFFFFFFFFFFF424D3600
       0000000000003600000028000000400000003000000001002000000000000030
       0000000000000000000000000000000000000000000000000000000000000000
       0000000000000000000000000000000000000000000000000000000000000000

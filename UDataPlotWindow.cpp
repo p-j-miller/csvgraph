@@ -58,8 +58,13 @@
 //               : Any backwards step in time will cause data to be sorted, so this is visible to users even if its not directly reported as an error.
 // 2v5d 14/2/2022 : files of size >2^31 bytes would give silly % complete values , final graph was OK - fixed.
 // 2.5e 16/2/2022 : added "start times from 0" tick box to gui.
-// 2v6  20/2/2022 : new median1 algorithm based on binning (or exact for a relatively small number of data points)
+// 2v6  20/2/2022 : new median1 (standard median filter) algorithm based on binning (or exact for a relatively small number of data points)
 //                : X position of ledgends for the traces moved left to allow longer text to be read
+// 2v7  15/3/2022 : prints -3dB frequency for linear filter.
+//                : display to user 1 example of every type of error in csv file (via rprintf)
+//                : if dates present on some lines then flag lines without a date as a potential error
+//                : new (exact) median (recursive median filter) algorithm, which falls back to sampling if the execution time becomes long.
+//
 //---------------------------------------------------------------------------
 /*----------------------------------------------------------------------------
  * Copyright (c) 2019,2020,2021,2022 Peter Miller
@@ -118,7 +123,7 @@
 #include "multiple-lin-reg-fn.h"
 
 extern TForm1 *Form1;
-const char * Prog_Name="CSVgraph (Github) 2v6";   // needs to be global as used in about box as well.
+const char * Prog_Name="CSVgraph (Github) 2v7";   // needs to be global as used in about box as well.
 #if 1 /* if 1 then use fast_strtof() rather than atof() for floating point conversion. Note in this application this is only slightly faster (1-5%) */
 extern "C" float fast_strtof(const char *s,char **endptr); // if endptr != NULL returns 1st character thats not in the number
 #define strtod fast_strtof  /* set so we use it in place of strtod() */
@@ -1317,6 +1322,17 @@ void __fastcall TPlotWindow::Button_add_trace1Click(TObject *Sender)
   clock_t start_t,end_t;
   int nos_errs=0; // count of errors found when reading values
 #define MAX_ERRS 2 /* max errors that will be displayyed in full */
+  /* defined below allow 1 example of each error type to be displayed to the user */
+#define ERR_TYPE1 0
+#define ERR_TYPE2 1
+#define ERR_TYPE3 2
+#define ERR_TYPE4 3
+#define ERR_TYPE5 4
+#define ERR_TYPE6 5
+#define ERR_TYPE7 6
+#define MAX_ERR_TYPES 7
+  bool found_error_type[MAX_ERR_TYPES];
+  for(int i=0;i<MAX_ERR_TYPES;++i) found_error_type[i]=false;// set to true when an example of this type of error is found
   start_t=clock(); // want total execution time
   if(xchange_running!=-1) return; // still processing a change in x offset
   if(addtraceactive) return; // if still processing a previous call of addtrace
@@ -1807,6 +1823,8 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
  // this is the normal working code
 
   reset_days(); // in case we are reading in times
+  bool file_has_dates=false;
+  bool got_date;
   lines_in_file=0;
   nos_errs=0;  // count of errors for this "column" as thats how its reported to user
   clock_t begin_t,end_t2s;
@@ -1867,7 +1885,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 								}
 						 {char *dptr; // look ahead to see if there is a date we need to skip
 										// date is either 05-Jul-19 or 2020-03-31 or 12/12/20 or similar terminated in whitespace
-						  bool got_date=false;
+						  got_date=false;
 						  for(dptr=st;*dptr;++dptr)
 								{if(*dptr=='-' || *dptr=='/')
 										{got_date=true;
@@ -1883,20 +1901,29 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 										if(isspace(*dptr)) break;// carry on from where we were, look for whitespace which marks end of date
 								 while(isspace(*dptr)) ++dptr;  // skip whitespace so should be at start of time
 								 if(isdigit(*dptr)) st=dptr; // if we ended up on a digit then assume this is the start of the time
+								 file_has_dates=true;
 								}
 						  }
 						// convert time into seconds , gethms_days() ignores trailing whitespace and "'s
-
 						ti=gethms_days(st);  // note we called reset_days above so we always start correctly at 0 days
 						if(ti<0)
 							{allvalidxvals=false;
-							 if(++nos_errs<=MAX_ERRS)
-								{if(ti==-1)
-									rprintf("(xval) Line %d has an invalid date/time (time does not start with a number): %s\n",lines_in_file+1,col_ptrs[xcol-1]);
-								 else
-									rprintf("(xval) Line %d has an invalid date/time (time goes backwards!): %s\n",lines_in_file+1,col_ptrs[xcol-1]);
+							 if((++nos_errs<=MAX_ERRS || !found_error_type[ERR_TYPE1]) && ti== -1)
+								{found_error_type[ERR_TYPE1]=true; // note we have printed an example of this type of error
+								 rprintf("Warning: x value on line %d has an invalid date/time (time does not start with a number): %s\n",lines_in_file+1,col_ptrs[xcol-1]);
+								}
+							 if((nos_errs<=MAX_ERRS || !found_error_type[ERR_TYPE2]) && ti!= -1)
+								{found_error_type[ERR_TYPE2]=true;  // note we have printed an example of this type of error
+								 rprintf("Warning: x value on line %d has an invalid date/time (time goes backwards!): %s\n",lines_in_file+1,col_ptrs[xcol-1]);
 								}
 							 continue;   // gethms_days() returns a -ve value when it finds an error, so ignore this line when that happens
+							}
+						 if(!got_date && file_has_dates)
+							{ // this has to be after checks on time as we want a header line to be picked up as ERR_TYPE1 not type7
+							 if((++nos_errs<=MAX_ERRS || !found_error_type[ERR_TYPE7]) )
+								{found_error_type[ERR_TYPE7]=true; // note we have printed an example of this type of error
+								 rprintf("Warning: x value on line %d has no date but previous lines do have dates: %s\n",lines_in_file+1,col_ptrs[xcol-1]);
+								}
 							}
 						if(firstxvalue) first_time=ti;  // remember 1st value, and potentially use as ofset for the rest of the values
 						if(start_time_from_0)
@@ -1922,8 +1949,10 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						// rprintf("Xval: xcol=%d string=%s =%g\n",xcol,st,xval);
 						if(st==end)
 							{allvalidxvals=false;
-							 if(++nos_errs<=MAX_ERRS)
-								rprintf("(xval) Line %d has an invalid number: %s\n",lines_in_file+1,col_ptrs[xcol-1]);
+							 if(++nos_errs<=MAX_ERRS || !found_error_type[ERR_TYPE3])
+								{found_error_type[ERR_TYPE3]=true;
+								 rprintf("Warning: x value on line %d has an invalid number: %s\n",lines_in_file+1,col_ptrs[xcol-1]);
+								}
 							 continue;    // no valid number found
 							}
 						// if(xval!=yval) rprintf("**** xval (col %d) %s=>%g\n",xcol,st,xval);
@@ -1951,8 +1980,10 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 				 yval= strtod(st,&end);   // just a column number - get value for this column
 				 if(st==end)
 					{allvalidxvals=false; // line skipped
-					 if(++nos_errs<=MAX_ERRS)
-							rprintf("(yval) Line %d has an invalid number: %s\n",lines_in_file+1,col_ptrs[ycol-1]);
+					 if(++nos_errs<=MAX_ERRS || !found_error_type[ERR_TYPE4])
+							{found_error_type[ERR_TYPE4]=true;
+							 rprintf("Warning: y value on line %d has an invalid number: %s\n",lines_in_file+1,col_ptrs[ycol-1]);
+							}
 					 continue;    // no valid number found
 					}
 				 // rprintf("yval (col %d) %s=>%g\n",ycol,st,yval);
@@ -1960,10 +1991,14 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 		 gotyvalue=true;// if we get here we have a valid y value
 		 if(!_finite(xval) || !_finite(yval))
 			{allvalidxvals=false; // line skipped
-			 if(!_finite(xval) && ++nos_errs<=MAX_ERRS)
-				rprintf("(xval) Line %d has an invalid number: %s\n",lines_in_file+1,col_ptrs[xcol-1]);
-			 if( !_finite(yval) && ++nos_errs<=MAX_ERRS)
-				rprintf("(yval) Line %d has an invalid number: %s\n",lines_in_file+1,col_ptrs[ycol-1]);
+			 if(!_finite(xval) && (++nos_errs<=MAX_ERRS || !found_error_type[ERR_TYPE5]))
+				{found_error_type[ERR_TYPE5]=true;
+				 rprintf("Warning: x value on line %d has an invalid number: %s\n",lines_in_file+1,col_ptrs[xcol-1]);
+				}
+			 if( !_finite(yval) && (++nos_errs<=MAX_ERRS || !found_error_type[ERR_TYPE6]))
+				{found_error_type[ERR_TYPE6]=true;
+				 rprintf("Warning: y value on line %d has an invalid number: %s\n",lines_in_file+1,col_ptrs[ycol-1]);
+				}
 			 continue; // need 2 valid numbers [eg ignore "inf" ]
 			}
 		 if(firstxvalue)
@@ -2016,7 +2051,12 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 				 return;
 				}
 		}
-  rprintf("%d lines read from csv file(%d lines skipped dues to errors)\n",lines_in_file,nos_errs);
+  if(nos_errs==0)
+	rprintf("%d lines read from csv file (no errors found)\n",lines_in_file,nos_errs);
+  else if(nos_errs==1)
+	rprintf("%d lines read from csv file (1 line skipped dues to errors)\n",lines_in_file,nos_errs);
+  else
+	rprintf("%d lines read from csv file (%d lines skipped dues to errors - at least one example of each error type is shown above)\n",lines_in_file,nos_errs);
   if(*ys!=',') fclose(fin);
   if(!gotyvalue)
         {// no valid y values found
@@ -2088,6 +2128,8 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						 StatusText->Caption=FString;
 						 for(int i=0;i<poly_order;++i)
 							pScientificGraph->fnLinear_filt_time(median_ahead_t,iGraph,filter_callback);
+						 rprintf("Linear filter order %d and time constant %g seconds has -3dB frequency of %g Hz\n",
+						 	poly_order,median_ahead_t,sqrt(pow(2.0,1.0/(double)poly_order)-1.0)/(2.0*3.14159265358979*median_ahead_t));
                         }
 				break;
 		case 4:
