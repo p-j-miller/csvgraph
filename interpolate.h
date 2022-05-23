@@ -28,7 +28,7 @@
  *--------------------------------------------------------------------------*/
  
 int binarysearch(float *a, int size_a,float key); /* assumes array a sorted into increasing order */
-float interp1D(float *xa, float *ya, int size, float x, bool clip); /* interpolate y correspong to x from xa (increasing) and corresponding ya */
+float interp1D(float *xa, float *ya, int size, float x, bool clip); /* interpolate y corresponding to x from xa (increasing) and corresponding ya */
 
 typedef struct {
         float *xa;

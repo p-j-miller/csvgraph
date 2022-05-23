@@ -138,6 +138,12 @@
         <CppCompile Include="multiple-lin-reg-fn.cpp">
             <BuildOrder>11</BuildOrder>
         </CppCompile>
+        <CppCompile Include="strftime.c">
+            <BuildOrder>16</BuildOrder>
+        </CppCompile>
+        <CppCompile Include="strptime.c">
+            <BuildOrder>17</BuildOrder>
+        </CppCompile>
         <CppCompile Include="UDataPlotWindow.cpp">
             <Form>PlotWindow</Form>
             <FormType>dfm</FormType>

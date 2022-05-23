@@ -64,7 +64,9 @@
 //                : display to user 1 example of every type of error in csv file (via rprintf)
 //                : if dates present on some lines then flag lines without a date as a potential error
 //                : new (exact) median (recursive median filter) algorithm, which falls back to sampling if the execution time becomes long.
-//
+// 2v8  24/3/2022 : strptime() function added for date/time handling
+//                : csvsave added % complete and buffering on output to speed up writing to file.
+//                : csvsave interpolates if required so x values do not need to be identical on all traces
 //---------------------------------------------------------------------------
 /*----------------------------------------------------------------------------
  * Copyright (c) 2019,2020,2021,2022 Peter Miller
@@ -121,9 +123,11 @@
 #include <float.h>
 #include "matrix.h" /* must come before include of multiple-lin-reg.h */
 #include "multiple-lin-reg-fn.h"
+#include "time_local.h"
+
 
 extern TForm1 *Form1;
-const char * Prog_Name="CSVgraph (Github) 2v7";   // needs to be global as used in about box as well.
+const char * Prog_Name="CSVgraph (Github) 2v8e";   // needs to be global as used in about box as well.
 #if 1 /* if 1 then use fast_strtof() rather than atof() for floating point conversion. Note in this application this is only slightly faster (1-5%) */
 extern "C" float fast_strtof(const char *s,char **endptr); // if endptr != NULL returns 1st character thats not in the number
 #define strtod fast_strtof  /* set so we use it in place of strtod() */
@@ -1467,8 +1471,11 @@ void __fastcall TPlotWindow::Button_add_trace1Click(TObject *Sender)
   char *start_s;
   char *se;// expression (if there is one)
   bool isnumber;
+  char *date_time_fmt=NULL;
+  date_time_fmt=strdup(AnsiOf(Date_time_fmt->Text.c_str()));  // only do this once
+  if(Xcol_type->ItemIndex==3) rprintf("Date/time format is: %s\n",date_time_fmt);
   s=strdup(AnsiOf(Edit_ycol->Text.c_str()));
-  if(s==NULL)
+  if(s==NULL||date_time_fmt==NULL)
         {
          ShowMessage("Error (No RAM): invalid ycol ["+Edit_ycol->Text+"] (valid range 1.."+AnsiString(MAX_COLS)+")");
          fclose(fin);
@@ -1480,8 +1487,8 @@ void __fastcall TPlotWindow::Button_add_trace1Click(TObject *Sender)
 #if 1
   // if x axis label is the default label then set it based on the data just about to be read in
   if( pScientificGraph->XLabel==default_x_label)
-        { // update label from data read
-         switch(Xcol_type->ItemIndex)
+		{ // update label from data read
+		 switch(Xcol_type->ItemIndex)
 				{case 0:
 						if(is_fft)
 							{pScientificGraph->XLabel="Frequency"; // x=linenumber in file
@@ -1493,6 +1500,7 @@ void __fastcall TPlotWindow::Button_add_trace1Click(TObject *Sender)
 							}
                         break;
 				 case 1: // time h:m:s.s  - converted into time (secs)
+				 case 3: // date & time - also converted into seconds
 						if(is_fft)
 							{
 							 pScientificGraph->XLabel="Frequency (Hz)";
@@ -1575,7 +1583,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
                   print_rpn(); // print out rpn for debugging
                   rprintf("\n");
 #endif
-                  // use se later in title for trace so cannot free yet
+				  // use se later in title for trace so cannot free yet
                 }
           else
                 {
@@ -1584,7 +1592,8 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
                  fclose(fin);
                  StatusText->Caption="Invalid expression for ycol";
                  free(s);
-                 free(se);
+				 free(se);
+				 if(date_time_fmt!=NULL) {free(date_time_fmt); date_time_fmt=NULL;}
                  addtraceactive=false;// finished
                  return;
                 }
@@ -1600,7 +1609,8 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
          // rprintf("Error: invalid ycol (range 1..%d)\n",MAX_COLS);
          ShowMessage("Error: invalid ycol (range 1.."+AnsiString(MAX_COLS)+")");
          fclose(fin);
-         StatusText->Caption="Invalid ycol";
+		 StatusText->Caption="Invalid ycol";
+		 if(date_time_fmt!=NULL) {free(date_time_fmt); date_time_fmt=NULL;}
          addtraceactive=false;// finished
          return;
         }
@@ -1871,12 +1881,11 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 				}
 			}
 		 else
-			{
+			{double ti;
 			 switch(Xcol_type->ItemIndex)
 				{case 0: xval=lines_in_file; // x=linenumber in file
 						break;
 				 case 1: // time h:m:s.s (with optional date of form 05-Jul-19 or 2020-03-31 or similar terminated in whitespace)
-						double ti; // needs to be a double as we subtract first_time before converting to a float
 						st=col_ptrs[xcol-1];
 						while(isspace(*st)) ++st; // skip any leading whitespace
 						if(*st=='"')
@@ -1936,6 +1945,64 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 							{
 							 xval=ti; // can loose resolution for big times, but we are limited by storing xvalues as floats.
 							}
+						break;
+				 case 3: // date/time with user specified format  - stored in char * date_time_fmt
+						{ // there is no need to skip initial whitespace or deal with quotes here as can be defined in date_time_fmt
+						 //char * ya_strptime(const char *s, const char *format, struct tm *tm)
+						 char *dptr;
+						 struct tm my_tm;
+						 memset(&my_tm, 0, sizeof(struct tm));// zero all members of tm
+						 strp_tz.initialised=0; // mark as not initialised, so will be zeroed on call to ya_strptime();
+						 st=col_ptrs[xcol-1];
+						 dptr=ya_strptime(st,date_time_fmt,&my_tm);
+						 if(dptr==NULL)
+							{// something was wrong with date/time or format
+							 allvalidxvals=false;
+							 if((++nos_errs<=MAX_ERRS || !found_error_type[ERR_TYPE1]) )
+								{found_error_type[ERR_TYPE1]=true; // note we have printed an example of this type of error
+								 rprintf("Warning: x value on line %d has an invalid date/time (strptime(\"%s\") returned NULL): %s\n",lines_in_file+1,date_time_fmt,col_ptrs[xcol-1]);
+								}
+							 continue;      // ignore line
+							}
+						 if(*dptr!=0)
+							{ // ya_strptime() did not process all of the string  again issue could be date/time or format
+							 allvalidxvals=false;
+							 if((nos_errs<=MAX_ERRS || !found_error_type[ERR_TYPE2]) )
+								{found_error_type[ERR_TYPE2]=true;  // note we have printed an example of this type of error
+								 rprintf("Warning: x value on line %d has an invalid date/time (format \"%s\" did not match whole string): %s\n",lines_in_file+1,date_time_fmt,col_ptrs[xcol-1]);
+								}
+							 continue;      // ignore line
+							}
+						 if(!check_tm(&my_tm))
+							{ // ya_strptime() did not process all of the string  again issue could be date/time or format
+							 allvalidxvals=false;
+							 if((nos_errs<=MAX_ERRS || !found_error_type[ERR_TYPE3]) )
+								{found_error_type[ERR_TYPE3]=true;  // note we have printed an example of this type of error
+								 rprintf("Warning: x value on line %d has an invalid date/time (check_tm() failed): %s\n",lines_in_file+1,col_ptrs[xcol-1]);
+								}
+							 continue;   // ignore line
+							}
+						 ti=ya_mktime(&my_tm); /* fully functional version of mktime() that returns secs and takes (and changes if necessary) timeptr */
+						 ti+=strp_tz.f_secs;// add in any fractional seconds */
+
+						if(firstxvalue)
+							{first_time=ti;  // remember 1st value, and potentially use as offset for the rest of the values
+							}
+						if(start_time_from_0)
+							{
+							 /* line below assumes times are in increasing order which is NOT guaranteed ! */
+							 /* However, first_time is a double, as is ti so this potentially offers higher resolution as the difference is stored as a float */
+							 xval=ti-first_time;  // ofset time by time of 1st value (so we maximise resolution in the float xval)
+							}
+						  else
+							{
+							 xval=ti; // can loose resolution for big times, but we are limited by storing xvalues as floats.
+							}
+						if(0 && lines_in_file<5)
+							{// useful for debugging
+							 rprintf("date/time on line %d returns %g secs (format \"%s\" line: %s, ti=%g)\n",lines_in_file+1,xval,date_time_fmt,col_ptrs[xcol-1],ti);
+							}
+						}
 						break;
 				 default: // should only be "2" - value in specified column
 						st=col_ptrs[xcol-1];
@@ -2036,6 +2103,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 				 fclose(fin);
 				 StatusText->Caption="Error: not enough memory to load all specified columns";
 				 if(s) free(s);
+                 if(date_time_fmt!=NULL) {free(date_time_fmt); date_time_fmt=NULL;}
 				 addtraceactive=false;// finished
 				 pScientificGraph->fnDeleteGraph(iGraph); // delete partial column
 				 if(iGraph==0 || !zoomed)
@@ -2118,7 +2186,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
                 if(median_ahead_t>0.0)
 						{
 						 StatusText->Caption=FString;
-                         pScientificGraph->fnMedian_filt_time1(median_ahead_t,iGraph,filter_callback);
+						 pScientificGraph->fnMedian_filt_time1(median_ahead_t,iGraph,filter_callback);
                         }
                 break;
         case 3:
@@ -2335,7 +2403,8 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 				 ShowMessage("Error: cannot rewind input file to read next column");
 				 fclose(fin);
                  StatusText->Caption="Error reading multiple columns";
-                 if(s) free(s);
+				 if(s) free(s);
+				 if(date_time_fmt!=NULL) {free(date_time_fmt); date_time_fmt=NULL;}
                  addtraceactive=false;// finished
                  return;
                 }
@@ -2344,6 +2413,9 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
          Application->ProcessMessages(); /* allow windows to update (but not go idle) */
          goto repeatcomma; // go and process next 
 		}
+   // free memory potentially used
+   if(s) free(s);
+   if(date_time_fmt!=NULL) {free(date_time_fmt); date_time_fmt=NULL;}
 // #define DEBUG_RAM_USED /* when defined use rprintf to give "user" more info */
 #if 1 /* this gives 357.1MB when task manager gives 358.3 MB */
    TMemoryMap  mmap;

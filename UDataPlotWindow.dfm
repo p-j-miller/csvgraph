@@ -30,7 +30,7 @@ object PlotWindow: TPlotWindow
   OnResize = FormResize
   DesignSize = (
     1290
-    982)
+    1002)
   PixelsPerInch = 96
   TextHeight = 13
   object Panel1: TPanel
@@ -630,11 +630,11 @@ object PlotWindow: TPlotWindow
       BorderStyle = bsNone
       Color = clMenu
       Constraints.MaxWidth = 250
-      Font.Charset = DEFAULT_CHARSET
-      Font.Color = clWindowText
+      Font.Charset = ANSI_CHARSET
+      Font.Color = clBlack
       Font.Height = -13
-      Font.Name = 'MS Sans Serif'
-      Font.Style = []
+      Font.Name = 'Myanmar Text'
+      Font.Style = [fsBold]
       ParentFont = False
       ParentShowHint = False
       ReadOnly = True
@@ -654,7 +654,8 @@ object PlotWindow: TPlotWindow
       Items.Strings = (
         'Line number in file'
         'Time (h:m:s) in X column'
-        'Value in X column')
+        'Value in X column'
+        'Date/Time in X column')
       ParentShowHint = False
       ShowHint = True
       TabOrder = 5
@@ -866,17 +867,31 @@ object PlotWindow: TPlotWindow
     end
     object Time_from0: TCheckBox
       Left = 179
-      Top = 420
+      Top = 416
       Width = 109
       Height = 17
       Hint = 
         'Tick this box to start time from zero (based on the first date/t' +
         'ime in the csv file)'
+      Anchors = [akTop, akRight]
       Caption = 'Start time from 0'
       ParentShowHint = False
       ShowHint = True
       TabOrder = 24
       OnClick = Time_from0Click
+    end
+    object Date_time_fmt: TEdit
+      Left = 179
+      Top = 452
+      Width = 109
+      Height = 21
+      Hint = 'Enter date/time format eg %d/%m/%y %H:%M:%S.%f'
+      Anchors = [akTop, akRight]
+      ParentShowHint = False
+      ShowHint = True
+      TabOrder = 25
+      Text = '%d-%b-%y %H:%M:%S.%f'
+      OnChange = Edit_xcolChange
     end
   end
   object ActionList1: TActionList
@@ -949,7 +964,7 @@ object PlotWindow: TPlotWindow
     Left = 304
     Top = 32
     Bitmap = {
-      494C01010A000E00E80110001000FFFFFFFFFF10FFFFFFFFFFFFFFFF424D3600
+      494C01010A000E00000210001000FFFFFFFFFF10FFFFFFFFFFFFFFFF424D3600
       0000000000003600000028000000400000003000000001002000000000000030
       0000000000000000000000000000000000000000000000000000000000000000
       0000000000000000000000000000000000000000000000000000000000000000

@@ -40,6 +40,10 @@
 
 #include <exception>
 #include "UScientificGraph.h"
+#include "UScalesWindow.h"
+#include "UDataPlotWindow.h"
+#include "Unit1.h"
+#include "About.h"
 #define NoForm1   /* says Form1 is defined in another file */
 #include "expr-code.h"
 #include <cmath>
@@ -59,6 +63,8 @@
 #pragma package(smart_init)
 #define P_UNUSED(x) (void)x; /* a way to avoid warning unused parameter messages from the compiler */
 #define DOUBLE float /* define as double to go back to original, but as points are stored as floats we can use floats in several places */
+
+extern TForm1 *Form1;
 
 double   actual_dXMin=0,actual_dXMax=100,actual_dYMin=-1,actual_dYMax=1;// initialised to same values as below
 
@@ -3710,35 +3716,39 @@ bool TScientificGraph::SaveCSV(char *filename,char *x_axis_name)
  int i,j;
  SGraph *aGraph,*xGraph;
  FILE *fp;
- char errorstr[256]; // buffer for sprintf strings
- errorstr[sizeof(errorstr)-1]=0; // make sure null terminated
+ char cstr[256]; // buffer for sprintf strings
+ time_t start_t=clock();
+ time_t lastT=start_t;
+ cstr[sizeof(cstr)-1]=0; // make sure null terminated
  if(iNumberOfGraphs==0)
-        {snprintf(errorstr,sizeof(errorstr)-1,"Error on CSV save: Nothing to save!");    // sizeof -1 as last character set to null above
-         ShowMessage(errorstr);
+		{snprintf(cstr,sizeof(cstr)-1,"Error on CSV save: Nothing to save!");    // sizeof -1 as last character set to null above
+		 ShowMessage(cstr);
          return false;
         }
- // check that all graphs have the same number of points in them
+ // check if all graphs have the same number of points in them , if not warn user and extrapolate missing data
  for (i=0; i<iNumberOfGraphs; i++)              //for all graphs
   {
-    aGraph=(SGraph*) pHistory->Items[i];
-    if(i==0)
+	aGraph=(SGraph*) pHistory->Items[i];
+	if(i==0)
 		{j=aGraph->nos_vals ; // nos items in trace 0
 		}
 	else
 		{if(j!= aGraph->nos_vals)
-				{snprintf(errorstr,sizeof(errorstr)-1,"Error on CSV save: lines on chart have different numbers of points (%d vs %d)!",aGraph->nos_vals,j);    // sizeof -1 as last character set to null above
-				 ShowMessage(errorstr);
-				 return false;
+				{snprintf(cstr,sizeof(cstr)-1,"Warning on CSV save: traces on graph have different numbers of points (trace %d has %d while trace 1 has %d) - y values will be interpolated to match 1st trace x values.",i+1,aGraph->nos_vals,j);    // sizeof -1 as last character set to null above
+				 ShowMessage(cstr);
+				 // return false;      This is no longer a fault as we can interpolate
+				 break; // only show warning message once
 				}
 		}
    }
- // all graphs have the same number of elements - open file
+ //  open file for writing
  fp=fopen(filename,"wt");
  if(fp==NULL)
-		{snprintf(errorstr,sizeof(errorstr)-1,"Error on CSV save: cannot create file %s",filename);    // sizeof -1 as last character set to null above
-		 ShowMessage(errorstr);
+		{snprintf(cstr,sizeof(cstr)-1,"Error on CSV save: cannot create file %s",filename);    // sizeof -1 as last character set to null above
+		 ShowMessage(cstr);
 		 return false;
 		}
+ setvbuf(fp,NULL,_IOFBF,128*1024); // set a reasonably large output buffer, and full buffering
  // now write header line for csv file with names for each column
  fprintf(fp,"\"%s\"",x_axis_name);
  for (i=0; i<iNumberOfGraphs; i++)              //for all graphs
@@ -3756,13 +3766,33 @@ bool TScientificGraph::SaveCSV(char *filename,char *x_axis_name)
  // now print out main csv file
  xGraph=(SGraph*) pHistory->Items[0];
  for (j=0; j<xGraph->nos_vals; j++)
-	{ fprintf(fp,"%.9g",xGraph->x_vals[j]);    // %.9g (9sf) gives max resolution for a float
-	  for (i=0; i<iNumberOfGraphs; i++)              //for all graphs
+	{float xj;
+	if((j&0x0ffff)==0 && (clock()-lastT)>= CLOCKS_PER_SEC)
+		{// display progress  every second
+		 lastT=clock();
+		 snprintf(cstr,sizeof(cstr),"csv save: %.0f%% complete",100.0*(double)j/(double)(xGraph->nos_vals));
+		 Form1->pPlotWindow->StatusText->Caption=cstr;
+		 Application->ProcessMessages(); /* allow windows to update (but not go idle) */
+		}
+	  xj= xGraph->x_vals[j];
+	  fprintf(fp,"%.9g",xj);    // printf x value first. %.9g (9sf) gives max resolution for a float
+	  for (i=0; i<iNumberOfGraphs; i++)  // now print y values for all traces
 		{aGraph=(SGraph*) pHistory->Items[i];
-		 fprintf(fp,",%.9g",aGraph->y_vals[j]);
+		 if(i==0)  fprintf(fp,",%.9g",aGraph->y_vals[j]); // trace 0: can always just print 1st y value as that trace provides x values
+		 else if(aGraph->x_vals[j]==xj)
+			fprintf(fp,",%.9g",aGraph->y_vals[j]);// if x value matches trace 0 then just print matching y value (this is faster than always interpolating)
+		 else
+			{// need to interpolate to get correct y value
+			 // float interp1D(float *xa, float *ya, int size, float x, bool clip);
+			 float yj=interp1D(aGraph->x_vals,aGraph->y_vals,aGraph->nos_vals,xj,true);
+			 fprintf(fp,",%.9g",yj); // interpolated value
+			}
 		}
 	  fprintf(fp,"\n");
 	}
  fclose(fp);
+ snprintf(cstr,sizeof(cstr),"csv save: finished in %.1f secs",(clock()-start_t)/(double)CLOCKS_PER_SEC);
+ Form1->pPlotWindow->StatusText->Caption=cstr;
+ Application->ProcessMessages(); /* allow windows to update (but not go idle) */
  return true; // good exit
 }

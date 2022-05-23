@@ -28,9 +28,9 @@
 #pragma hdrstop
 #include <tchar.h>
 //---------------------------------------------------------------------------
-USEFORM("UDataPlotWindow.cpp", PlotWindow);
 USEFORM("Unit1.cpp", Form1);
 USEFORM("UScalesWindow.cpp", ScalesWindow);
+USEFORM("UDataPlotWindow.cpp", PlotWindow);
 USEFORM("About.cpp", AboutBox);
 //---------------------------------------------------------------------------
 #if 1  /* my version that picks up command line */

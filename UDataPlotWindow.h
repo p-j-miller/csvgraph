@@ -121,6 +121,7 @@ __published:	// IDE-managed Components
 	TLabel *Label15;
 	TLabel *Label16;
 	TCheckBox *Time_from0;
+	TEdit *Date_time_fmt;
         void __fastcall FormDestroy(TObject *Sender);
         void __fastcall FormClose(TObject *Sender, TCloseAction &Action);
         void __fastcall ResizeExecute(TObject *Sender);

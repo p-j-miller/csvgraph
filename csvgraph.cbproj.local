@@ -12,5 +12,7 @@
     <Transaction>2022/01/03 17:51:44.000.923,=C:\PMi\builder-10v1-projects\csv-graph-github\ya-sort2.c</Transaction>
     <Transaction>2022/01/16 20:54:35.000.158,=C:\PMi\builder-10v1-projects\csv-graph-github\ya-select.c</Transaction>
     <Transaction>2022/01/16 20:54:35.000.169,=C:\PMi\builder-10v1-projects\csv-graph-github\ya-median.c</Transaction>
+    <Transaction>2022/05/16 20:15:23.000.833,=C:\PMi\builder-10v1-projects\csv-graph-github\strftime.c</Transaction>
+    <Transaction>2022/05/16 20:15:23.000.846,=C:\PMi\builder-10v1-projects\csv-graph-github\strptime.c</Transaction>
   </Transactions>
 </BorlandProject>
