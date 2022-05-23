@@ -52,6 +52,16 @@ Added column numbers to X column and Y column list boxes to make it easier to se
 
 2v6 – 27/2/2022 – Median1 filter improved, for <=10,000 data points its now exact and it's (much) more for accurate traces with a larger number of data points. Position of trace legends moved left so more text can be seen.
 
+2v7 – 22/3/2022 - prints -3dB frequency for linear filter.
+Display to user 1 example of every type of error in csv file.
+If dates are present on some lines of the csv file, then flag lines without a date as a potential error when x column is set to time.
+New (exact) median (recursive median filter) algorithm, which falls back to sampling if the execution time becomes long. Median and Median 1 renamed as recursive median filter and standard median filter.
+
+2v8 - 23/5/2022 – added ability to read a date and time as the x value
+csvsave added % complete and (significantly) sped up writing to file.
+csvsave interpolates if required so x values do not need to be identical on all traces.
+
+
 # Installation
 Cvsgraph is a portable program which does not need installation.
 
