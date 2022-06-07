@@ -70,9 +70,9 @@ bool getfloat(char *s, float *d); /*reads a floating point number returns true i
 bool getfloatgt0(char *s, float *d);/* as above but requires number to be >0 */
 bool getfloatge0(char *s, float *d);/* as above but requires number to be >0 */
 
-double gethms(char *s); /* read a time of format hh:mm:ss.s , returns time in seconds */
+long double gethms(char *s); /* read a time of format hh:mm:ss.s , returns time in seconds */
 void reset_days(void);  /* reset static variables for gethms_days() - should be used before using gethms_days() to read times from a file  */
-double gethms_days(char *s); /* read time in format hh:mm:ss.s , assumed to be called in sequence and accounts for days when time wraps around. Returns secs */
+long double gethms_days(char *s); /* read time in format hh:mm:ss.s , assumed to be called in sequence and accounts for days when time wraps around. Returns secs */
 
 char * validate_num(char *text, float min, float max, float *d,bool *ok, char *onerror); /* validate input from an edit control etc , returns new value for control [unchanged if OK]*/
 TColor cvalidate_num(char *text, float min, float max, float *d,bool *ok); /* validate input from an edit control etc , returns clRED on error*/

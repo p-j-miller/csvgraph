@@ -67,6 +67,10 @@
 // 2v8  24/3/2022 : strptime() function added for date/time handling
 //                : csvsave added % complete and buffering on output to speed up writing to file.
 //                : csvsave interpolates if required so x values do not need to be identical on all traces
+// 2v9 4/6/2022   : bug when X_Offset used and multiple traces added at once then offset is added once for 1st trace, twice for 2nd etc.
+//                : first_time changed from double to long double so accuracy is improved when "start time from 0" is selected
+//                : gethms() and gethms_days() also both now return long doubles and are coded to convert numbers to this full resolution.
+//
 //---------------------------------------------------------------------------
 /*----------------------------------------------------------------------------
  * Copyright (c) 2019,2020,2021,2022 Peter Miller
@@ -127,7 +131,7 @@
 
 
 extern TForm1 *Form1;
-const char * Prog_Name="CSVgraph (Github) 2v8e";   // needs to be global as used in about box as well.
+const char * Prog_Name="CSVgraph (Github) 2v9c";   // needs to be global as used in about box as well.
 #if 1 /* if 1 then use fast_strtof() rather than atof() for floating point conversion. Note in this application this is only slightly faster (1-5%) */
 extern "C" float fast_strtof(const char *s,char **endptr); // if endptr != NULL returns 1st character thats not in the number
 #define strtod fast_strtof  /* set so we use it in place of strtod() */
@@ -1320,9 +1324,10 @@ void __fastcall TPlotWindow::Button_add_trace1Click(TObject *Sender)
   float previousxvalue,previousyvalue;
   double median_ahead_t; // >0 for median filtering to be used
   int poly_order;
-  double first_time; // used when reading times in for x axis, store times relative to 1st time
+  long double first_time; // used when reading times in for x axis, store times relative to 1st time
   int nos_traces_added=0;
   bool allvalidxvals=true;
+  double x_offset;
   clock_t start_t,end_t;
   int nos_errs=0; // count of errors found when reading values
 #define MAX_ERRS 2 /* max errors that will be displayyed in full */
@@ -1462,9 +1467,9 @@ void __fastcall TPlotWindow::Button_add_trace1Click(TObject *Sender)
          StatusText->Caption="Invalid xcol";
          addtraceactive=false;// finished
          return;
-        }
-  // now get X offset
-  double x_offset=atof(AnsiOf(Edit_Xoffset->Text.c_str()));
+		}
+  // get x offset from gui to a local variable as a double.
+  x_offset=atof(AnsiOf(Edit_Xoffset->Text.c_str()));
 
   // ycol can either by an unsigned integer number or an expression  OR a comma seperated list of numbers
   char *ys;
@@ -1481,7 +1486,7 @@ void __fastcall TPlotWindow::Button_add_trace1Click(TObject *Sender)
          fclose(fin);
          StatusText->Caption="Invalid ycol";
          addtraceactive=false;// finished
-         return;
+		 return;
         }
   ys=s; // save copy so we can free at the end
 #if 1
@@ -1872,7 +1877,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 
 		 // get x value
 		 if(allvalidxvals && nos_traces_added>1 && xmonotonic && !compress )  // This optimisation disabled if lines with invalid xvals found (and skipped)
-			{xval=pScientificGraph->fnAddDataPoint_nextx(iGraph); // same value as previous graph loaded  as this is faster than decoding it again
+			{xval=pScientificGraph->fnAddDataPoint_nextx(iGraph)-x_offset; // same value as previous graph loaded  as this is faster than decoding it again , x_offset will be added later but is already in previous trace so must subtract here
 			 if(!firstxvalue && xval<previousxvalue)
 				{if(++nos_errs<=MAX_ERRS)
 					rprintf("Error: adding x value from previous trace and values not monotonic at line %d xval=%g\n",lines_in_file+1,xval);
@@ -1881,7 +1886,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 				}
 			}
 		 else
-			{double ti;
+			{long double ti;   // ti is the time just read in - this needs as much resolution as possible - first_time is also a long double
 			 switch(Xcol_type->ItemIndex)
 				{case 0: xval=lines_in_file; // x=linenumber in file
 						break;
@@ -1983,7 +1988,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 							 continue;   // ignore line
 							}
 						 ti=ya_mktime(&my_tm); /* fully functional version of mktime() that returns secs and takes (and changes if necessary) timeptr */
-						 ti+=strp_tz.f_secs;// add in any fractional seconds */
+						 ti+=strp_tz.f_secs;// add in any fractional seconds (ti is a long double to maximise resolution here) */
 
 						if(firstxvalue)
 							{first_time=ti;  // remember 1st value, and potentially use as offset for the rest of the values
@@ -1992,7 +1997,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 							{
 							 /* line below assumes times are in increasing order which is NOT guaranteed ! */
 							 /* However, first_time is a double, as is ti so this potentially offers higher resolution as the difference is stored as a float */
-							 xval=ti-first_time;  // ofset time by time of 1st value (so we maximise resolution in the float xval)
+							 xval=ti-first_time;  // offset time by time of 1st value [both are long doubles] (so we maximise resolution in the float xval)
 							}
 						  else
 							{
