@@ -61,6 +61,12 @@ New (exact) median (recursive median filter) algorithm, which falls back to samp
 csvsave added % complete and (significantly) sped up writing to file.
 csvsave interpolates if required so x values do not need to be identical on all traces.
 
+2v9 – 7/6/2022 – bug fix – if x-offset is not equal to 0 and multiple traces added incorrect x-offset
+    was applied to the 2nd trace added onwards.
+		Higher resolution internally on reading dates & times, so if “start time from zero” is
+    ticked the results may be slightly more accurate.
+
+
 
 # Installation
 Cvsgraph is a portable program which does not need installation.
