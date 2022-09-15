@@ -17,12 +17,12 @@
 #include <Menus.hpp>
 #include <Dialogs.hpp>
 #include <ComCtrls.hpp>
-#include "CSPIN.h"
+#include "cspin.h"
 #include <ExtDlgs.hpp>
 #include <System.Actions.hpp>
 #include <System.ImageList.hpp>
 //---------------------------------------------------------------------------
-enum reg_types {reg_poly,reg_sqrt,reg_rat}; // type of linear regression
+#include "multiple-lin-reg-fn.h"
 
 class TPlotWindow : public TForm
 {

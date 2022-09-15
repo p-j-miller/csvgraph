@@ -38,6 +38,7 @@
 #pragma package(smart_init)
 #pragma resource "*.dfm"
 TForm1 *Form1;
+#include "rprintf.h"
 #include "expr-code.h"
 #define P_UNUSED(x) (void)x; /* a way to avoid warning unused parameter messages from the compiler */
 //---------------------------------------------------------------------------

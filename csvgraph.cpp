@@ -29,11 +29,19 @@
 #include <tchar.h>
 //---------------------------------------------------------------------------
 USEFORM("Unit1.cpp", Form1);
-USEFORM("UScalesWindow.cpp", ScalesWindow);
 USEFORM("UDataPlotWindow.cpp", PlotWindow);
+USEFORM("UScalesWindow.cpp", ScalesWindow);
 USEFORM("About.cpp", AboutBox);
 //---------------------------------------------------------------------------
+USEFORM("Unit1.cpp", Form1)
+USEFORM("UScalesWindow.cpp", ScalesWindow)
+USEFORM("UDataPlotWindow.cpp", PlotWindow)
+USEFORM("About.cpp", AboutBox)
+//---------------------------------------------------------------------------
 #if 1  /* my version that picks up command line */
+extern volatile int xchange_running; // avoid running multiple instances of Edit_XoffsetChange() in parallel, but still do correct number of updates , set to -1 initially
+extern volatile bool addtraceactive; // set to true when add trace active to avoid multiple clicks
+
 void proces_open_filename(char *fn); // open filename - just to peek at header row
 int WINAPI _tWinMain(HINSTANCE, HINSTANCE, LPTSTR, int)
 {
@@ -54,6 +62,8 @@ int WINAPI _tWinMain(HINSTANCE, HINSTANCE, LPTSTR, int)
 	}
 	catch (Exception &exception)
 	{
+		xchange_running= -1; // avoid running multiple instances of Edit_XoffsetChange() in parallel, but still do correct number of updates, -1 is initial value
+		addtraceactive=false; // set to true when add trace active to avoid multiple clicks
 		Application->ShowException(&exception);
 	}
 	catch (...)
@@ -64,6 +74,8 @@ int WINAPI _tWinMain(HINSTANCE, HINSTANCE, LPTSTR, int)
 		}
 		catch (Exception &exception)
 		{
+			xchange_running= -1; // avoid running multiple instances of Edit_XoffsetChange() in parallel, but still do correct number of updates, -1 is initial value
+			addtraceactive=false; // set to true when add trace active to avoid multiple clicks
 			Application->ShowException(&exception);
 		}
 	}

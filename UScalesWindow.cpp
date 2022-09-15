@@ -84,7 +84,7 @@ void __fastcall TScalesWindow::OKBtnClick(TObject *Sender)
 
   }
   catch(const EConvertError &e)                //wrong input
-  {
+  {P_UNUSED(e)
    Application->MessageBox(L"Not a Number.", L"Input Error", MB_OK);
   }
 

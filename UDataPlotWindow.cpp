@@ -70,6 +70,26 @@
 // 2v9 4/6/2022   : bug when X_Offset used and multiple traces added at once then offset is added once for 1st trace, twice for 2nd etc.
 //                : first_time changed from double to long double so accuracy is improved when "start time from 0" is selected
 //                : gethms() and gethms_days() also both now return long doubles and are coded to convert numbers to this full resolution.
+// 2v10 8/6/22    : readline() changed to limit max line length (avoids a "silly" file with a very long line using all the available memory)
+//                : Max length set at ~ 1 million characters so unlikley to be an issue with a real csv file
+//                : when outer catch(...) (in csvgraph.cpp) is executed clear flags saying functions are executing so user may be able to continue working.
+//  3v0 15/8/22   : 1st 64 bit version built with C++ Builder 10.4
+//  3v1 17/8/22   : clean compile for 64 bit version for both debug and release. No obvious bugs found either!
+//  3v2 18/8/22   : debugging info added (sizeof int etc). Made to compile for 32 and 64 bits.
+//                  when compiled for 64 bits:
+//      			_WIN32 defined _WIN64 defined __BORLANDC__ defined __SIZEOF_POINTER__ == 8 Compiled for 64 bit pointers
+//					sizeof int=4, long=4, float=4, double=8, size_t=8,uintptr_t=8, intptr_t=8, void *=8
+//
+//                  when compiled for 32 bits:
+//                  _WIN32 defined __BORLANDC__ defined __SIZEOF_POINTER__ == 4 Compiled for 32 bit pointers
+//					sizeof int=4, long=4, float=4, double=8, size_t=4,uintptr_t=4, intptr_t=4, void *=4
+//                  Minor changes:
+//                      When scales menu invoked multiple times, each time values would change slightly
+//                      Allowed range of font sizes for Main title and X/Y axis titles expanded a little to 4->19 (was 8->14)
+//                      fft now uses multiple processor cores if available.
+//                      fft now makes better use of multiple cores + potential overflow when factorising number of points fixed.
+//                  Refactored code so code likley to be used elsewhere is now in "..\Commom-files\"
+//                  3v2 was released on 14/9/2022 as 1st 64 bit release on github - 3v0 and 3v1 were internal only versions.
 //
 //---------------------------------------------------------------------------
 /*----------------------------------------------------------------------------
@@ -97,7 +117,7 @@
 //---------------------------------------------------------------------------
 #pragma option -w-inl /* turn off W8027 Functions containing switch are not expanded inline warning */
 #include <vcl.h>
-#include <printers.hpp>
+#include <Printers.hpp>
 #include <math.h>
 #include <time.h>
 #include <stdio.h>
@@ -115,6 +135,7 @@
 #pragma resource "*.dfm"
 
 #define NoForm1   /* says Form1 is defined in another file */
+#include "rprintf.h"
 #include "expr-code.h"
 #include <sys\stat.h>
 #include <stdio.h>
@@ -129,9 +150,17 @@
 #include "multiple-lin-reg-fn.h"
 #include "time_local.h"
 
+// I'm sorry for the next 2 lines, but otherwise I get a lot of warnings "zero as null pointer constant"
+#undef NULL
+#define NULL (nullptr)
 
 extern TForm1 *Form1;
-const char * Prog_Name="CSVgraph (Github) 2v9c";   // needs to be global as used in about box as well.
+extern const char * Prog_Name;
+#ifdef _WIN64
+const char * Prog_Name="CSVgraph (Github) 3v2 (64 bit)";   // needs to be global as used in about box as well.
+#else
+const char * Prog_Name="CSVgraph (Github) 3v2 (32 bit)";   // needs to be global as used in about box as well.
+#endif
 #if 1 /* if 1 then use fast_strtof() rather than atof() for floating point conversion. Note in this application this is only slightly faster (1-5%) */
 extern "C" float fast_strtof(const char *s,char **endptr); // if endptr != NULL returns 1st character thats not in the number
 #define strtod fast_strtof  /* set so we use it in place of strtod() */
@@ -148,32 +177,35 @@ extern "C" float fast_strtof(const char *s,char **endptr); // if endptr != NULL 
 /* next 2 function used to support conversion to unicode vcl see https://blogs.embarcadero.com/migrating-legacy-c-builder-apps-to-c-builder-10-seattle/
 */
 #define STR_CONV_BUF_SIZE 2000 // the largest string you may have to convert. depends on your project
-
-wchar_t* __fastcall UnicodeOf(const char* c)
+#ifdef _WIN64
+static wchar_t* __fastcall UnicodeOf(const char* c)
 {
 	static wchar_t w[STR_CONV_BUF_SIZE];
 	memset(w,0,sizeof(w));
-	MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, c, strlen(c), w, STR_CONV_BUF_SIZE);
+	MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, c, (int)strlen(c), w, STR_CONV_BUF_SIZE);
 	return(w);
 }
-
-char* __fastcall AnsiOf(wchar_t* w)
+#endif
+static char* __fastcall AnsiOf(wchar_t* w)
 {
 	static char c[STR_CONV_BUF_SIZE];
 	memset(c, 0, sizeof(c));
-	WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS, w, wcslen(w), c, STR_CONV_BUF_SIZE, NULL, NULL);
+	WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS, w, (int)wcslen(w), c, STR_CONV_BUF_SIZE, NULL, NULL);
 	return(c);
 }
 
-bool Panel2_big=true; // true when panel 2 is big (only used when undocked)
+extern  volatile int xchange_running;
+extern volatile bool addtraceactive;
+extern float yval,xval;
+
 static int line_colour=0;
 volatile int xchange_running=-1; // avoid running multiple instances of Edit_XoffsetChange() in parallel, but still do correct number of updates
 volatile bool addtraceactive=false; // set to true when add trace active to avoid multiple clicks
-bool zoomed=false; // set when zoomed in to stop autoscaling when new traces added
-bool user_set_trace_colour=false;
-TColor user_trace_colour;
-unsigned int nos_lines_in_file=0; // number of lines in last file opened
-bool start_time_from_0=false; // if true use 1st time read is as ofset
+static bool zoomed=false; // set when zoomed in to stop autoscaling when new traces added
+static bool user_set_trace_colour=false;
+static TColor user_trace_colour;
+static unsigned int nos_lines_in_file=0; // number of lines in last file opened
+static bool start_time_from_0=false; // if true use 1st time read is as ofset
 float yval,xval; // current values being added to graph, xval is set before yval
 
 // dynamic number of columns
@@ -187,10 +219,10 @@ const static char *default_x_label="Horizontal axis title";
 void proces_open_filename(char *fn); // open filename - just to peek at header row
 
 // windows getfilename  function
-OPENFILENAME ofn;       // common dialog box structure
-char szFile[260];       // buffer for file name
 
 #ifndef UseVCLdialogs
+static OPENFILENAME ofn;       // common dialog box structure
+static char szFile[260];       // buffer for file name
 char *getfilename()    // displays getfilename dialog and returns filename or "" if not entered
 {
  // Initialize OPENFILENAME
@@ -287,11 +319,19 @@ char *getsaveCSVfilename()    // for saving files : displays getfilename dialog 
  {
    char buff[MAX_PATH];
    HDROP hDrop = (HDROP)Message.Drop;
-   int numFiles = DragQueryFile(hDrop, -1, NULL, NULL);
+   unsigned int numFiles = DragQueryFile(hDrop, -1, NULL, 0);
 #if 1
    if( numFiles==1)
-        {// just 1 file given - deal with it
-         DragQueryFile(hDrop, 0, buff, sizeof(buff));
+		{// just 1 file given - deal with it
+#ifdef _WIN64
+		 wchar_t wbuff[sizeof(buff)];
+		 DragQueryFile(hDrop, 0, wbuff, sizeof(wbuff));
+		 char *tbuff=AnsiOf(wbuff);
+		 strncpy(buff,tbuff,sizeof(buff)); // need to tke a copy as AnsiOf uses a static buffer and it may be called again...
+#else
+		 DragQueryFile(hDrop, 0, buff, sizeof(buff));
+#endif
+
          // process the file in 'buff'
          proces_open_filename(buff); // process file
         }
@@ -325,11 +365,11 @@ void __fastcall TPlotWindow::CreateParams(TCreateParams &Params)
 #endif        
 }
 
-int initial_ClientWidth,initial_ClientHeight,initial_Panel1_Width,initial_Panel1_Height; // sizes when form created
+static int initial_ClientWidth,initial_ClientHeight,initial_Panel1_Width,initial_Panel1_Height; // sizes when form created
 
 //---------------------------------------------------------------------------
 // #define HIGH_DPI /* if true then application has high dpi set in project properties: application -> enable high dpi */
-#define BASE_WIDTH 1609   /* sizes assumed when windows created with form designer */
+// #define BASE_WIDTH 1609   /* sizes assumed when windows created with form designer */
 #define BASE_PWIDTH 1300  /* base panel1 width */
 #define BASE_HEIGHT 980
 
@@ -391,8 +431,8 @@ __fastcall TPlotWindow::TPlotWindow(TComponent* Owner) : TForm(Owner)
 #define   dLegendStartY_val 0.99
 #if 1  /* scale positions based on size */
  // 0.1*initial_Panel1_Width/Panel1->ClientWidth;
-  pScientificGraph->fLeftBorder = 0.1*BASE_PWIDTH/initial_Panel1_Width;      //Borders of Plot in Bitmap in %/100  was 0.2
-  pScientificGraph->fBottomBorder = 0.1*BASE_HEIGHT/initial_Panel1_Height;   // was 0.25
+  pScientificGraph->fLeftBorder = 0.1f*BASE_PWIDTH/initial_Panel1_Width;      //Borders of Plot in Bitmap in %/100  was 0.2
+  pScientificGraph->fBottomBorder = 0.1f*BASE_HEIGHT/initial_Panel1_Height;   // was 0.25
   pScientificGraph->dLegendStartX=dLegendStartX_val; // Top left positions of trace legends in %/100 in Plot was 0.8 - don't need this to change if user rescaled main window
   pScientificGraph->dLegendStartY=dLegendStartY_val; // was 0.95
 #else
@@ -662,7 +702,7 @@ void __fastcall TPlotWindow::AutoScaleExecute(TObject *Sender)
 #define RT_CLICK_Mode pmXor      /* has to be XOR as we want to be able to erase line be redrawing it */
 #define RT_CLICK_Color clWhite   /* white also seems to be the best choice for visibility */
 #define RT_CLICK_A_size 6        /* length of arrow, 0 means no arrow drawn on end of line */
-void Mouse_line(TImage * I1,int a,int b,int d,int e)
+static void Mouse_line(TImage * I1,int a,int b,int d,int e)
 {// draw line for right mouse key from x=a,y=b to x=d,y=e
  I1->Canvas->Pen->Width=RT_CLICK_Width;
  I1->Canvas->Pen->Style=RT_CLICK_Style;
@@ -707,13 +747,13 @@ void Mouse_line(TImage * I1,int a,int b,int d,int e)
          else    {miny=e;maxy=b;x1=d;x2=a;}
          double dy=(RT_CLICK_A_size/m)+0.5;  // arrow shape correction, keeps arrow ~ the same size as it rotates
          I1->Canvas->MoveTo(x1,miny); // top
-         I1->Canvas->LineTo((miny+RT_CLICK_A_size-c)/m+0.5+RT_CLICK_A_size,miny+RT_CLICK_A_size-dy);    // 0.5 for rounding float to int
+         I1->Canvas->LineTo((int)((miny+RT_CLICK_A_size-c)/m+0.5+RT_CLICK_A_size),(int)(miny+RT_CLICK_A_size-dy));    // 0.5 for rounding float to int
          I1->Canvas->MoveTo(x1,miny); // top
-         I1->Canvas->LineTo((miny+RT_CLICK_A_size-c)/m-0.5-RT_CLICK_A_size,miny+RT_CLICK_A_size+dy);
+		 I1->Canvas->LineTo((int)((miny+RT_CLICK_A_size-c)/m-0.5-RT_CLICK_A_size),(int)(miny+RT_CLICK_A_size+dy));
          I1->Canvas->MoveTo(x2,maxy); // bottom
-         I1->Canvas->LineTo((maxy-RT_CLICK_A_size-c)/m+0.5+RT_CLICK_A_size,maxy-RT_CLICK_A_size-dy);
+		 I1->Canvas->LineTo((int)((maxy-RT_CLICK_A_size-c)/m+0.5+RT_CLICK_A_size),(int)(maxy-RT_CLICK_A_size-dy));
          I1->Canvas->MoveTo(x2,maxy); // bottom
-         I1->Canvas->LineTo((maxy-RT_CLICK_A_size-c)/m-0.5-RT_CLICK_A_size,maxy-RT_CLICK_A_size+dy);
+		 I1->Canvas->LineTo((int)((maxy-RT_CLICK_A_size-c)/m-0.5-RT_CLICK_A_size),(int)(maxy-RT_CLICK_A_size+dy));
         }
  else
         { // "horizontal line (< 45 deg)" y=m*x+c
@@ -722,13 +762,13 @@ void Mouse_line(TImage * I1,int a,int b,int d,int e)
          else    {minx=d;maxx=a;y1=e;y2=b;}
          double dx=RT_CLICK_A_size*m+0.5;   // arrow shape correction, keeps arrow ~ the same size as it rotates
          I1->Canvas->MoveTo(minx,y1); // left end
-         I1->Canvas->LineTo(minx+RT_CLICK_A_size+dx,m*(minx+RT_CLICK_A_size)+c-RT_CLICK_A_size-0.5);    // 0.5 for rounding float to int
+		 I1->Canvas->LineTo((int)(minx+RT_CLICK_A_size+dx),(int)(m*(minx+RT_CLICK_A_size)+c-RT_CLICK_A_size-0.5));    // 0.5 for rounding float to int
          I1->Canvas->MoveTo(minx,y1); // left end
-         I1->Canvas->LineTo(minx+RT_CLICK_A_size-dx,m*(minx+RT_CLICK_A_size)+c+RT_CLICK_A_size+0.5);
+		 I1->Canvas->LineTo((int)(minx+RT_CLICK_A_size-dx),(int)(m*(minx+RT_CLICK_A_size)+c+RT_CLICK_A_size+0.5));
          I1->Canvas->MoveTo(maxx,y2); // right end
-         I1->Canvas->LineTo(maxx-RT_CLICK_A_size+dx,m*(maxx-RT_CLICK_A_size)+c-RT_CLICK_A_size-0.5);
+		 I1->Canvas->LineTo((int)(maxx-RT_CLICK_A_size+dx),(int)(m*(maxx-RT_CLICK_A_size)+c-RT_CLICK_A_size-0.5));
          I1->Canvas->MoveTo(maxx,y2); // right end
-         I1->Canvas->LineTo(maxx-RT_CLICK_A_size-dx,m*(maxx-RT_CLICK_A_size)+c+RT_CLICK_A_size+0.5);
+		 I1->Canvas->LineTo((int)(maxx-RT_CLICK_A_size-dx),(int)(m*(maxx-RT_CLICK_A_size)+c+RT_CLICK_A_size+0.5));
         }
 #else    /* use v12.2 algorithm (which is not bad) */
  /* draw arrow on line has to use a slightly different approach for vertical lines, >45 deg lines and < 45 deg "horizontal lines" */
@@ -926,7 +966,7 @@ void __fastcall TPlotWindow::Image1MouseUp(TObject *Sender,
                 {// normal case , both changed
                  snprintf(buf,sizeof(buf),"X from %g to %g (size %g) : Y from %g to %g (size %g)",xmin,xmax,xmax-xmin,ymin,ymax,ymax-ymin);
                 }
-         rprintf((char *)"%s\n",buf); // record on text form as well as telling user now via a messagebox
+         rprintf("%s\n",buf); // record on text form as well as telling user now via a messagebox
          ShowMessage(buf);
          // Right mouse button showed a line : we need to delete this now
          Mouse_line(Image1,iShape1X,iShape1Y,Shape1->Left,Shape1->Top);
@@ -1030,13 +1070,13 @@ double get_dollar_var_value(pnlist p) /* get value of $ variable */
 			 ++v;
 			 }
 #endif
-         while(isdigit(*v)) i=i*10+(*v++ -'0'); // get number after $
+		 while(isdigit(*v)) i=i*10+(unsigned int)(*v++ -'0'); // get number after $
 		 i--; // internally $1 = array[0]
 #ifdef Allow_dollar_T
 		 if(dollar_T_found)
 			{// found $Tn
 			 // float fnAddDataPoint_thisy(int iGraphNumber)
-			 return Form1->pPlotWindow->pScientificGraph->fnAddDataPoint_thisy(i);
+			 return Form1->pPlotWindow->pScientificGraph->fnAddDataPoint_thisy((int)i);
 			}
 #endif
 		 // if not $Tn must just be $n
@@ -1059,7 +1099,7 @@ double get_dollar_var_value(pnlist p) /* get value of $ variable */
         }
 #endif
 
-void filter_callback(unsigned int i, unsigned int imax) // callback function from filters  used to display progress
+static void filter_callback(size_t i, size_t imax) // callback function from filters  used to display progress
 { static char cstring[32]; // small buffer
   snprintf(cstring,sizeof(cstring),"Filter: %.0f%% complete",100.0*(double)i/(double)imax);
   Form1->pPlotWindow->StatusText->Caption=cstring;
@@ -1074,16 +1114,16 @@ void TPlotWindow::gen_lin_reg(enum reg_types r,int N,bool write_y,int iGraph)
  {// test code uses general linear least squares fitting
   float *x_arr,*y_arr;
   // test multiple_lin_reg_fn
-  unsigned int iCount=pScientificGraph->fnGetxyarr(&x_arr,&y_arr,iGraph); // allows access to x and y arrays of specified graph, returns nos points
+  size_t iCount=pScientificGraph->fnGetxyarr(&x_arr,&y_arr,iGraph); // allows access to x and y arrays of specified graph, returns nos points
   matrix_ld S;// 2D matrix
   long double *A;   // long double A[N+1]  A = average (mean)
   long double *X; // long double X[N+1];
   bool *U; // bool U[N+1];
   long double T,C;
-  S=cr_matrix_ld(N+1,N+1);// S[N+1][N+1]
-  A=(long double *)calloc(N+1,sizeof(long double));
-  X=(long double *)calloc(N+1,sizeof(long double));
-  U=(bool *)calloc(N+1,sizeof(bool));
+  S=cr_matrix_ld((size_t)(N+1),(size_t)(N+1));// S[N+1][N+1]
+  A=(long double *)calloc((size_t)(N+1),sizeof(long double));
+  X=(long double *)calloc((size_t)(N+1),sizeof(long double));
+  U=(bool *)calloc((size_t)(N+1),sizeof(bool));
   if(S==NULL || A==NULL || X==NULL || U==NULL)
 	{rprintf("Warning - gen_lin_reg() out of RAM\n");
 	 if(S!=NULL) fr_matrix_ld(S);
@@ -1174,7 +1214,7 @@ void TPlotWindow::gen_lin_reg(enum reg_types r,int N,bool write_y,int iGraph)
 	}
 
   long double max_err = 0.0; // max abs error
-  for(int i=0; i<iCount;++i)
+  for(size_t i=0; i<iCount;++i)
 	{long double x=x_arr[i],y=y_arr[i];
 	 if(r==reg_rat)
 		{
@@ -1227,7 +1267,7 @@ void TPlotWindow::gen_lin_reg(enum reg_types r,int N,bool write_y,int iGraph)
 	 T = X[1] - y; // error
 	 if(T<0) T= -T; // T is now abs error
 	 if(T>max_err) max_err=T; // max abs error
-	 if(write_y) y_arr[i]=X[1]; // set y value to that calculated by the function
+	 if(write_y) y_arr[i]=(float)X[1]; // set y value to that calculated by the function
 	}
   rprintf("  max abs error of general least squares fit is %g\n",(double)max_err);
   filter_callback(3,3);
@@ -1236,14 +1276,14 @@ void TPlotWindow::gen_lin_reg(enum reg_types r,int N,bool write_y,int iGraph)
  }
 
 #if 1
-void deriv_trace(int iGraph)
+static void deriv_trace(int iGraph)
 { // take derivative of specified trace . No filtering (that can be applied using csvgraph if required then accessed with $Tn
   // derivative is based on previous point and next point (that means the derivative is centered around the point)
   // in general the results from this version "look better" that the alternative below
   float *x_arr,*y_arr;
   double d,ld;
-  unsigned int iCount=Form1->pPlotWindow->pScientificGraph->fnGetxyarr(&x_arr,&y_arr,iGraph); // allows access to x and y arrays of specified graph, returns nos points
-  int i,j,k;
+  size_t iCount=Form1->pPlotWindow->pScientificGraph->fnGetxyarr(&x_arr,&y_arr,iGraph); // allows access to x and y arrays of specified graph, returns nos points
+  size_t i,j,k;
   if(iCount<2) return;
   // 1st point - can only look forward to next point
   if(x_arr[1]==x_arr[0]) ld=0;// avoid divide by zero when x value does not change
@@ -1253,15 +1293,15 @@ void deriv_trace(int iGraph)
 	 k=i-1;
 	 if(x_arr[j]==x_arr[k]) d=0;// avoid divide by zero when x value does not change
 	 else d=(y_arr[j]-y_arr[k])/(x_arr[j]-x_arr[k]); // slope
-	 y_arr[k]=ld; // can only write back values 1 step behind as orig value for [i] is needed on next iteration
+	 y_arr[k]=(float)ld; // can only write back values 1 step behind as orig value for [i] is needed on next iteration
 	 ld=d;
 	}
   // last point can only look back to the point before before
   k=i-1;
   if(x_arr[i]==x_arr[k]) d=0;// avoid divide by zero when x value does not change
   else d=(y_arr[i]-y_arr[k])/(x_arr[i]-x_arr[k]); // slope
-  y_arr[k]=ld; // previous point
-  y_arr[i]=d; // last point
+  y_arr[k]=(float)ld; // previous point
+  y_arr[i]=(float)d; // last point
 }
 #else
 void deriv_trace(int iGraph)
@@ -1281,12 +1321,12 @@ void deriv_trace(int iGraph)
   y_arr[i]=d; // last point has same slope as the point before
 }
 #endif
-void integral_trace(int iGraph)
+static void integral_trace(int iGraph)
 { // take integral of specified trace .  Uses trapezoidal rule for integration
   float *x_arr,*y_arr,y_i;
   double integral=0;
-  unsigned int iCount=Form1->pPlotWindow->pScientificGraph->fnGetxyarr(&x_arr,&y_arr,iGraph); // allows access to x and y arrays of specified graph, returns nos points
-  int i,j;
+  size_t iCount=Form1->pPlotWindow->pScientificGraph->fnGetxyarr(&x_arr,&y_arr,iGraph); // allows access to x and y arrays of specified graph, returns nos points
+  size_t i,j;
   if(iCount<2) return;
   y_i=y_arr[0]; // need this before its overwritten
   y_arr[0]=0;         // 1st point has integral zero
@@ -1294,7 +1334,7 @@ void integral_trace(int iGraph)
 	{j=i+1;
 	 integral+=0.5*(y_i+y_arr[j])*(x_arr[j]-x_arr[i]); // trapezoidal rule for integration
 	 y_i=y_arr[j];// this y[j] will be y[i] in the next iteration  (its about to be overwritten).
-	 y_arr[j]=integral;
+	 y_arr[j]=(float)integral;
 	}
 }
 
@@ -1310,10 +1350,10 @@ void __fastcall TPlotWindow::Button_add_trace1Click(TObject *Sender)
   TColor Col;
   FILE *fin;
   int lines_in_file;  // line number within file being read
-  char *csv_line;// line of csv file
+  char *csv_line=NULL;// line of csv file
   char *st;
   int xcol,ycol;
-  __int64 filesize;    // gives filesize which is then used to show progress as a %
+  int64_t filesize;    // gives filesize which is then used to show progress as a %
   bool xmonotonic=true; // true is trace is monotonic in x
   bool firstxvalue; // true on 1st x value
   bool gotyvalue; // set to true when a valid number found for y value
@@ -1321,10 +1361,10 @@ void __fastcall TPlotWindow::Button_add_trace1Click(TObject *Sender)
   bool compress;
   bool showsortmessage=true; // only show "sort message" once per press of the "add traces" button
   bool showerrmessage=true; // ditto for message to warn users of errors in format of csv file
-  float previousxvalue,previousyvalue;
+  float previousxvalue=0,previousyvalue=0;
   double median_ahead_t; // >0 for median filtering to be used
   int poly_order;
-  long double first_time; // used when reading times in for x axis, store times relative to 1st time
+  long double first_time=0; // used when reading times in for x axis, store times relative to 1st time
   int nos_traces_added=0;
   bool allvalidxvals=true;
   double x_offset;
@@ -1474,7 +1514,7 @@ void __fastcall TPlotWindow::Button_add_trace1Click(TObject *Sender)
   // ycol can either by an unsigned integer number or an expression  OR a comma seperated list of numbers
   char *ys;
   char *start_s;
-  char *se;// expression (if there is one)
+  char *se=NULL;// expression (if there is one)
   bool isnumber;
   char *date_time_fmt=NULL;
   date_time_fmt=strdup(AnsiOf(Date_time_fmt->Text.c_str()));  // only do this once
@@ -1485,7 +1525,7 @@ void __fastcall TPlotWindow::Button_add_trace1Click(TObject *Sender)
          ShowMessage("Error (No RAM): invalid ycol ["+Edit_ycol->Text+"] (valid range 1.."+AnsiString(MAX_COLS)+")");
          fclose(fin);
          StatusText->Caption="Invalid ycol";
-         addtraceactive=false;// finished
+		 addtraceactive=false;// finished
 		 return;
         }
   ys=s; // save copy so we can free at the end
@@ -1877,7 +1917,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 
 		 // get x value
 		 if(allvalidxvals && nos_traces_added>1 && xmonotonic && !compress )  // This optimisation disabled if lines with invalid xvals found (and skipped)
-			{xval=pScientificGraph->fnAddDataPoint_nextx(iGraph)-x_offset; // same value as previous graph loaded  as this is faster than decoding it again , x_offset will be added later but is already in previous trace so must subtract here
+			{xval=(float)((double)(pScientificGraph->fnAddDataPoint_nextx(iGraph))-x_offset); // same value as previous graph loaded  as this is faster than decoding it again , x_offset will be added later but is already in previous trace so must subtract here
 			 if(!firstxvalue && xval<previousxvalue)
 				{if(++nos_errs<=MAX_ERRS)
 					rprintf("Error: adding x value from previous trace and values not monotonic at line %d xval=%g\n",lines_in_file+1,xval);
@@ -1944,11 +1984,11 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 							{
 							 /* line below assumes times are in increasing order which is NOT guaranteed ! */
 							 /* However, first_time is a double, as is ti so this potentially offers higher resolution as the difference is stored as a float */
-							 xval=ti-first_time;  // ofset time by time of 1st value (so we maximise resolution in the float xval)
+							 xval=(float)(ti-first_time);  // ofset time by time of 1st value (so we maximise resolution in the float xval)
 							}
 						  else
 							{
-							 xval=ti; // can loose resolution for big times, but we are limited by storing xvalues as floats.
+							 xval=(float)ti; // can loose resolution for big times, but we are limited by storing xvalues as floats.
 							}
 						break;
 				 case 3: // date/time with user specified format  - stored in char * date_time_fmt
@@ -1997,16 +2037,18 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 							{
 							 /* line below assumes times are in increasing order which is NOT guaranteed ! */
 							 /* However, first_time is a double, as is ti so this potentially offers higher resolution as the difference is stored as a float */
-							 xval=ti-first_time;  // offset time by time of 1st value [both are long doubles] (so we maximise resolution in the float xval)
+							 xval=(float)(ti-first_time);  // offset time by time of 1st value [both are long doubles] (so we maximise resolution in the float xval)
 							}
 						  else
 							{
-							 xval=ti; // can loose resolution for big times, but we are limited by storing xvalues as floats.
+							 xval=(float)ti; // can loose resolution for big times, but we are limited by storing xvalues as floats.
 							}
-						if(0 && lines_in_file<5)
+#if 0
+						if(lines_in_file<5)
 							{// useful for debugging
 							 rprintf("date/time on line %d returns %g secs (format \"%s\" line: %s, ti=%g)\n",lines_in_file+1,xval,date_time_fmt,col_ptrs[xcol-1],ti);
 							}
+#endif
 						}
 						break;
 				 default: // should only be "2" - value in specified column
@@ -2034,7 +2076,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 		 if(yexpr)
 				{try
 						{
-						 yval=execute_rpn(); // expression - excute it
+						 yval=(float)execute_rpn(); // expression - excute it
 						}
 				 catch (...)   // assume the issue is an error in the expression
 						{yval=0;
@@ -2094,7 +2136,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 								}
 						 if(skipy) // if have skipped some values put last point in so we see a correct straight line
 								{skipy=false;
-								 pScientificGraph->fnAddDataPoint(previousxvalue+x_offset,previousyvalue,iGraph); // ignore out of ram as that will be trapped below
+								 pScientificGraph->fnAddDataPoint((float)(previousxvalue+x_offset),previousyvalue,iGraph); // ignore out of ram as that will be trapped below
 								}
 #endif
 						 previousxvalue=xval;
@@ -2102,7 +2144,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						}
 				}
 		 // rprintf("before addDatapoint: xval=%g x_offset=%g yval=%g iGraph=%d\n",xval,x_offset,yval,iGraph);
-		 if(!pScientificGraph->fnAddDataPoint(xval+x_offset,yval,iGraph))
+		 if(!pScientificGraph->fnAddDataPoint((float)(xval+x_offset),yval,iGraph))
 				{// out of RAM
 				 ShowMessage("Error: not enough memory to load all specified columns");
 				 fclose(fin);
@@ -2322,7 +2364,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 				break;
 		case 21: //  general purpose polynomial fit   (least squares using orthogonal polynomials)
 				StatusText->Caption=FString;
-				if(!pScientificGraph->fnPolyreg(poly_order,iGraph,filter_callback))
+				if(!pScientificGraph->fnPolyreg((unsigned int)poly_order,iGraph,filter_callback))
 						{StatusText->Caption="Polynomial fit failed";
 						 ShowMessage("Warning: Polynomial fit failed - adding original trace to graph");
 						}
@@ -2422,7 +2464,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
    if(s) free(s);
    if(date_time_fmt!=NULL) {free(date_time_fmt); date_time_fmt=NULL;}
 // #define DEBUG_RAM_USED /* when defined use rprintf to give "user" more info */
-#if 1 /* this gives 357.1MB when task manager gives 358.3 MB */
+#if 0 /* for 64 bit compiles this always gives 2.5MB  */
    TMemoryMap  mmap;
    GetMemoryMap(mmap);
    unsigned int ram_used=0;    // in 64kbytes chunks
@@ -2430,7 +2472,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
    for(int i=0;i<65536;++i)
 	ram_used+=(mmap[i]==csAllocated)||(mmap[i]==csReserved);       // in use by this process or reserved for it
 #ifdef DEBUG_RAM_USED
-   rprintf("%d 64k chunks in use = %d MB\n",ram_used,(ram_used*64)/1024);
+   rprintf("%d 64k chunks in use = %g MB\n",ram_used,((double)ram_used*64.0)/1024.0);
 #endif
    dram_used=ram_used*64.0/1024.0;  // convert to MB
    if(nos_traces_added>1)
@@ -2446,38 +2488,39 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 		{
 		 snprintf(cstring,sizeof(cstring),"Added column %d in %1f secs. %.1f MB ram used",ycol,(end_t-start_t)/CLK_TCK,dram_used);
 		}
-#elif 0 /* this returns 352MB when task manager gives 358.3MB */
+#elif 1 /* this returns 125MB when task manager gives 136.8MB - but as it only returns RAM used this is sensible */
   TMemoryManagerState memstatus;
-  TSmallBlockTypeState bs;
-  unsigned int ram_used;
+  // TSmallBlockTypeState bs;
+  double ram_used=0;
+  double dram_used;
   GetMemoryManagerState(memstatus);
   //ram_used=(memstatus.TotalAllocatedMediumBlockSize)/(1024*1024)+memstatus.TotalAllocatedLargeBlockSize/(1024*1024) ; // in MB
-  ram_used=memstatus.TotalAllocatedMediumBlockSize+memstatus.TotalAllocatedLargeBlockSize ;
-  for(int i=0;i< 55;++i)
+  dram_used=(double)memstatus.TotalAllocatedMediumBlockSize+(double)memstatus.TotalAllocatedLargeBlockSize ;
+  for(int i=0;i< 46;++i)    // was 55 now 46 as higher values seem to give invalid results in win64
 	{ ram_used+=memstatus.SmallBlockTypeStates[i].ReservedAddressSpace;
 #ifdef DEBUG_RAM_USED
-	  rprintf("SmallBlockTypeStates[%d]: InternalBlockSize=%u UseableBlockSize=%u AllocatedBlockCount=%u ReservedAddressSpace=%u\n",i,
-		 memstatus.SmallBlockTypeStates[i].InternalBlockSize, memstatus.SmallBlockTypeStates[i].UseableBlockSize, memstatus.SmallBlockTypeStates[i].AllocatedBlockCount ,memstatus.SmallBlockTypeStates[i].ReservedAddressSpace);
+	  rprintf("SmallBlockTypeStates[%u]: InternalBlockSize=%.0f UseableBlockSize=%0.f AllocatedBlockCount=%.0f ReservedAddressSpace=%.0f\n",i,
+		 (double)memstatus.SmallBlockTypeStates[i].InternalBlockSize, (double)memstatus.SmallBlockTypeStates[i].UseableBlockSize, (double)memstatus.SmallBlockTypeStates[i].AllocatedBlockCount ,(double)memstatus.SmallBlockTypeStates[i].ReservedAddressSpace);
 #endif
 	}
 #ifdef DEBUG_RAM_USED
-  rprintf("memstatus.TotalAllocatedMediumBlockSize=%u  memstatus.TotalAllocatedLargeBlockSize=%u ram_used=%u\n",
-	memstatus.TotalAllocatedMediumBlockSize, memstatus.TotalAllocatedLargeBlockSize, ram_used);
-  rprintf(" AllocatedMediumBlockCount=%u AllocatedLargeBlockCount=%u\n",memstatus.AllocatedMediumBlockCount, memstatus.AllocatedLargeBlockCount);
+  rprintf("memstatus.TotalAllocatedMediumBlockSize=%.0f  memstatus.TotalAllocatedLargeBlockSize=%.0f dram_used=%.0f ram_used=%.0f\n",
+	(double)memstatus.TotalAllocatedMediumBlockSize, (double)memstatus.TotalAllocatedLargeBlockSize, dram_used,ram_used);
+  rprintf(" AllocatedMediumBlockCount=%.0f AllocatedLargeBlockCount=%.0f\n",(double)memstatus.AllocatedMediumBlockCount, (double)memstatus.AllocatedLargeBlockCount);
 #endif
-  ram_used=ram_used/(1024*1024); // convert to MB
+  dram_used=(ram_used+dram_used)/(1024.0*1024.0); // convert to MB
   if(nos_traces_added>1)
 		{
-		 snprintf(cstring,sizeof(cstring),"Added %d traces in %.0f secs. %uMB ram used",nos_traces_added,(end_t-start_t)/CLK_TCK,ram_used);
+		 snprintf(cstring,sizeof(cstring),"Added %d traces in %.0f secs. %.0fMB ram used",nos_traces_added,(end_t-start_t)/CLK_TCK,dram_used);
 
 		}
   else if(yexpr)
 		{
-		 snprintf(cstring,sizeof(cstring),"Added trace in %.1f secs. %uMB ram used",(end_t-start_t)/CLK_TCK,ram_used);
+		 snprintf(cstring,sizeof(cstring),"Added trace in %.1f secs. %.0fMB ram used",(end_t-start_t)/CLK_TCK,dram_used);
 		}
 	else
 		{
-		 snprintf(cstring,sizeof(cstring),"Added column %d in %1f secs. %uMB ram used",ycol,(end_t-start_t)/CLK_TCK,ram_used);
+		 snprintf(cstring,sizeof(cstring),"Added column %d in %1f secs. %.0fMB ram used",ycol,(end_t-start_t)/CLK_TCK,dram_used);
 		}
 
 #else     /* THeapStatus is deprecated - this returns 357MB when task manager gives 358.3 MB */
@@ -2507,10 +2550,10 @@ void __fastcall TPlotWindow::ReDrawExecute(TObject *Sender)
   fnReDraw();
 }
 //---------------------------------------------------------------------------
-void set_ListboxXY(void) // highlight default columns in ListBoxX/Y (if valid columns are specified)
+static void set_ListboxXY(void) // highlight default columns in ListBoxX/Y (if valid columns are specified)
 {
   int i;
-  unsigned int nos_cols_in_file=Form1->pPlotWindow->ListBoxY->Items->Count ; // number of columns
+  int nos_cols_in_file=Form1->pPlotWindow->ListBoxY->Items->Count ; // number of columns
   i=_wtoi(Form1->pPlotWindow->Edit_xcol->Text.c_str())-1;
   if(i>=0 && i<nos_cols_in_file)
 	Form1->pPlotWindow->ListBoxX->ItemIndex=i;// highlight default column (only 1 for x )
@@ -2535,7 +2578,7 @@ void set_ListboxXY(void) // highlight default columns in ListBoxX/Y (if valid co
 /* use built in windows functions directly to read file, check for \n's by reading array 64bits at a time */
 	/* \n detection from idea in http://graphics.stanford.edu/~seander/bithacks.html#ZeroInWord */
 
-unsigned int count_lines(char *filename, double filesize)
+static unsigned int count_lines(char *cfilename, double filesize)
 {   HANDLE hFile;
 	unsigned int lines=0;
 	char *buf=(char *)malloc(CL_BLOCK_SIZE); // buffer for reads - malloc guarantees sensible alignment for buf;
@@ -2545,7 +2588,7 @@ unsigned int count_lines(char *filename, double filesize)
 	double total_bytes_read=0;
 	clock_t begin_t;
 	begin_t=clock();
-	//rprintf("count_lines: Filename=%s BLOCK_SIZE=%u\n",filename,BLOCK_SIZE);
+	//rprintf("count_lines: Filename=%s BLOCK_SIZE=%u\n",cfilename,BLOCK_SIZE);
 	if(buf==NULL)
 		{rprintf(" count_lines() - not enough RAM - sorry!\b");
 		 return 0; // No RAM
@@ -2561,7 +2604,11 @@ unsigned int count_lines(char *filename, double filesize)
 	HANDLE                hTemplateFile
 	);
 	*/
-	hFile = CreateFile(filename,               // file to open
+#ifdef _WIN64
+	hFile = CreateFile(UnicodeOf(cfilename),               // file to open
+#else
+	hFile = CreateFile(cfilename,               // file to open
+#endif
 					   GENERIC_READ,          // open for reading
 					   FILE_SHARE_READ,       // share for reading
 					   NULL,                  // default security
@@ -2584,8 +2631,12 @@ unsigned int count_lines(char *filename, double filesize)
 		 total_bytes_read+=nBytesRead; // keep track of bytes read to date
 		 uint64_t v64;
 		 uint64_t *pv64;
+	/* # pragma's below work for gcc and clang compilers. This code is done for efficiency, buf is obtained from heap so has suitable alignment */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-align"
 		 for(pv64=(uint64_t *)buf; nBytesRead>=8;nBytesRead-=8)
 			{// read buffer 8 bytes at a time looking for \n = 0a*/
+#pragma GCC diagnostic pop
 			 v64=*pv64++; // read next 8 characters from buffer
 			 v64^= UINT64_C(0x0a0a0a0a0a0a0a0a); // convert \n's to zero's as test below is for zero bytes
 			 if ((v64 - UINT64_C(0x0101010101010101)) & (~v64) & UINT64_C(0x8080808080808080))
@@ -2618,14 +2669,14 @@ void proces_open_filename(char *fn) // open filename - just to peek at header ro
 {
 // Form1->pPlotWindow->StatusText->Caption=cstring;
   FILE *fin;
-  char *csv_line;// line of csv file
+  char *csv_line=NULL;// line of csv file
   unsigned int nos_cols_in_file;
   unsigned int j;
   AnsiString basename;
   char str_buf[100];  // temp buffer
-  __int64 filesize;    // gives filesize which is then used to show progress as a %
-  nos_lines_in_file=0; // we need to count the number of lines in the file
+  int64_t filesize;    // gives filesize which is then used to show progress as a %
   if(addtraceactive) return; // currently adding traces so cannot change filename
+  nos_lines_in_file=0; // we need to count the number of lines in the file
   if(fn==NULL || strcmp(fn,"")==0)
         {filename="";
          Form1->pPlotWindow->StatusText->Caption="No filename set";
@@ -2639,7 +2690,7 @@ void proces_open_filename(char *fn) // open filename - just to peek at header ro
         {ShowMessage("Error: cannot open file "+filename);
          Form1->pPlotWindow->StatusText->Caption="No filename set";
          Form1->pPlotWindow->StaticText_filename->Text="Not set";
-         rprintf("Cannot open filename <%s>\n",filename.c_str());
+		 rprintf("Cannot open filename <%s>\n",filename.c_str());
          filename="";
          return;
 		}
@@ -2649,6 +2700,31 @@ void proces_open_filename(char *fn) // open filename - just to peek at header ro
   fseek(fin,0,SEEK_SET); // back to start of file
 
   rcls();
+#if 0
+  /* add some debugging info */
+#ifdef _WIN32
+  rprintf("_WIN32 defined ");
+#endif
+#ifdef _WIN64
+  rprintf("_WIN64 defined ");
+#endif
+#ifdef  __BORLANDC__
+  rprintf("__BORLANDC__ defined ");
+#endif
+#ifdef _OPENMP
+  rprintf("_OPENMP defined ");
+#endif
+#if __SIZEOF_POINTER__ == 8 /* 64 bit pointers */
+  rprintf("__SIZEOF_POINTER__ == 8 Compiled for 64 bit pointers\n");
+#elif __SIZEOF_POINTER__ == 4 /* 32 bit pointers */
+  rprintf("__SIZEOF_POINTER__ == 4 Compiled for 32 bit pointers\n");
+#else
+  rprintf("Compiled for unknown pointer size !\n");
+#endif
+  rprintf("sizeof int=%d,long=%d,float=%d,double=%d,size_t=%d,ssize_t=%d,uintptr_t=%d,intptr_t=%d,void *=%d\n",
+	sizeof(int),sizeof(long),sizeof(float),sizeof(double),sizeof(size_t),sizeof(ssize_t),sizeof(uintptr_t),sizeof(intptr_t),sizeof(void *));
+
+#endif
   rprintf("filename selected is %s\n",filename.c_str());
   {int skip_initial_lines=_wtoi(Form1->pPlotWindow->Edit_skip_lines->Text.c_str());
    for(int l=0;l<=skip_initial_lines;++l)    // need to read 1 line if skip=0, 2 lines for skip=1, etc
@@ -3077,7 +3153,7 @@ extern int zoom_fun_level;  // used to keep track of level of recursion in zoom 
 {
  /* resize of whole window, most movement of contents is automatic, here we fix the things that are not automatic */
  P_UNUSED(Sender);
- int new_width, new_height ;
+ //int new_width, new_height ;
  if(pScientificGraph == NULL || pScientificGraph->pBitmap==NULL) return; // exiting - ignore the resize
  if(Panel2->Floating)
 	{  // if panel 2 is floating panel 1 takes up all the space
@@ -3096,8 +3172,8 @@ extern int zoom_fun_level;  // used to keep track of level of recursion in zoom 
 
  /* scale positions based on size */
 
-  pScientificGraph->fLeftBorder = 0.1*BASE_PWIDTH/Panel1->ClientWidth;      //Borders of Plot in Bitmap in %/100  was 0.2
-  pScientificGraph->fBottomBorder = 0.1*BASE_HEIGHT/Panel1->ClientHeight;   // was 0.25
+  pScientificGraph->fLeftBorder = 0.1f*BASE_PWIDTH/Panel1->ClientWidth;      //Borders of Plot in Bitmap in %/100  was 0.2
+  pScientificGraph->fBottomBorder = 0.1f*BASE_HEIGHT/Panel1->ClientHeight;   // was 0.25
 
   /* actually resize bitmap */
   Image1->Height=Panel1->ClientHeight;        //fit TScientificGraph-Bitmap in
@@ -3182,11 +3258,13 @@ void __fastcall TPlotWindow::FormResize(TObject *Sender)
 //---------------------------------------------------------------------------
 
 
-bool firstpanel2undock=true;
+static bool firstpanel2undock=true;
 
 void __fastcall TPlotWindow::Panel2EndDock(TObject *Sender, TObject *Target, int X,
 		  int Y)
-{
+{P_UNUSED(Target);
+ P_UNUSED(X);
+ P_UNUSED(Y);
  // undock of panel2 (the main control panel)  - Note the Undock() event does not appear to be called so do it this way instead
  // rprintf("EndDock!\n");
  if(Panel2->Floating)
@@ -3211,7 +3289,7 @@ void __fastcall TPlotWindow::Panel2EndDock(TObject *Sender, TObject *Target, int
 
 
 void __fastcall TPlotWindow::Panel2Resize(TObject *Sender)
-{
+{P_UNUSED(Sender);
  if(Panel2->Floating  )
 	{Panel2->AutoSize =false;
 	 Panel2->AutoScroll =true; // enable scroll bars
@@ -3222,7 +3300,7 @@ void __fastcall TPlotWindow::Panel2Resize(TObject *Sender)
 
 
 void __fastcall TPlotWindow::visible1Click(TObject *Sender)
-{
+{P_UNUSED(Sender);
  // menu item panel/visible clicked    , make panel 2 visible again
  if(Panel2->Floating && !Panel2->Visible )
     Panel2->Visible =true;
@@ -3230,7 +3308,7 @@ void __fastcall TPlotWindow::visible1Click(TObject *Sender)
 //---------------------------------------------------------------------------
 
 void __fastcall TPlotWindow::BitBtn_set_colourClick(TObject *Sender)
-{
+{P_UNUSED(Sender);
   /* Set trace colour button pressed */
   if(ColourDialog1->Execute())
 	{
@@ -3242,13 +3320,13 @@ void __fastcall TPlotWindow::BitBtn_set_colourClick(TObject *Sender)
 
 
 void __fastcall TPlotWindow::Edit_xcolChange(TObject *Sender)
-{
+{P_UNUSED(Sender);
     set_ListboxXY(); // highlight items in ListBoxX & Y that have been selected in Edit_xcol & Edit_ycol
 }
 //---------------------------------------------------------------------------
 
 void __fastcall TPlotWindow::Edit_ycolChange(TObject *Sender)
-{
+{P_UNUSED(Sender);
   set_ListboxXY(); // highlight items in ListBoxX & Y that have been selected in Edit_xcol & Edit_ycol
 }
 //---------------------------------------------------------------------------
@@ -3257,13 +3335,24 @@ void __fastcall TPlotWindow::Edit_ycolChange(TObject *Sender)
 
 void __fastcall TPlotWindow::Action1Execute(TObject *Sender)
 {   // Help manual
+  P_UNUSED(Sender);
+#if 1
+  AnsiString argv0=ParamStr(0);  // needed for builder 10.4 */
+  char *progname=(char *)malloc(strlen(argv0.c_str())+1); /* +1 for null - will be shorter than this as remove a bit from argv[0] */
+  strcpy(progname,argv0.c_str());
+#else
   char *progname=strdup(_argv[0]);  // argv[0] is the filename & path to the csvgraph executable  , assume csvgraph.pdf is in the same directory
-  int L=strlen(progname);
+#endif
+  size_t L=strlen(progname);
   progname[L-3]='p';// change extension from .exe to .pdf as thats the manual
   progname[L-2]='d';
   progname[L-1]='f';
   rprintf("Manual is at %s\n",progname);
-  ShellExecute(NULL,NULL, progname, NULL, NULL, SW_SHOW); // assume .pdf extension is associated with a suitable reader application
+#ifdef _WIN64
+  ShellExecute(NULL,NULL, UnicodeOf(progname), NULL, NULL, SW_SHOW); // assume .pdf extension is associated with a suitable reader application
+#else
+  ShellExecute(NULL,NULL,progname, NULL, NULL, SW_SHOW); // assume .pdf extension is associated with a suitable reader application
+#endif
   free(progname);
 }
 //---------------------------------------------------------------------------
@@ -3272,7 +3361,7 @@ void __fastcall TPlotWindow::Action1Execute(TObject *Sender)
 
 
 void __fastcall TPlotWindow::Time_from0Click(TObject *Sender)
-{
+{ P_UNUSED(Sender);
   start_time_from_0=Time_from0->State==cbChecked;
 }
 //---------------------------------------------------------------------------

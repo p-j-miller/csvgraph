@@ -12,6 +12,7 @@
 #include <StdCtrls.hpp>
 #include <Buttons.hpp>
 #include <ExtCtrls.hpp>
+#include <Vcl.Imaging.pngimage.hpp>
 //----------------------------------------------------------------------------
 class TAboutBox : public TForm
 {
