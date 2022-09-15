@@ -239,24 +239,24 @@ bool check_tm(struct tm *tm)
  return OK;
 }
     
-bool strp_atoi(const char **s, int *result, unsigned int low, unsigned int high, unsigned int offset)
+static bool strp_atoi(const char **s, int *result, unsigned int low, unsigned int high,int offset)
     {
     /* this traps too long input (in terms of total digits including leading zeros) */   
     const char * end=*s;
 	unsigned int num=0;
 	if(!isdigit(*end)) return false; // not a number, if we get past here we do have a valid decimal number 
-	num=(*end++ -'0'); // convert 1st digit to number (doing this outside of loop below avoids the need for a multiply by 10 of zero )
+	num=(unsigned int)(*end++ -'0'); // convert 1st digit to number (doing this outside of loop below avoids the need for a multiply by 10 of zero )
 	// now convert remaining digits (if there are any), check 1st as entering the loop needs a divide 
 	if(isdigit(*end))
 		{for(unsigned int i=high/10;i>0; i/=10) // high defines number of digits allowed - where leading zero's count as a digit so eg high=6 allows 1 digit as (integer)  6/10=0
 			{// know *end is a digit if we get here so no need to check again
-			 num=(*end++ -'0')+num*10;
+			 num=(unsigned int)(*end++ -'0')+num*10;
 			 if(!isdigit(*end))  break; /* end of number (but there has been at least 1 valid decimal digit) */
 			}
 		}
     if (num >= low && num <= high)
         {
-         *result = (int)(num + offset);
+		 *result = ((int)num + offset);
          *s = end;
          return true; // valid result
         }	
@@ -295,14 +295,14 @@ char * ya_strptime(const char *s, const char *format, struct tm *tm)
                     size_t len = strlen(strp_weekdays[i]);
                     if (!strnicmp(strp_weekdays[i], s, len)) /* match to full name, strnicmp() does a case insensitive match. strncasecmp() is the equivalent POSIX function  */
                         {
-                        tm->tm_wday = i;
+						tm->tm_wday = (int)i;
                         s += len;
                         valid = true;
                         break;
                         }
                     else if (!strnicmp(strp_weekdays[i], s, 3)) /* first 3 characters of weekday is an allowable abbreviation */
                         {
-                        tm->tm_wday = i;
+						tm->tm_wday = (int)i;
                         s += 3;
                         valid = true;
                         break;
@@ -319,14 +319,14 @@ char * ya_strptime(const char *s, const char *format, struct tm *tm)
                     size_t len = strlen(strp_monthnames[i]);
                     if (!strnicmp(strp_monthnames[i], s, len)) /* match to full name, strnicmp does a case insensitive match */
                         {
-                        tm->tm_mon = i;
+						tm->tm_mon =(int) i;
                         s += len;
                         valid = true;
                         break;
                         }
                     else if (!strnicmp(strp_monthnames[i], s, 3)) /* first 3 characters of weekday is an allowable abbreviation */
                         {
-                        tm->tm_mon = i;
+                        tm->tm_mon =(int) i;
                         s += 3;
                         valid = true;
                         break;
@@ -393,7 +393,7 @@ char * ya_strptime(const char *s, const char *format, struct tm *tm)
 						}
 		 			 if(isdigit(*s) && *s>='5') fsec++; // round if next digit present
 		 			 while(isdigit(*s)) ++s; // eat up any more digits that are present (ignore them)
-		 			 strp_tz.f_secs_p10=power10;// number of digits entered, needed to allow "round loop exact" output (this is limited by the resolution of a double, but that should be OK here)
+					 strp_tz.f_secs_p10=(int)power10;// number of digits entered, needed to allow "round loop exact" output (this is limited by the resolution of a double, but that should be OK here)
 		 			 strp_tz.f_secs=(double)fsec/ipow10(power10); 	 			 
 					}
 				 else valid=false;
@@ -443,7 +443,7 @@ char * ya_strptime(const char *s, const char *format, struct tm *tm)
                 valid = strp_atoi(&s,&(tm->tm_hour), 1, 12, 0);
                 break;
             case 'j': /* The day number in the year (1-366) */
-                valid = strp_atoi(&s,&(tm->tm_yday), 1, 366, -1);
+				valid = strp_atoi(&s,&(tm->tm_yday), 1, 366, -1);
                 break;
             case 'm': /* The month number (1-12) */
                 valid = strp_atoi(&s,&(tm->tm_mon), 1, 12, -1);
@@ -798,8 +798,11 @@ char * ya_strptime(const char *s, const char *format, struct tm *tm)
 			 strp_tz.year_G= strp_tz_default;	
 		 	}
 
-		} 
-
-    return (char *)s;// or character after last match if sucessfull.
-    }
+		}
+    /* # pragma's below work for gcc and clang compilers , issue is that arguments and return value of function are standardised so cannot avoid this */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-qual"
+	return (char *)s;// or character after last match if sucessfull.
+#pragma GCC diagnostic pop
+	}
 

@@ -1,11 +1,11 @@
 /* interpolate.h
- header file for intrepolate.cpp
+ header file for intrepolate.c
 
  Written by Peter Miller 16-11-12
 
 */
 /*----------------------------------------------------------------------------
- * Copyright (c) 2012, 2013 Peter Miller
+ * Copyright (c) 2012, 2013,2022 Peter Miller
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -26,15 +26,24 @@
  * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  *--------------------------------------------------------------------------*/
- 
-int binarysearch(float *a, int size_a,float key); /* assumes array a sorted into increasing order */
-float interp1D(float *xa, float *ya, int size, float x, bool clip); /* interpolate y corresponding to x from xa (increasing) and corresponding ya */
+#ifndef _interpolate_h
+ #define _interpolate_h
+ #include <stdbool.h> /* as bool used below */
+ #ifdef __cplusplus
+  extern "C" {
+ #endif 
+ssize_t binarysearch(float *a, size_t size_a,float key); /* assumes array a sorted into increasing order */
+float interp1D(float *xa, float *ya, size_t size, float x, bool clip); /* interpolate y corresponding to x from xa (increasing) and corresponding ya */
 
 typedef struct {
         float *xa;
         float *ya;
-        int size;
+        size_t size;
         } interp1;
 
-float interp2D(interp1 *p1, float *za,int sizearr_p1,float z,float x, bool clip); /* 2D interpolation p1 is an array of interp1 structures that match elemnts of p1[] */
+float interp2D(interp1 *p1, float *za,size_t sizearr_p1,float z,float x, bool clip); /* 2D interpolation p1 is an array of interp1 structures that match elemnts of p1[] */
 
+ #ifdef __cplusplus
+    }
+ #endif
+#endif

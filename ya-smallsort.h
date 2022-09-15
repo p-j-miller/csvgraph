@@ -3,8 +3,8 @@
 		- uses define Z (undefines it at the end)
 		- assumes elem_type_ss and cswap() [eswap2 for small_sort2()]  are already defined 
 */		   
-#ifndef __YA_SMALLSORT_H
- #define __YA_SMALLSORT_H
+#ifndef _yA_SMALLSORT_H
+ #define _yA_SMALLSORT_H
 
 #ifdef Z
  #error "Error macro Z already defined!"
@@ -14,7 +14,7 @@
 /*  optimal sorts for small array sizes will sort a max size of array of 32 ! */
 /*  This is a little faster than using an optimised insertion sort (~ 1.4%) using the test program */
 /*  small_sort2() is ~ 6% faster than using an insertion sort based on its test program */
-#ifdef _SORT2 /* 2 array version required */
+#ifdef _yaSORT2 /* 2 array version required */
 static void small_sort2( elem_type_ss *x, elem_type_ss *y,const size_t n)
  {
  #define Z(i,j) if(x[i] > x[j]) eswap2(i,j,x,y)

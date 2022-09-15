@@ -24,10 +24,11 @@
 #if defined(NDEBUG)
 # define KISS_FFT_LOG_MSG(severity, ...) ((void)0)
 #else
+extern void crprintf(const char *fmt, ...);    /* like printf but output to Results memobox */
 # define KISS_FFT_LOG_MSG(severity, ...) \
-	rprintf( "[" #severity "] " __FILE__ ":" TOSTRING(__LINE__) " "); \
-	rprintf( __VA_ARGS__); \
-	rprintf( "\n")
+	crprintf( "[" #severity "] " __FILE__ ":" TOSTRING(__LINE__) " "); \
+	crprintf( __VA_ARGS__); \
+	crprintf( "\n")
 #endif
 
 #define KISS_FFT_ERROR(...) KISS_FFT_LOG_MSG(ERROR, __VA_ARGS__)

@@ -155,11 +155,11 @@ elem_type_median ya_median(elem_type_median *m, const size_t n)
      int itns=0;
 	 elem_type_median  guess1=0,guess2=0,guess3=0;	 
 	 size_t     less=1,greater=1; // 1 as we initialise min=max=m[0] and then iterate from m[1]
-     size_t     less1=0, greater1, equal1;
+	 size_t     less1=0, greater1, equal1=0;
      elem_type_median  maxltguess1, mingtguess1;		 
-     size_t     less2=0, greater2, equal2;
+	 size_t     less2=0, greater2, equal2=0;
      elem_type_median  maxltguess2, mingtguess2;    
-     size_t     less3=0, greater3, equal3;
+     size_t     less3=0, greater3, equal3=0;
      elem_type_median  maxltguess3, mingtguess3; 
      elem_type_median  last_guess1,last_guess2,last_guess3;	 	 
      while (1) 
@@ -176,6 +176,9 @@ elem_type_median ya_median(elem_type_median *m, const size_t n)
          guess2 = min/2+max/2; // (min+max)/2 could overflow as could min+(max-min)/2 especially if elem_type_median was a signed integer type
          guess3 = (min/4)+(max/4)*3; 
 		// if using integer maths then make estimates more accurate
+	/* # pragma's below work for gcc and clang compilers , code below is optimisation that may generate unreachable code */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunreachable-code"
 		if( ((elem_type_median)1)/2 == 0)
 			{// if we are using integer maths ; assume optimiser will optimise this out conmpletely if using floating point maths
 			 // printf("Int maths ");
@@ -185,7 +188,7 @@ elem_type_median ya_median(elem_type_median *m, const size_t n)
 			 if(guess1<=min) guess1=min+1;// adjust guess1 & guess 3 as well - we know we have integer maths so +1 is OK
 			 if(guess3<=guess2) guess3=guess2+1;			 	
 			}		          
-
+#pragma GCC diagnostic pop
 	     if(itns>1)
 	     	{
 	     	 /* estimate median from results of previous pass - quadratic estimation */
@@ -203,7 +206,7 @@ elem_type_median ya_median(elem_type_median *m, const size_t n)
 				 c=last_guess3-a*(long double)less3*(long double)less3-b*less3;
 	
 				 less2=(n+1)/2;// make sure calculated as an unsigned integer
-				 best_guess=a*(long double)less2*(long double)less2+b*(long double)less2+c; // want guess for (n+1)/2 = median location
+				 best_guess=(elem_type_median)(a*(long double)less2*(long double)less2+b*(long double)less2+c); // want guess for (n+1)/2 = median location
 	#ifdef DEBUG 			 
 				 printf("  less1=%1.f last_guess1=%.1f less3=%.1f last_guess3=%.1f a=%g b=%g c=%g best_guess=%.1f min=%.1f max=%.1f\n",(double)less1,(double)last_guess1,(double)less3,(double)last_guess3,(double)a,(double)b,(double)c,(double)best_guess,(double)min,(double)max); 
 	#endif			 

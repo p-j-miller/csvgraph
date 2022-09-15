@@ -6,7 +6,7 @@
   by  Ian Oliver.
 */
 /*----------------------------------------------------------------------------
- * Copyright (c) 2014 Peter Miller
+ * Copyright (c) 2014,2022 Peter Miller
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -27,15 +27,26 @@
  * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  *--------------------------------------------------------------------------*/
-
-void Regression_Predict (matrix_ld S,int N , long double Mean[], bool Used[],long double X[]);
-void multi_regression(float *x_arr,float *y_arr,enum reg_types r, int N ,int SampleSize, matrix_ld S, long double Mean[], bool Used[],long double Fraction,void (*filter_callback)(unsigned int i, unsigned int imax)) ;
+#ifndef _multiple_lin_reg_fn_h
+ #define _multiple_lin_reg_fn_h
+ #include "matrix.h" /* as matrix_ld used below */
+ #include <stdbool.h>
+ #ifdef __cplusplus
+  extern "C" {
+ #endif
+ enum reg_types {reg_poly,reg_sqrt,reg_rat}; /* types of linear regression supported */
+ void multi_regression(float *x_arr,float *y_arr,enum reg_types r, int N ,size_t SampleSize, matrix_ld S, long double Mean[], bool Used[],long double Fraction,void (*filter_callback)(size_t i, size_t imax)) ;
  // do full regression
  // float *x_arr,float *y_arr,enum reg_types r - input: x values, y values and a function to calculate other params
+ // reg_types is one from enum above.
  // N is number of variables to be fitted
  // SampleSize is size of x_arr &y_arr (both are indexed from 0 to SampleSize-1 )
  // S is long double[N+1][N+1]          - output
  // Mean is long double[N+1]            - output
  // used is bool[N+1]              - output
  // Fraction is 0..1 with 0 giving the most accurate fit (used to drop variables that only make a small change to accuracy of fit) - input
-void test_multiregression(int mode); // test program   , mode is 0,1,2,3
+ void test_multiregression(int mode); // test program   , mode is 0,1,2,3
+ #ifdef __cplusplus
+    }
+ #endif
+#endif

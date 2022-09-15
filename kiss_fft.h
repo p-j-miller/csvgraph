@@ -14,6 +14,8 @@
 #include <math.h>
 #include <string.h>
 
+#include "kiss_fft_user_cfg.h" /* user configuration PMi addition 3/9/2022 */
+
 // Define KISS_FFT_SHARED macro to properly export symbols
 #ifdef KISS_FFT_SHARED
 # ifdef _WIN32
@@ -114,7 +116,7 @@ typedef struct kiss_fft_state* kiss_fft_cfg;
  *      buffer size in *lenmem.
  * */
 
-kiss_fft_cfg KISS_FFT_API kiss_fft_alloc(int nfft,int inverse_fft,void * mem,size_t * lenmem);
+kiss_fft_cfg KISS_FFT_API kiss_fft_alloc(size_t nfft,int inverse_fft,void * mem,size_t * lenmem);
 
 /*
  * kiss_fft(cfg,in_out_buf)
@@ -131,7 +133,7 @@ void KISS_FFT_API kiss_fft(kiss_fft_cfg cfg,const kiss_fft_cpx *fin,kiss_fft_cpx
 /*
  A more generic version of the above function. It reads its input from every Nth sample.
  * */
-void KISS_FFT_API kiss_fft_stride(kiss_fft_cfg cfg,const kiss_fft_cpx *fin,kiss_fft_cpx *fout,int fin_stride);
+void KISS_FFT_API kiss_fft_stride(kiss_fft_cfg cfg,const kiss_fft_cpx *fin,kiss_fft_cpx *fout,size_t fin_stride);
 
 /* If kiss_fft_alloc allocated a buffer, it is one contiguous 
    buffer and can be simply free()d when no longer needed*/
@@ -147,7 +149,7 @@ void KISS_FFT_API kiss_fft_cleanup(void);
 /*
  * Returns the smallest integer k, such that k>=n and k has only "fast" factors (2,3,5)
  */
-int KISS_FFT_API kiss_fft_next_fast_size(int n);
+size_t KISS_FFT_API kiss_fft_next_fast_size(size_t n);
 
 /* for real ffts, we need an even size */
 #define kiss_fftr_next_fast_size_real(n) \

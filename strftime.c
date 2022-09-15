@@ -131,7 +131,7 @@
 // #define POSIX_SEMANTICS		/* call tzset() if TZ changes */
 // #define POSIX_2008		/* flag and fw for C, F, G, Y formats */
 // #define HAVE_NL_LANGINFO		/* locale-based values [ does not work for Windows at present ] */
-#define HAVE_TZNAME 1 /* has to be defined as 1 ! */
+// #define HAVE_TZNAME 1 /* has to be defined as 1 ! */
 
 #ifdef HAVE_NL_LANGINFO
 #include <locale.h>
@@ -293,7 +293,7 @@ int day_of_week_yd(int64_t year,int yday) /* year with no offset eg 1900 and yda
  int64_t days=sy/(3600*24); 
  days=(days+4)%7; // +4 as 1st jan 1970 (secs=0) was a Thursday . 
  if(days<0)days+=7;
- return days;
+ return (int)days;
 }
 
 int day_of_week(int64_t y, int m, int d)	/* 0 = Sunday  */
@@ -382,16 +382,16 @@ void sec_to_tm(time_t t,struct tm *tp) // reverse of ya_mktime_tm, converts secs
 	 t_y=year_to_s(--year); // keep reducing year till its smaller
 	}	
  t-=t_y;// get remainder = secs into year
- yday=t/(24*3600);// 24 hrs in a day so this gives us days in the year
+ yday=(int)(t/(24*3600));// 24 hrs in a day so this gives us days in the year
  t-=yday*24*3600; // whats left is seconds in the day
  month_day(year,yday,&month,&mday);
- hour=t/3600;
+ hour=(int)(t/3600);
  t-=hour*3600;
- min=t/60;
- sec=t-min*60;
+ min=(int)(t/60);
+ sec=(int)(t-min*60);
  if(year-1900 < -INT_MAX ) year=-INT_MAX+1900; // clip at min (subtract 1900 below)
  else if(year-1900 > INT_MAX ) year=(int64_t)INT_MAX+1900; // clip at max (subtract 1900 below)
- tp->tm_year=year-1900;
+ tp->tm_year=(int)(year-1900);
  tp->tm_mon=month;
  tp->tm_mday=mday;
  tp->tm_hour=hour;
@@ -547,7 +547,7 @@ size_t ya_strftime(char *s, size_t maxsize, const char *format, const struct tm 
 {
 	char *endp = s + maxsize;
 	char *start = s;
-	auto char tbuf[100];
+	char tbuf[100];
 	long off;
 	int i, w;
 	long y;
@@ -1003,10 +1003,11 @@ size_t ya_strftime(char *s, size_t maxsize, const char *format, const struct tm 
 		case 'X':	/* appropriate time representation */
 #ifdef HAVE_NL_LANGINFO
 			ya_strftime(tbuf, sizeof tbuf, nl_langinfo(T_FMT), timeptr);
+			break;
 #else
 			goto the_time; /* same as %T */
 #endif
-			break;
+
 
 		case 'y':	/* year without a century, 00 - 99 */
 #ifdef HPUX_EXT		
@@ -1075,16 +1076,16 @@ size_t ya_strftime(char *s, size_t maxsize, const char *format, const struct tm 
 		case 'Z':	/* time zone name or abbrevation */
 #if 1
 			if(strp_tz.tz_name[0]!=0) // has been set by strptime()
-				{for(int i=0;i<4;++i)
-					tbuf[i]=strp_tz.tz_name[i];
+				{for(size_t j=0;j<4;++j)
+					tbuf[j]=strp_tz.tz_name[j];
 				 tbuf[4]=0;// make 0 terminated string 
 				}
 			else
 				{// has NOT been set by strptime(), use OS supplied value 	
-				 int j;
+				 size_t j;
 				 i = (daylight && timeptr->tm_isdst > 0); /* 0 or 1 */
 				 for(j=0;j<4 && isalpha(_tzname[i][j]);++j); // at most 4 chars - all must be letters 
-				 strncpy(tbuf, _tzname[i],j); // at most 4 chars copied 
+				 strncpy(tbuf, _tzname[i],j); // at most 4 chars copied
 				 tbuf[j]=0;// ensure 0 terminated string 
 				}
 #else	/* original code, use OS value always */
@@ -1140,7 +1141,7 @@ size_t ya_strftime(char *s, size_t maxsize, const char *format, const struct tm 
 			tbuf[2] = '\0';
 			break;
 		}
-		i = strlen(tbuf);
+		i = (int)strlen(tbuf); // we define the size of tbuf (100) so we know it fits into an int
 		if (i) {
 			if (s + i < endp - 1) {
 				strcpy(s, tbuf);
@@ -1152,7 +1153,7 @@ size_t ya_strftime(char *s, size_t maxsize, const char *format, const struct tm 
 out:
 	if (s < endp && *format == '\0') {
 		*s = '\0';
-		return (s - start);
+		return (size_t)(s - start);
 	} else
 		return 0;
 }

@@ -3,11 +3,9 @@
   yasort2() sorts an array of numbers and moves the contents of another array of the same size around so the "pairs" are kept together.
   Eg if one array has x co-ords and the 2nd has y co-ords you can sort the x co-ords while keeping the x-y pairs together at the same array index.
    
-  It uses a quicksort with the addition of introsort functionality to give both a fast average execution time and o(n*log(n)) worse case execution time,
-  see "Introspective sorting and selection algorithms" by D.R.Musser,Software practice and experience, 8:983-993, 1997. 
-  
+  It uses a quicksort with the addition of introsort functionality to give both a fast average execution time and o(n*log(n)) worse case execution time.
+  See "Introspective sorting and selection algorithms" by D.R.Musser,Software practice and experience, 8:983-993, 1997.
   ya2sort can only sort numbers.
-
   
   yasort2() takes ~ 71% longer than yasort() which is not surprising as it has to move twice the amount of data around.
   
@@ -37,12 +35,15 @@ SOFTWARE.
 #ifndef __BORLANDC__
  #define NDEBUG /* if defined then asserts become "nothing" */
 #endif
+
+// #define inline /* builder C++ v5 does not suport inline */
+
 // #define YA2SORT_TEST_PROGRAM /* if defined compile a test program for this code - make sure that YASORT_MEDIAN_TEST_PROGRAM is NOT defined in ya-sort.c ! */
 							 /* For the test program, you also need to ensure the definitions of elem_type_median (in yamedian.h) and elem_type_sort2 (in yasort2.h) are the same (normally double is used for testing) */
-#define PAR_SORT /* if defined create a parallel sort using threads - this uses windows threads - see https://docs.microsoft.com/en-us/cpp/c-runtime-library/reference/beginthread-beginthreadex?view=msvc-170 */
+#define PAR_SORT /* if defined create a parallel sort using threads  */
 // #define DEBUG /* if defined then add a few printf's so you can see whats happening, can be useful if INTROSORT_MULT needs to be tuned, but oherwise not needed */
 // you should not need to edit anything below here for normal use of this software (you may need to edit yasort2.h)
-
+// #define USE_PTHREADS /* if defined use pthreads for multitasking - otherwise if running under windows use native windows threads. Pthreads is slightly slower than native Windows threads on Windows */
 
 #include <time.h>
 #include <stdint.h>
@@ -56,8 +57,17 @@ SOFTWARE.
 #endif
 #include <assert.h>
 #ifdef PAR_SORT
-#include <process.h> /* for _beginthreadex */
-#include <windows.h> /* for number of processors */
+ #if defined _WIN32 
+  #include <process.h> /* for _beginthreadex */
+  #include <windows.h> /* for number of processors */
+ #elif defined __GNUC__
+  #include <unistd.h> /* to get number of processors on OS's other than Windows */
+ #else
+  #error "Parallel sorting not supported for this complier/OS (undefine PAR_SORT to avoid this error)"
+ #endif 
+ #ifdef USE_PTHREADS
+  #include <pthread.h>
+ #endif
 #endif
 
 #include "yasort2.h"  /* defines elem_type_sort2 etc */
@@ -72,18 +82,28 @@ SOFTWARE.
 							3				112.925 - heapsort never used, mid range used fo 1 example
 						 */
 
-
+#ifdef YA2SORT_TEST_PROGRAM   
 #ifdef DEBUG
-#define dprintf(...) printf(__VA_ARGS__) /* convert to printf when DEBUG defined */ 
+ #ifdef __BORLANDC__
+  #define dprintf(...) crprintf(__VA_ARGS__) /* convert to crprintf when DEBUG defined */
+ #else
+  #define dprintf(...) printf(__VA_ARGS__) /* convert to printf when DEBUG defined */
+ #endif
 #else
 #define dprintf(...) /* nothing - only prints when DEBUG defined */
 #endif
+#endif
 
-#define P_UNUSED(x) (void)x /* a way to avoid warning unused parameter messages from the compiler */
+
+#if !defined(PAR_SORT) || defined(YA2SORT_TEST_PROGRAM )
+ #define P_UNUSED(x) (void)x /* a way to avoid warning unused parameter messages from the compiler */
+#endif
+
 #if defined(YA2SORT_TEST_PROGRAM) || !defined(NDEBUG)
  static bool check_sort( elem_type_sort2 *a, size_t n); // check result of sort is ordered correctly
 #endif
 static void heapsort2(elem_type_sort2 *a,elem_type_sort2 *b,size_t n); // backup sort automatically used when required.
+
 
 #if defined __GNUC__
 
@@ -144,10 +164,13 @@ static inline int  ilog2(size_t x) // unsigned 32 bit version
 
 #define cswap(i,j) {elem_type_sort2 _t;_t=(i);i=(j);j=_t;} // example call cswap(r[i], r[minIndex]); WARNING - side effects could be an issue here ! eg cswap(r[i++],r[b])
 /* note that an intelligent swap (that only writes back if the value is different) is slightly slower in the test program */
+#ifdef YA2SORT_TEST_PROGRAM
 inline static void eswap1(size_t i,size_t j,elem_type_sort2 *a) /* swap a[i]  and a[j]  */
-	{  
+	{
 	 cswap(a[i],a[j]); // use swap macro
-	} 
+	}
+#endif
+
 inline static void eswap2(size_t i,size_t j,elem_type_sort2 *a,elem_type_sort2 *b) /* swap a[i]  and a[j] also swap b[i] and b[j] */
 	{  
 	 cswap(a[i],a[j]); // use swap macro on array a
@@ -161,7 +184,7 @@ inline static void eswap2p(elem_type_sort2 *pi,elem_type_sort2 *pj,elem_type_sor
 	} 
 
 #define elem_type_ss elem_type_sort2 /* set type for smallsort correctly */	
-#define _SORT2 /* tell smallsort we have 2 arrays */
+#define _yaSORT2 /* tell smallsort we have 2 arrays */
 #include "ya-smallsort.h" // contains small_sort() - this needs to be included after cswap is defined
 	
 #ifdef YA2SORT_TEST_PROGRAM
@@ -187,10 +210,12 @@ static  bool check_sort( elem_type_sort2 *a, size_t n) // check result of sort i
  /* check array actually is sorted correctly in increasing order */
  size_t errs=0; 
  if(n<2) return true;
- for(size_t i=0;i<n-1;++i)
+ {size_t i;
+  for(i=0;i<n-1;++i)
 	 if(a[i+1]<a[i]) 
-		errs++;		
-  return (errs==0);
+		errs++;
+  }
+ return (errs==0);
 }
 #endif
 
@@ -348,10 +373,9 @@ static void heapsort2 (elem_type_sort2 *a,elem_type_sort2 *b, size_t n)
 
 // This is a version of quicksort that only partitions into 2 partitions (<= pivot, >= pivot) so inner loop has a simpler structure than one that splits into 3 partitions
 // The inner quicksort loop does not degrade into a O(n^2) when there are duplicate values in the array to be sorted (many partitioning schemes do).
-// It uses introsort techniques to achieve O(n*log2(n)) worse case runtime.
+// Again it uses introsort techniques to achieve O(n*log2(n)) worse case runtime.
 // This version was created by Peter Miller 9/1/2022
-static void _yasort2(elem_type_sort2 *x,elem_type_sort2 *y, size_t n,int nos_p); /* main worker function */
-
+static void _yasort2(elem_type_sort2 *x,elem_type_sort2 *y, size_t n,unsigned int nos_p); /* main worker function */
 #ifdef PAR_SORT /* helper code for Parallel version */
 
 #define PAR_DIV_N 16 /* divisor on n (current partition size) to check size of partition about to be spawned as a new task is big enough to justify the work of creating a new task */
@@ -361,19 +385,39 @@ struct _params
 	{elem_type_sort2 *xp;
 	 elem_type_sort2 *yp;
 	 size_t np;
-	 int nos_p_p;
+	 unsigned int nos_p_p;
+	 volatile int task_fin; /* 0 => task running, 1=> task finished. Volatile as set by seperate task.  This variable makes porting to pthreads simpler*/
 	};
-	
-unsigned __stdcall yasortThreadFunc( void * _Arg ) // parallel thread that can sort a partition
-{struct _params* Arg=_Arg;
- _yasort2(Arg->xp,Arg->yp,Arg->np,Arg->nos_p_p); // sort required section 
- _endthreadex( 0 );
- return 0;
-}
 
+#ifdef USE_PTHREADS // void *(*start_routine)(void *)
+ static void *  yasortThreadFunc( void * _Arg ) // parallel thread that can sort a partition
+#else	
+ static unsigned __stdcall yasortThreadFunc( void * _Arg ) // parallel thread that can sort a partition
+#endif
+	{struct _params* Arg=_Arg;
+	 Arg->task_fin=0; // This should be set before starting the thread, waiting till now leaves a short time when the thread may appear to have finished but its actually not started... Its done here "just in case".
+ 	 _yasort2(Arg->xp,Arg->yp,Arg->np,Arg->nos_p_p); // sort required section 
+	 Arg->task_fin=1; // indicate task now finished - note it will actually finish when this function returns so this flag just indicates another task can now "wait" on this task finishing
+	 // _endthreadex( 0 ); - _endthreadex is call automatically when we return from this function - see https://docs.microsoft.com/en-us/cpp/c-runtime-library/reference/endthread-endthreadex?view=msvc-170 
+	 return 0;
+	}
+
+#ifndef _WIN32
+/* this code is for non-Windows systems , beleived to work under Linux, BSD unix and MAC OS */
+static int nos_procs(void) /* return the number of logical processors present and enabled */
+{ return sysconf(_SC_NPROCESSORS_ONLN);
+}
+ #ifdef YASORT_MEDIAN_TEST_PROGRAM /* only needed for the test program */
+ static void proc_info(void)
+  {
+	printf("  %d processors available\n",nos_procs());
+	printf("  system - number of cpus  is %d\n", sysconf( _SC_NPROCESSORS_CONF));
+    printf("  system - enable number of cpus is %d\n", sysconf(_SC_NPROCESSORS_ONLN));
+  }
+ #endif
+#else
 /* we ideally need to know the number of processors - the code below gets this for windows */
 /* this is from https://docs.microsoft.com/de-de/windows/win32/api/sysinfoapi/nf-sysinfoapi-getlogicalprocessorinformation with minor changes by Peter Miller */
-// see https://programmerall.com/article/52652219244/ for Linux versions
 
 typedef BOOL (WINAPI *LPFN_GLPI)(
     PSYSTEM_LOGICAL_PROCESSOR_INFORMATION, 
@@ -512,22 +556,22 @@ static void proc_info(void)
 }
 #endif
 
-static int nos_procs(void) /* return the number of logical processors present. 
+static unsigned int nos_procs(void) /* return the number of logical processors present. 
 					   This was created by Peter Miller 15/1/2022 based on above code  */
 {
     BOOL done = FALSE;
     PSYSTEM_LOGICAL_PROCESSOR_INFORMATION buffer = NULL;
     PSYSTEM_LOGICAL_PROCESSOR_INFORMATION ptr = NULL;
     DWORD returnLength = 0;
-    DWORD logicalProcessorCount = 0;
-    DWORD processorCoreCount = 0;
+    unsigned int logicalProcessorCount = 0;
+    unsigned int processorCoreCount = 0;
     DWORD byteOffset = 0; 
 
     while (!done) /* we need to call GetLogicalProcessorInformation() twice, the 1st time it tells us how big a buffer we need to supply */
     {
-        DWORD rc = GetLogicalProcessorInformation(buffer, &returnLength);
+        BOOL rc = GetLogicalProcessorInformation(buffer, &returnLength);
 
-        if (FALSE == rc) 
+        if (rc == FALSE ) 
         {
             if (GetLastError() == ERROR_INSUFFICIENT_BUFFER) 
             {
@@ -570,24 +614,30 @@ static int nos_procs(void) /* return the number of logical processors present.
 
     free(buffer);
 
-    return (int)logicalProcessorCount; // actual number of processor cores is processorCoreCount
+    return logicalProcessorCount; // actual number of processor cores is processorCoreCount
 }
-
 #endif
-	
-static void _yasort2(elem_type_sort2 *x,elem_type_sort2 *y, size_t n,int nos_p ) /* main worker function, nos_p is nos processors available */
+#endif
+
+static void _yasort2(elem_type_sort2 *x,elem_type_sort2 *y, size_t n,unsigned int nos_p ) /* main worker function, nos_p is nos processors available */
 {
  bool need_max=true,need_min=true;
- elem_type_sort2  min, max;  
- if(n<=1) return; // avoid trying to take log2 of 0 - anyway an array of length 1 is already sorted  
+ elem_type_sort2  min, max;
  int itn=0;
+ if(n<=1) return; // avoid trying to take log2 of 0 - anyway an array of length 1 is already sorted  
  const int max_itn=INTROSORT_MULT*ilog2(n); // max_itn defines point we swap to mid-range pivot, then at 2*max_int we swap to heapsort. if INTROSORT_MULT=0 then "always" use heapsort, 3 means "almost never" use heapsort
+ min = max = x[0] ;
 #ifdef PAR_SORT
  struct _params params;
- HANDLE th=NULL; // handle for worker thread
+ #ifdef USE_PTHREADS
+ pthread_t *th=NULL;// set to &thread_id when running
+ pthread_t thread_id;
+ #else
+ HANDLE th=NULL; // handle for worker thread (Windows threads)
+ #endif
 #else
  P_UNUSED(nos_p); // this param is not used unless PAR_SORT is defined
-#endif	 
+#endif
  while(1) // replace tail recursion with a loop
  	{
 	 if (n <= 1) goto sortend; // need a common end point as may be using threads in which case we need to wait for them to complete
@@ -603,7 +653,7 @@ static void _yasort2(elem_type_sort2 *x,elem_type_sort2 *y, size_t n,int nos_p )
 	 // using this gives an average 33% speedup using the test program when MAX_INS_MOVES=2
 	 // There is also  a potentially useful side effect of this, if we have to move to using quicksort then 2 values will have been moved which could help break up bad patterns of data.		 
 	 #define MAX_INS_MOVES 2 /* max allowed number of moves - for the test program 2 is the optimum value */
-	 size_t nos_ins_moves=0;	 
+	 size_t nos_ins_moves=0;
 	 for (elem_type_sort2 *p=x,*p2=y; p<x+n-1; ++p,++p2) 
 			{
 			 elem_type_sort2 t = p[1],t2=p2[1];
@@ -614,12 +664,12 @@ static void _yasort2(elem_type_sort2 *x,elem_type_sort2 *y, size_t n,int nos_p )
 			 	 do
 			 		{j--;j2--;
 			 		} while(j>=x && *j>t);
-			 	 memmove(j+2,j+1,(p-j)*sizeof(elem_type_sort2));// move a portion of array x right by 1 to make space for t 		 
+				 memmove(j+2,j+1,(size_t)(p-j)*sizeof(elem_type_sort2));// move a portion of array x right by 1 to make space for t
 			 	 j[1]=t;
-			 	 memmove(j2+2,j2+1,(p2-j2)*sizeof(elem_type_sort2));// move a portion of array y right by 1 to make space for t2 		 
+			 	 memmove(j2+2,j2+1,(size_t)(p2-j2)*sizeof(elem_type_sort2));// move a portion of array y right by 1 to make space for t2
 			 	 j2[1]=t2;			  		
 			 	}
-	        }			
+	        }	   		
 	 assert(check_sort( x, n) ); // check result of sort is ordered correctly
 	 goto sortend; // need a common end point as may be using threads in which case we need to wait for them to complete
 	  
@@ -655,9 +705,10 @@ static void _yasort2(elem_type_sort2 *x,elem_type_sort2 *y, size_t n,int nos_p )
 	  	   printf("yasort2: using mid-range as pivot (%.0f)\n",(double)n);
 #endif	 		   
 		   if(need_max && need_min)
-		    	{min = max = x[0] ; 
+		    	{
+                 min = max = x[0] ;
 			     for (elem_type_sort2 *p=x+1; p<x+n; p++) 
-					{// find min & max
+                    {// find min & max
 			    	 elem_type_sort2 t=*p;
 			         if (t<min) min=t;
 			         if (t>max) max=t; 
@@ -665,14 +716,14 @@ static void _yasort2(elem_type_sort2 *x,elem_type_sort2 *y, size_t n,int nos_p )
 			    }
 			else if(need_max)
 		    	{max = x[0] ; 
-			     for (elem_type_sort2 *p=x+1; p<x+n; p++) 
-					{//  find max
+				 for (elem_type_sort2 *p=x+1; p<x+n; p++) 
+                    {//  find max
 			    	 elem_type_sort2 t=*p;
 			         if (t>max) max=t; 
 			    	}
 			    }	
 			else if(need_min)/* need_min */
-		    	{min =  x[0] ; 
+                {min =  x[0] ;
 			     for (elem_type_sort2 *p=x+1; p<x+n; p++) 
 					{//  find min
 			    	 elem_type_sort2 t=*p;
@@ -757,12 +808,21 @@ static void _yasort2(elem_type_sort2 *x,elem_type_sort2 *y, size_t n,int nos_p )
 	  */ 	
 	  if(th!=NULL && n>2*PAR_MIN_N )
 	  	{// if thread active and partition big enough that we might be able to use a parallel task (2* as we will at least halve the size of the partition for the parallel task) 
-	  	 if( WaitForSingleObject( th, 0 )!=WAIT_TIMEOUT)
-	  		{// if thread has finished
+ #ifdef USE_PTHREADS
+ 	  	 if( params.task_fin==1 )
+	  		{// if thread has finished 
+	  		 pthread_join(thread_id,NULL);
+			 th=NULL; // set to NULL so we can reuse it
+			 // dprintf("Thread finished within function processing size=%llu nos_p=%d\n",n,nos_p); 
+			}
+ #else	  	
+	  	 if( params.task_fin==1 && WaitForSingleObject( th, 0 )!=WAIT_TIMEOUT)
+	  		{// if thread has finished - using params.task_fin==1 might be more efficient than always calling WaitForSingleObject() - but anyway it makes porting to pthreads simpler
     		 CloseHandle( th );// Destroy the thread object.
 			 th=NULL; // set to NULL so we can reuse it
-			 // printf("Thread finished at depth %d\n",depth);
+			 // dprintf("Thread finished within function processing size=%llu nos_p=%d\n",n,nos_p); 
 			}
+ #endif	
 		}
 #endif     
 	 if((size_t)(pj-x)<n-(size_t)(pi-x)) // j<n-i
@@ -772,13 +832,23 @@ static void _yasort2(elem_type_sort2 *x,elem_type_sort2 *y, size_t n,int nos_p )
 			{// use a worker thread last 2 tests check the overhead of thread creation is worth it.
 			 params.xp=x;
 			 params.yp=y;
-			 params.np=pj-x;
+			 params.np=(size_t)(pj-x);
 			 params.nos_p_p=(nos_p)/2; // if we still have spare processors allow more threads to be started
-			 th=(HANDLE)_beginthreadex(NULL,0,yasortThreadFunc,&params,0,NULL);
-			 if(th==NULL) _yasort2(x,y, pj-x,0); // if starting thread fails then do in this process.  nos_p=0 so don't run any tasks from here
+			 params.task_fin=0; // task has not yet finished
+ #ifdef USE_PTHREADS
+ 			 if(pthread_create(&thread_id,NULL,yasortThreadFunc,&params)==0)
+ 			 	{th=&thread_id; // success
+ 			 	}
+ 			 else
+ 			 	{th=NULL; // failed to run task
+ 				}
+ #else		/* use native Windows threads */	 
+			 th=(HANDLE)(uintptr_t)_beginthreadex(NULL,0,yasortThreadFunc,&params,0,NULL);
+ #endif			 			 
+			 if(th==NULL) _yasort2(x,y, (size_t)(pj-x),0); // if starting thread fails then do in this process.  nos_p=0 so don't run any tasks from here
 			}
 		else
-			{_yasort2(x,y, pj-x,(nos_p)/2); // recurse for smalest partition so stack depth is bounded at O(log2(n)). Allow more threads from subroutine if we still have some processors spare
+			{_yasort2(x,y, (size_t)(pj-x),(nos_p)/2); // recurse for smalest partition so stack depth is bounded at O(log2(n)). Allow more threads from subroutine if we still have some processors spare
 			 assert(check_sort(x,pj-x));// check sort worked correctly
 			}
 #else	 		
@@ -787,40 +857,54 @@ static void _yasort2(elem_type_sort2 *x,elem_type_sort2 *y, size_t n,int nos_p )
 #endif		 
 
 	 	 y+=pi-x;
-	 	 n-=pi-x;
+	 	 n-=(size_t)(pi-x);
 	 	 x=pi;
 	 	}
 	 else
 	 	{
 #ifdef PAR_SORT
-		if( th==NULL && nos_p>1 && n-(pi-x) > n/PAR_DIV_N && n-(pi-x) > PAR_MIN_N)
+		if( th==NULL && nos_p>1 && (n-(size_t)(pi-x)) > n/PAR_DIV_N && (n-(size_t)(pi-x)) > PAR_MIN_N)
 			{// use a worker thread
 			 params.xp=pi;
 			 params.yp=y+(pi-x);
-			 params.np=n-(pi-x);
+			 params.np=n-(size_t)(pi-x);
 			 params.nos_p_p=(nos_p)/2;			 
-			 th=(HANDLE)_beginthreadex(NULL,0,yasortThreadFunc,&params,0,NULL);
-			 if(th==NULL) _yasort2(pi,y+(pi-x), n-(pi-x),0); // if starting thread fails then do in this process.  nos_p=0 so don't run any tasks from here
+			 params.task_fin=0; // task has not yet finished
+ #ifdef USE_PTHREADS
+ 			 if(pthread_create(&thread_id,NULL,yasortThreadFunc,&params)==0)
+ 			 	{th=&thread_id; // success
+ 			 	}
+ 			 else
+ 			 	{th=NULL; // failed to run task
+ 				}
+ #else		/* use native Windows threads */	 
+			 th=(HANDLE)(uintptr_t)_beginthreadex(NULL,0,yasortThreadFunc,&params,0,NULL);
+ #endif	
+			 if(th==NULL) _yasort2(pi,y+(pi-x), n-(size_t)(pi-x),0); // if starting thread fails then do in this process.  nos_p=0 so don't run any tasks from here
 			}
 		else
-			{ _yasort2(pi,y+(pi-x), n-(pi-x),(nos_p)/2); // recurse for smalest partition so stack depth is bounded at O(log2(n))
+			{ _yasort2(pi,y+(pi-x), n-(size_t)(pi-x),(nos_p)/2); // recurse for smalest partition so stack depth is bounded at O(log2(n))
 	 	 	 assert(check_sort(pi,n-(pi-x))); // check sort worked correctly
 			}
 #else			
-		 _yasort2(pi,y+(pi-x), n-(pi-x),0);
+		 _yasort2(pi,y+(pi-x), n-(size_t)(pi-x),0);
 	 	 assert(check_sort(pi,n-(pi-x))); // check sort worked correctly
 #endif	 	 
-	 	 n=pj-x;	
+	 	 n=(size_t)(pj-x);	
 		}		 		 
 	} // end while(1)
  sortend: ; // need a common end point as may be using threads in which case we need to wait for them to complete	
  #ifdef PAR_SORT
  if(th!=NULL)
- 	{// if a thread used need to wait for it to finish
+ 	{// if a thread used and its still running, need to wait for it to finish
+  #ifdef USE_PTHREADS
+	 pthread_join(thread_id,NULL);
+  #else	 /* using native Windows threads */ 	 
  	 WaitForSingleObject( th, INFINITE );
-    // Destroy the thread object.
+     // Destroy the thread object.
      CloseHandle( th );
-	}
+  #endif
+	}  	
  #endif
  return; 
 }
@@ -828,7 +912,7 @@ static void _yasort2(elem_type_sort2 *x,elem_type_sort2 *y, size_t n,int nos_p )
 void yasort2(elem_type_sort2 *x,elem_type_sort2 *y, size_t n) /* user function  */
 {
 #ifdef PAR_SORT	
- int nos_p=nos_procs() ;// total number of (logical) processors available
+ unsigned int nos_p=nos_procs() ;// total number of (logical) processors available
  _yasort2(x,y, n,nos_p); /* call main worker function */
 #else
  _yasort2(x,y, n,1); /* call main worker function , with only 1 processor (as NOS_PAR not defined ) */
@@ -897,8 +981,8 @@ int main(int argc, char *argv[])
  double max_time=0;
  int nos_lengths=0;// number of different lengths of data[] we have tested 
  int errs=0;
- uint64_t sum_before,sum_after; // sum of all values to be sorted (before sort, after sort)
- uint32_t xor_before,xor_after; // ditto but xor of all values
+ uint64_t sum_before=0,sum_after; // sum of all values to be sorted (before sort, after sort)
+ uint32_t xor_before=0,xor_after; // ditto but xor of all values
  FILE *logout=NULL;
  P_UNUSED(argc) ;/* a way to avoid warning unused parameter messages from the compiler */
  P_UNUSED(argv) ;/* a way to avoid warning unused parameter messages from the compiler */
@@ -910,9 +994,14 @@ int main(int argc, char *argv[])
 #else
  printf("Compiled for unknown pointer size ! : "); 
 #endif 
-#ifdef PAR_SORT
+#if defined(PAR_SORT) 
  proc_info(); // info about the processor thats running this
  printf("%d logical processor(s) available\n",nos_procs());
+ #ifdef USE_PTHREADS
+  printf("Using pthreads\n");
+ #else
+  printf("Using native Windows threads\n");
+ #endif 
 #endif 
  logout=fopen("logout.csv","w");
  if(logout==NULL) printf("Warning: cannot open logfile\n");

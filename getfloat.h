@@ -1,5 +1,6 @@
+/* header file for getfloat.cpp
 
-/* header file for matrix.c */
+*/
 /*----------------------------------------------------------------------------
  * Copyright (c) 2012, 2013, 2022 Peter Miller
  *
@@ -22,25 +23,13 @@
  * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  *--------------------------------------------------------------------------*/
-#ifndef _matrix_h
- #define _matrix_h
- #ifdef __cplusplus
-  extern "C" {
- #endif
- typedef long double **matrix_ld; /* long double 2D matrix */
- typedef double **matrix_d; /* double 2D matrix */
- typedef float **matrix_f;  /* float 2Dmatrix */
-
- matrix_ld cr_matrix_ld (size_t numrow, size_t numcol); /* create long double matrix with specified rows*columns by allocating a single space on the heap*/
- void fr_matrix_ld (matrix_ld matrix); /* free space for long double matrix */
-
- matrix_d cr_matrix_d (size_t numrow, size_t numcol); /* create double matrix with specified rows*columns by allocating a single space on the heap*/
- void fr_matrix_d (matrix_d matrix); /* free space for double matrix */
-
- matrix_f cr_matrix_f (size_t numrow, size_t numcol); /* create float matrix */
- void fr_matrix_f (matrix_f matrix); /* free space for float matrix */
-
- #ifdef __cplusplus
-    }
- #endif
+#ifndef _getfloat_h
+#define _getfloat_h
+bool getfloat(char *s, float *d); /*reads a floating point number returns true if valid - allows whitespace as well as a number , d=0 on error*/
+bool getfloatgt0(char *s, float *d);/* as above but requires number to be >0 */
+bool getfloatge0(char *s, float *d);/* as above but requires number to be >0 */
+// functions like above that take wchar_t *
+bool getfloat(wchar_t *s, float *d);
+bool getfloatgt0(wchar_t *s, float *d);
+bool getfloatge0(wchar_t *s, float *d);
 #endif

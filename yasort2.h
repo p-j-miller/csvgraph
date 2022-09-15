@@ -1,6 +1,6 @@
 /* yasort2.h */
-#ifndef __YASORT2_H
- #define __YASORT2_H
+#ifndef _yASORT2_H
+ #define _yASORT2_H
  #if defined(elem_type_sort2) 
   #error "attempt to redefine elem_type_sort2"  
  #endif

@@ -1,6 +1,6 @@
 /* yamedian.h */
-#ifndef __YAMEDIAN_H
- #define __YAMEDIAN_H
+#ifndef _yAMEDIAN_H
+ #define _yAMEDIAN_H
  #ifdef elem_type_median 
   #error "attempt to redefine elem_type_median"  
  #endif

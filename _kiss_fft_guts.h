@@ -18,16 +18,17 @@
 #include "kiss_fft_log.h"
 #include <limits.h>
 
-#define MAXFACTORS 32
+#define MAXFACTORS 64  /* was 32 but 64 bit pointers can need more than 32, I believe that 41 is adaquate for 64 bits as 2*3^40 > 2^64 ie  24,315,330,918,113,857,602 > 18,446,744,073,709,551,616
+																																		   18,446,744,073,709,551,616	, so 64 is safe */
 /* e.g. an fft of length 128 has 4 factors
  as far as kissfft is concerned
  4*4*4*2
  */
 
 struct kiss_fft_state{
-    int nfft;
+    size_t nfft;
     int inverse;
-    int factors[2*MAXFACTORS];
+    size_t factors[2*MAXFACTORS]; /* 2* here as we store two value per factor see kf_factor() */
     kiss_fft_cpx twiddles[1];
 };
 

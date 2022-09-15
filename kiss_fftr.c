@@ -4,11 +4,10 @@
  *
  *  SPDX-License-Identifier: BSD-3-Clause
  *  See COPYING file for more information.
+ *  9/2022 some changes made by Peter Miller to support 64 bit and multitasking use under Windows.
  */
-
 #include "kiss_fftr.h"
 #include "_kiss_fft_guts.h"
-
 struct kiss_fftr_state{
     kiss_fft_cfg substate;
     kiss_fft_cpx * tmpbuf;
@@ -17,24 +16,19 @@ struct kiss_fftr_state{
     void * pad;
 #endif
 };
-
-kiss_fftr_cfg kiss_fftr_alloc(int nfft,int inverse_fft,void * mem,size_t * lenmem)
+kiss_fftr_cfg kiss_fftr_alloc(size_t nfft,int inverse_fft,void * mem,size_t * lenmem)
 {
 	KISS_FFT_ALIGN_CHECK(mem)
-
-    int i;
+    size_t i;
     kiss_fftr_cfg st = NULL;
     size_t subsize = 0, memneeded;
-
     if (nfft & 1) {
         KISS_FFT_ERROR("Real FFT optimization must be even.");
         return NULL;
     }
     nfft >>= 1;
-
     kiss_fft_alloc (nfft, inverse_fft, NULL, &subsize);
     memneeded = sizeof(struct kiss_fftr_state) + subsize + sizeof(kiss_fft_cpx) * ( nfft * 3 / 2);
-
     if (lenmem == NULL) {
         st = (kiss_fftr_cfg) KISS_FFT_MALLOC (memneeded);
     } else {
@@ -44,12 +38,14 @@ kiss_fftr_cfg kiss_fftr_alloc(int nfft,int inverse_fft,void * mem,size_t * lenme
     }
     if (!st)
         return NULL;
-
-    st->substate = (kiss_fft_cfg) (st + 1); /*just beyond kiss_fftr_state struct */
-    st->tmpbuf = (kiss_fft_cpx *) (((char *) st->substate) + subsize);
+	st->substate = (kiss_fft_cfg) (st + 1); /*just beyond kiss_fftr_state struct */
+    /* # pragma's below work for gcc and clang compilers - memory is obtained via malloc() so has suitable alignment */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-align"
+	st->tmpbuf = (kiss_fft_cpx *) (((char *) st->substate) + subsize);
+#pragma GCC diagnostic pop
     st->super_twiddles = st->tmpbuf + nfft;
     kiss_fft_alloc(nfft, inverse_fft, st->substate, &subsize);
-
     for (i = 0; i < nfft/2; ++i) {
         double phase =
             -3.14159265358979323846264338327 * ((double) (i+1) / nfft + .5);
@@ -59,20 +55,16 @@ kiss_fftr_cfg kiss_fftr_alloc(int nfft,int inverse_fft,void * mem,size_t * lenme
     }
     return st;
 }
-
 void kiss_fftr(kiss_fftr_cfg st,const kiss_fft_scalar *timedata,kiss_fft_cpx *freqdata)
 {
     /* input buffer timedata is stored row-wise */
-    int k,ncfft;
+    size_t k,ncfft;
     kiss_fft_cpx fpnk,fpk,f1k,f2k,tw,tdc;
-
     if ( st->substate->inverse) {
         KISS_FFT_ERROR("kiss fft usage error: improper alloc");
         return;/* The caller did not call the correct function */
     }
-
     ncfft = st->substate->nfft;
-
     /*perform the parallel fft of two real signals packed in real,imag*/
     kiss_fft( st->substate , (const kiss_fft_cpx*)timedata, st->tmpbuf );
     /* The real part of the DC element of the frequency spectrum in st->tmpbuf
@@ -84,7 +76,6 @@ void kiss_fftr(kiss_fftr_cfg st,const kiss_fft_scalar *timedata,kiss_fft_cpx *fr
      * The difference of tdc.r - tdc.i is the sum of the input (dot product) [1,-1,1,-1...
      *      yielding Nyquist bin of input time sequence
      */
-
     tdc.r = st->tmpbuf[0].r;
     tdc.i = st->tmpbuf[0].i;
     C_FIXDIV(tdc,2);
@@ -97,41 +88,33 @@ void kiss_fftr(kiss_fftr_cfg st,const kiss_fft_scalar *timedata,kiss_fft_cpx *fr
 #else
     freqdata[ncfft].i = freqdata[0].i = 0;
 #endif
-
     for ( k=1;k <= ncfft/2 ; ++k ) {
         fpk    = st->tmpbuf[k];
         fpnk.r =   st->tmpbuf[ncfft-k].r;
         fpnk.i = - st->tmpbuf[ncfft-k].i;
         C_FIXDIV(fpk,2);
         C_FIXDIV(fpnk,2);
-
         C_ADD( f1k, fpk , fpnk );
         C_SUB( f2k, fpk , fpnk );
         C_MUL( tw , f2k , st->super_twiddles[k-1]);
-
         freqdata[k].r = HALF_OF(f1k.r + tw.r);
         freqdata[k].i = HALF_OF(f1k.i + tw.i);
         freqdata[ncfft-k].r = HALF_OF(f1k.r - tw.r);
         freqdata[ncfft-k].i = HALF_OF(tw.i - f1k.i);
     }
 }
-
 void kiss_fftri(kiss_fftr_cfg st,const kiss_fft_cpx *freqdata,kiss_fft_scalar *timedata)
 {
     /* input buffer timedata is stored row-wise */
-    int k, ncfft;
-
+    size_t k, ncfft;
     if (st->substate->inverse == 0) {
         KISS_FFT_ERROR("kiss fft usage error: improper alloc");
         return;/* The caller did not call the correct function */
     }
-
     ncfft = st->substate->nfft;
-
     st->tmpbuf[0].r = freqdata[0].r + freqdata[ncfft].r;
     st->tmpbuf[0].i = freqdata[0].r - freqdata[ncfft].r;
     C_FIXDIV(st->tmpbuf[0],2);
-
     for (k = 1; k <= ncfft / 2; ++k) {
         kiss_fft_cpx fk, fnkc, fek, fok, tmp;
         fk = freqdata[k];
@@ -139,7 +122,6 @@ void kiss_fftri(kiss_fftr_cfg st,const kiss_fft_cpx *freqdata,kiss_fft_scalar *t
         fnkc.i = -freqdata[ncfft - k].i;
         C_FIXDIV( fk , 2 );
         C_FIXDIV( fnkc , 2 );
-
         C_ADD (fek, fk, fnkc);
         C_SUB (tmp, fk, fnkc);
         C_MUL (fok, tmp, st->super_twiddles[k-1]);

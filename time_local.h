@@ -3,8 +3,8 @@
    must be included after <time.h> as that defines struct tm
    Note actually defines ya_strptime(), ya_strftime() and  ya_mktime() to avoid issues with trying to redefine strptime(), strftime() and mktime()
 */
-#ifndef __TIME_LOCAL_H
- #define __TIME_LOCAL_H
+#ifndef _zTIME_LOCAL_H   /* z added to avoid clang warning */
+ #define _zTIME_LOCAL_H
  #ifdef __cplusplus
   extern "C" {
  #endif
@@ -40,13 +40,17 @@
 	extern struct strp_tz_struct strp_tz;// strp_tz is a global thats sets by strptime() and used by strftime()
 	void init_strp_tz(struct strp_tz_struct *d); /* initialise a strp_tz_struct (mainly to strp_tz_default)  */	
 	time_t ya_mktime(struct tm *tp); /* fully functional version of mktime() that returns secs and takes (and changes if necessary) timeptr */
+	time_t ya_mktime_tm(const struct tm *tp); /* version of mktime() that returns secs and takes (but does not change) timeptr */
     void sec_to_tm(time_t t,struct tm *tp); // reverse of ya_mktime, converts secs since epoch to the numbers of tp
 	time_t UTC_mktime(struct tm *tp,struct strp_tz_struct *tz ); /* version of mktime() that also uses tz to adjust secs returned for timezones. Returns UTC secs since epoch (time_t) */
 	void UTC_sec_to_tm(time_t t,struct tm *tp,struct strp_tz_struct *tz ); // reverse of UTC_mktime(), converts UTC time as secs since epoch to the numbers of tp, taking into account tz to adjust secs  for timezones
+    int cmp_tm(struct tm *tm1,struct tm *tm2); /* returns sign(tm1-tm2) */
 	/* year as int64_t below to avoid overflow issues when converting int years with an offset to one with no offset */
 	int day_of_week(int64_t year,int month, int mday); /* returns day of week(0-6), 0=sunday given year (with no offset eg 1970), month (0-11, 0=jan) and day of month (1-31) */
+    int day_of_week_yd(int64_t year,int yday); /* year with no offset eg 1900 and yday is days since 1st Jan 0->365 */
 	void month_day(int64_t year, int yearday, int *pmonth, int *pday);// year with no offset and days in year (0->), sets pmonth (0->11) and pday(1-31)
 	bool is_leap(int64_t year); /* returns true if year [with no offset] is a leap year */
+	int day_of_year(int64_t year, int month, int day); /* year without offset, month 0->11, day 1->31, returns days since 1st jan (0->365) */
 	bool check_tm(struct tm *tm);/* returns true only if all elements of tm are valid */
 	extern const char * strp_weekdays[]; // strings - names of weekdays (Monday,...)
 	extern const char * strp_monthnames[] ;// strings - names of Months (January,...)

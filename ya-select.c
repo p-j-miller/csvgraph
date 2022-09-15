@@ -61,13 +61,20 @@ SOFTWARE.
 #define tswap(i,j) {size_t t;t=(i);i=(j);j=t;} // example call tswap(a, b ); WARNING - side effects could be an issue here ! eg tswap(i++,b)
 
 
-inline static void eswap(size_t i,size_t j,elem_type_median *a) /* swap a[i]  and a[j] as a function so avoids issues with side effects when macro arguments are evaluated more than once */
-	{  
-	 cswap(a[i],a[j]); // use swap macro
-	} 
-
-#define elem_type_ss elem_type_median /* set type for smallsort correctly */	
+#define elem_type_ss elem_type_median /* set type for smallsort correctly */
 #include "ya-smallsort.h" // contains small_sort() - this needs to be included after cswap is defined
+#if !defined(NDEBUG)
+static  bool check_sort( elem_type_median *a, size_t n) // check result of sort is ordered correctly
+{// returns true if sort is ok
+ /* check array actually is sorted correctly in increasing order */
+ size_t errs=0;
+ if(n<2) return true;
+ for(size_t i=0;i<n-1;++i)
+	 if(a[i+1]<a[i])
+		errs++;
+  return (errs==0);
+}
+#endif
 
 /* 
  	yaselect()
@@ -579,10 +586,10 @@ void ya_msort(elem_type_median *a,size_t n)
 	 // There is also  a potentially useful side effect of this, if we have to move to using quicksort then 2 values will have been moved which could help break up bad patterns of data.
 #define MAX_INS_MOVES 2 /* max allowed number of moves - for the test program 2 is the optimum value */
    	 size_t nos_ins_moves=0;	 
-   	 for (elem_type_median  *p =  &(a[1]); p<&(a[n]); ++p) 
+	 for (elem_type_median  *pm =  &(a[1]); pm<&(a[n]); ++pm)
 		{
-         elem_type_median  *q = p;
-         elem_type_median *q_1 = p-1;
+		 elem_type_median  *q = pm;
+		 elem_type_median *q_1 = pm-1;
 		 // Compare first so we can avoid 2 moves for an element already positioned correctly.
          if (*q< *q_1) 
 		 	{if(++nos_ins_moves>MAX_INS_MOVES) goto do_qsort; // too many moves - swap to qsort
@@ -591,11 +598,11 @@ void ya_msort(elem_type_median *a,size_t n)
 			 	{ q--;
 				}
          	 	while (q != a && t < *--q_1); 
-         	 memmove(q+1,q,(p-q)*sizeof(elem_type_median));// move a portion of array x right by 1 to make space for t 
+			 memmove(q+1,q,(size_t)(pm-q)*sizeof(elem_type_median));// move a portion of array x right by 1 to make space for t
            	 *q = t; // insert t in its correct place in array x
         	}     	
         }	
-   	 assert(check_sort( a, n) ); // check result of sort is ordered correctly
+	 assert(check_sort( a, n) ); // check result of sort is ordered correctly
    	 return ; // all done
 do_qsort: 	 	
 	 m=yaMedian(a,n);// get median, as a "side effect" also puts values <= the median to the left of the array and values >= the meadian on the right. 
