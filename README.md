@@ -1,5 +1,5 @@
 # csvgraph
-Csvgraph is designed to allow quick viewing of graphs of potentially very large (GB) csv files (for comparison most spreadsheets are limited to 1,048,576 rows). Csvgraph has no built-in limits, but ultimately it is limited by your available RAM (it will use up to 4GB of RAM if its available). Even with extremely large files reading is fast and zooming is normally instantaneous.
+Csvgraph is designed to allow quick viewing of graphs of potentially very large (GB) csv files (for comparison most spreadsheets are limited to 1,048,576 rows). Csvgraph has no built-in limits, but ultimately it is limited by your available RAM (the 32-bit version will it will use up to 4GB of RAM if its available, while the 64-bit version will use all the available memory).  Even with extremely large files reading is fast and zooming is normally instantaneous.
 
 These csv files are assumed to have column headers on their first line so a typical csv file would start:
 
@@ -66,27 +66,41 @@ csvsave interpolates if required so x values do not need to be identical on all 
 		Higher resolution internally on reading dates & times, so if “start time from zero” is
     ticked the results may be slightly more accurate.
 
+3v0 – 	15/8/22 - Never released – 1st 64-bit version
+
+3v1 – 17/8/22	- Never released. Source code refactored with “common files”
+ (that may be used in other programs) separated out. Some files moved from C++ to C where they were pure C and C++ compiler generated lots of warnings.
+ 
+3v2 – 14/9/2022 – 1st 64-bit release. 64-bit version will use all available memory, while 32-bit version 
+is limited to 4GB of ram, apart from that functionality is identical. 
+The 64-bit version can read files with more than 2^32 lines, the 32-bit version will run out of RAM before that many lines can be read.
+
+Minor changes:
+	When the Scales menu was invoked multiple times previously the scaling would change very slightly – fixed.
+	Allowed range of font sizes for main title and X/Y axis titles expanded.
+	FFT now makes use of multiple processor cores if they are present to deliver faster results.
+
 
 
 # Installation
 Cvsgraph is a portable program which does not need installation.
 
-Copy the file csvgraph.exe to any location on your computer (or run it from a USB-stick or similar).
+Copy the file csvgraph32.exe or csvgraph64.exe to any location on your computer (or run it from a USB-stick or similar).
 Add csvgraph.pdf to the same directory to allow access to the manual from within csvgraph (menu help/manual).
 
 A shortcut on your desktop makes it simple to execute csvgraph.
 
 See the file LICENSE for details, but csvgraph is free for both commercial and non-commercial use.
 
-csvgraph.exe runs on Windows (10 32 or 64 bit). It should run on earlier versions (to Vista) or under Wine on Linux but this is untested.
+csvgraph runs on Windows (10 32 or 64 bit). It should run on earlier versions (to Vista) or under Wine on Linux but this is untested.
 
 # source code
-The source code was compiled with Embarcadero® C++Builder 10.2 - a suitable project file is included in the archive. It should compile with no errors or warnings.
-It should be easy to move to a more recent version of C++Builder (at least for a 32 bit Windows target), but equally it would not be very hard to revert to earlier versions (back to Builder C++ V5) if necessary. 
+The source code was compiled with Embarcadero® C++Builder 10.4 - a suitable project file is included in the archive. It should compile with no errors or warnings.
+It should be easy to move to a more recent version of C++Builder (at least for a 32/64 bit Windows target), but equally it would not be very hard to revert to earlier versions (back to Builder C++ V5) if necessary. 
 
 Many parts of the source code could be of interest if you don't use C++Builder - for example atof.c is part of ya-sprintf see https://github.com/p-j-miller/ya-sprintf
 
-expr-code.cpp contains many routines that are generally useful (and most of this file is pure C) - including a fast general expression evaluator for expressions stored in strings.
+expr-code.c contains many routines that are generally useful - including a fast general expression evaluator for expressions stored in strings.
 
 UScientificGraph.cpp contains an efficient median filter implementation and a polynomial fit implementation both of which work well with a very large number of data points and the implementations for these are believed to be novel. 
 It also contains a fast line clipping algorithm that allows "infinite" zoom in/out. 
