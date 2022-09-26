@@ -90,6 +90,9 @@
 //                      fft now makes better use of multiple cores + potential overflow when factorising number of points fixed.
 //                  Refactored code so code likley to be used elsewhere is now in "..\Commom-files\"
 //                  3v2 was released on 14/9/2022 as 1st 64 bit release on github - 3v0 and 3v1 were internal only versions.
+//  3v3 22/9/22     count_lines() returned an unsigned int - changed to size_t to allow more than 2^32 lines.
+//                  fseek() also did not work with very large files, resulting in floating point divide by zero errors.
+//                  Note when you run out of physical ram csvgraph will still continue (using virtual memory), but adding traces gets very slow, as does redrawing unzoomed screen. Zooming is still quick!
 //
 //---------------------------------------------------------------------------
 /*----------------------------------------------------------------------------
@@ -157,9 +160,9 @@
 extern TForm1 *Form1;
 extern const char * Prog_Name;
 #ifdef _WIN64
-const char * Prog_Name="CSVgraph (Github) 3v2 (64 bit)";   // needs to be global as used in about box as well.
+const char * Prog_Name="CSVgraph (Github) 3v3 (64 bit)";   // needs to be global as used in about box as well.
 #else
-const char * Prog_Name="CSVgraph (Github) 3v2 (32 bit)";   // needs to be global as used in about box as well.
+const char * Prog_Name="CSVgraph (Github) 3v3 (32 bit)";   // needs to be global as used in about box as well.
 #endif
 #if 1 /* if 1 then use fast_strtof() rather than atof() for floating point conversion. Note in this application this is only slightly faster (1-5%) */
 extern "C" float fast_strtof(const char *s,char **endptr); // if endptr != NULL returns 1st character thats not in the number
@@ -204,7 +207,7 @@ volatile bool addtraceactive=false; // set to true when add trace active to avoi
 static bool zoomed=false; // set when zoomed in to stop autoscaling when new traces added
 static bool user_set_trace_colour=false;
 static TColor user_trace_colour;
-static unsigned int nos_lines_in_file=0; // number of lines in last file opened
+static size_t nos_lines_in_file=0; // number of lines in last file opened
 static bool start_time_from_0=false; // if true use 1st time read is as ofset
 float yval,xval; // current values being added to graph, xval is set before yval
 
@@ -1440,9 +1443,9 @@ void __fastcall TPlotWindow::Button_add_trace1Click(TObject *Sender)
 		 addtraceactive=false;// finished
 		 return;
 		}
-  fseek(fin, 0, SEEK_END);  // seek to end of file
+  _fseeki64(fin, 0, SEEK_END);  // seek to end of file
   filesize=_ftelli64(fin); // get size of file
-  fseek(fin,0,SEEK_SET); // back to start of file
+  _fseeki64(fin,0,SEEK_SET); // back to start of file
 #ifdef BIG_BUF_SIZE
    if( read_buf!=NULL)
 		setvbuf(fin,read_buf,_IOFBF,BIG_BUF_SIZE); // buffer input if we have free RAM
@@ -1652,12 +1655,12 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
   if(ycol<1 || (unsigned int)ycol> MAX_COLS)
         {
          // rprintf("Error: invalid ycol (range 1..%d)\n",MAX_COLS);
-         ShowMessage("Error: invalid ycol (range 1.."+AnsiString(MAX_COLS)+")");
-         fclose(fin);
+		 ShowMessage("Error: invalid ycol (range 1.."+AnsiString(MAX_COLS)+")");
+		 fclose(fin);
 		 StatusText->Caption="Invalid ycol";
 		 if(date_time_fmt!=NULL) {free(date_time_fmt); date_time_fmt=NULL;}
-         addtraceactive=false;// finished
-         return;
+		 addtraceactive=false;// finished
+		 return;
         }
   // rprintf("xcol=%d ycol=%d\n",xcol,ycol);
   line_colour=(line_colour+1);    // next colour
@@ -1715,7 +1718,15 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 	}
 
 
-  iGraph=pScientificGraph->fnAddGraph(nos_lines_in_file);  //iGraph==graph index  , 0 for 1st, 1 for 2nd...
+  iGraph=pScientificGraph->fnAddGraph(nos_lines_in_file);  //iGraph==graph index  , 0 for 1st, 1 for 2nd...  -1 => error
+  if(iGraph<0)
+		{ShowMessage("Error: Not enough RAM");
+		 fclose(fin);
+		 StatusText->Caption="Not enough RAM";
+		 if(date_time_fmt!=NULL) {free(date_time_fmt); date_time_fmt=NULL;}
+		 addtraceactive=false;// finished
+		 return; // error (not enough memory)
+		}
   //rprintf("iGraph=%d\n",iGraph);
   pScientificGraph->fnSetColDataPoint(Col,iGraph);    //set colors
   pScientificGraph->fnSetColErrorBar(Col,iGraph);
@@ -1908,7 +1919,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 								{snprintf(cstring,sizeof(cstring),"%.0f %% read of column %d",100.0*(double)_ftelli64(fin)/(double)filesize,ycol);
 								}
 #else
-						 snprintf(cstring,sizeof(cstring),"%d lines read",lines_in_file);
+						 snprintf(cstring,sizeof(cstring),"%d lines read ",lines_in_file);
 #endif
 						 StatusText->Caption=cstring;
                         }
@@ -2541,6 +2552,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 #endif
   rprintf("%s\n\n",cstring);
   StatusText->Caption=cstring;
+  Application->ProcessMessages(); /* allow windows to update (but not go idle) */
   addtraceactive=false;// finished
 }
 //---------------------------------------------------------------------------
@@ -2578,9 +2590,9 @@ static void set_ListboxXY(void) // highlight default columns in ListBoxX/Y (if v
 /* use built in windows functions directly to read file, check for \n's by reading array 64bits at a time */
 	/* \n detection from idea in http://graphics.stanford.edu/~seander/bithacks.html#ZeroInWord */
 
-static unsigned int count_lines(char *cfilename, double filesize)
+static size_t count_lines(char *cfilename, double filesize)
 {   HANDLE hFile;
-	unsigned int lines=0;
+	size_t lines=0;
 	char *buf=(char *)malloc(CL_BLOCK_SIZE); // buffer for reads - malloc guarantees sensible alignment for buf;
 	char *cp;
 	DWORD nBytesRead = 0;
@@ -2588,9 +2600,9 @@ static unsigned int count_lines(char *cfilename, double filesize)
 	double total_bytes_read=0;
 	clock_t begin_t;
 	begin_t=clock();
-	//rprintf("count_lines: Filename=%s BLOCK_SIZE=%u\n",cfilename,BLOCK_SIZE);
+	// rprintf("count_lines: Filename=%s filesize=%.0f KB\n",cfilename,filesize/1024.0);
 	if(buf==NULL)
-		{rprintf(" count_lines() - not enough RAM - sorry!\b");
+		{rprintf(" count_lines() - not enough RAM - sorry!\n");
 		 return 0; // No RAM
 		}
 	/*
@@ -2653,14 +2665,14 @@ static unsigned int count_lines(char *cfilename, double filesize)
 			{// more than 2 secs difference , give user something to see
              char str_buf[128];
 			 begin_t+=2*CLK_TCK; // move forward 2 secs
-			 snprintf(str_buf,sizeof(str_buf),"%.0f %% read",100.0*(double)total_bytes_read/filesize);
+			 snprintf(str_buf,sizeof(str_buf),"%.0f %% : %.0f lines so far",100.0*(double)total_bytes_read/filesize,(double)lines);
 			 Form1->pPlotWindow->StatusText->Caption=str_buf;
 			 Application->ProcessMessages(); /* allow windows to update (but not go idle), do this regularly  */
 			}
 		}
 	CloseHandle(hFile);
 	free(buf);
-	// rprintf("  %u lines found\n",lines);
+	//rprintf("  %.0f lines found\n",(double)lines);
 	return lines;
 }
 
@@ -2695,11 +2707,12 @@ void proces_open_filename(char *fn) // open filename - just to peek at header ro
          return;
 		}
 
-  fseek(fin, 0, SEEK_END);  // seek to end of file
+  _fseeki64(fin, 0, SEEK_END);  // seek to end of file
   filesize=_ftelli64(fin); // get size of file
-  fseek(fin,0,SEEK_SET); // back to start of file
+  _fseeki64(fin,0,SEEK_SET); // back to start of file
 
   rcls();
+  // rprintf("filesize=%llu =(double) %.0f\n",filesize,(double)filesize);
 #if 0
   /* add some debugging info */
 #ifdef _WIN32
@@ -2844,8 +2857,8 @@ void proces_open_filename(char *fn) // open filename - just to peek at header ro
   clock_t begin_t=clock();
   nos_lines_in_file=count_lines(filename.c_str(),filesize);  // this will keep user updated on its progress by updating status line message every 2 secs
   addtraceactive=false;
-  rprintf(" File has %u lines (file read in %g secs)\n",nos_lines_in_file,(double)(clock()-begin_t)/CLK_TCK);
-  snprintf(str_buf,sizeof(str_buf),"Ready : %u lines found in file",nos_lines_in_file);
+  rprintf(" File has %.0f lines (file read in %g secs)\n",(double)nos_lines_in_file,(double)(clock()-begin_t)/CLK_TCK);
+  snprintf(str_buf,sizeof(str_buf),"Ready : %.0f lines found in file",(double)nos_lines_in_file);
   Form1->pPlotWindow->StatusText->Caption=str_buf;
   Form1->pPlotWindow->StaticText_filename->Text=basename;
 }

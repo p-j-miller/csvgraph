@@ -188,6 +188,44 @@ inline static void eswap2p(elem_type_sort2 *pi,elem_type_sort2 *pj,elem_type_sor
 #include "ya-smallsort.h" // contains small_sort() - this needs to be included after cswap is defined
 	
 #ifdef YA2SORT_TEST_PROGRAM
+/* replacement for library rand() function that has known (good) properties
+   The default generator in tdm-gcc 10.3.0 has RAND_MAX for 32767 which is not ideal.
+
+Public domain code for JKISS RNG   from   http://www0.cs.ucl.ac.uk/staff/d.jones/GoodPracticeRNG.pdf
+claims any of the 2 generators combined still pass all the Dieharder tests (and obviously all 3 combined do).
+It also passes the complete BigCrunch test set in testU01.
+Its period is ~ 2^127 (1.7e38).
+*/
+static uint32_t x=123456789,y=987654321,z=43219876,c=6543217;/* Seed variables */
+static uint32_t JKISS(void)
+{
+ uint64_t t;
+ x=314527869*x+1234567;
+ y^=y<<5;
+ y^=y>>7;
+ y^=y<<22;
+ t =4294584393UL*z+c;
+ c= t>>32;
+ z= t;
+ return x+y+z;
+}
+
+static int rand(void)
+{return JKISS() & INT_MAX; // convert unsigned to signed
+}
+
+static void srand(unsigned int seed)
+{ // seed random number generator, 0 gives the same sequence as you get without calling srand() 
+ x=123456789+seed;
+ y=987654321+seed;
+ z=43219876+seed;
+ c=6543217+seed;
+}
+
+#ifdef RAND_MAX
+ #undef RAND_MAX
+#endif
+#define RAND_MAX INT_MAX /* in case its used */
 #ifdef RAND_MAX
  #undef RAND_MAX
 #endif
@@ -849,7 +887,7 @@ static void _yasort2(elem_type_sort2 *x,elem_type_sort2 *y, size_t n,unsigned in
 			}
 		else
 			{_yasort2(x,y, (size_t)(pj-x),(nos_p)/2); // recurse for smalest partition so stack depth is bounded at O(log2(n)). Allow more threads from subroutine if we still have some processors spare
-			 assert(check_sort(x,pj-x));// check sort worked correctly
+			 assert(check_sort(x,(size_t)(pj-x)));// check sort worked correctly
 			}
 #else	 		
 		 _yasort2(x,y, pj-x,0); // recurse for smalest partition so stack depth is bounded at O(log2(n))
@@ -884,7 +922,7 @@ static void _yasort2(elem_type_sort2 *x,elem_type_sort2 *y, size_t n,unsigned in
 			}
 		else
 			{ _yasort2(pi,y+(pi-x), n-(size_t)(pi-x),(nos_p)/2); // recurse for smalest partition so stack depth is bounded at O(log2(n))
-	 	 	 assert(check_sort(pi,n-(pi-x))); // check sort worked correctly
+	 	 	 assert(check_sort(pi,(size_t)(n-(size_t)(pi-x)))); // check sort worked correctly
 			}
 #else			
 		 _yasort2(pi,y+(pi-x), n-(size_t)(pi-x),0);

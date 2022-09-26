@@ -2768,7 +2768,7 @@ void TScientificGraph::fnDeleteGraph(int iGraphNumberF)     //deletes graph
 }
 //------------------------------------------------------------------------------
 
-int TScientificGraph::fnAddGraph(size_t max_points)              //insert new graph with nos_points datapoints (at most)
+int TScientificGraph::fnAddGraph(size_t max_points)              //insert new graph with nos_points datapoints (at most), return -1 on error
 {
   SGraph *pGraph;
 
@@ -2796,7 +2796,8 @@ int TScientificGraph::fnAddGraph(size_t max_points)              //insert new gr
 	}
   if(pGraph->x_vals==NULL)
 	{pGraph->size_vals_arrays=0; // no space allocated
-	 rprintf(" Warning: not enought ram for %d datapoints\n",max_points);
+	 rprintf(" Warning: not enought ram for %.0f datapoints\n",(double)max_points);
+	 return -1; // error
 	}
   pHistory->Add(pGraph);                       //add to history
 
@@ -2852,7 +2853,7 @@ void TScientificGraph::fnAutoScale()
   float dXMin, dXMax,dYMin,dYMax;
   int max_graph=-1,min_graph=-1;  // graph for min/max
   float X_for_minY=0,X_for_maxY=0;  // location of min/max
-  SGraph *aGraph;
+  SGraph *aGraph=NULL;
 
   if (iNumberOfGraphs>0)
   {
@@ -2899,7 +2900,8 @@ void TScientificGraph::fnAutoScale()
         }
   else  dXMax=dYMax=1;
   if(min_graph>=0)
-        {aGraph=(SGraph*) pHistory->Items[min_graph];
+		{if(min_graph!=max_graph)
+			aGraph=(SGraph*) pHistory->Items[min_graph];
          rprintf("Minimum value = %g found on trace %d (%s) at X=%g\n",dYMin,min_graph+1,aGraph->Caption.c_str(),X_for_minY);
         }
   else dXMin=dYMin=0;
