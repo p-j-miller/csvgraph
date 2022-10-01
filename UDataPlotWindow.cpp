@@ -93,6 +93,7 @@
 //  3v3 22/9/22     count_lines() returned an unsigned int - changed to size_t to allow more than 2^32 lines.
 //                  fseek() also did not work with very large files, resulting in floating point divide by zero errors.
 //                  Note when you run out of physical ram csvgraph will still continue (using virtual memory), but adding traces gets very slow, as does redrawing unzoomed screen. Zooming is still quick!
+//  3v4 1/10/22     Fixed issue with 64 bit version about dpi awareness with multiple monitors.
 //
 //---------------------------------------------------------------------------
 /*----------------------------------------------------------------------------
@@ -160,9 +161,9 @@
 extern TForm1 *Form1;
 extern const char * Prog_Name;
 #ifdef _WIN64
-const char * Prog_Name="CSVgraph (Github) 3v3 (64 bit)";   // needs to be global as used in about box as well.
+const char * Prog_Name="CSVgraph (Github) 3v4 (64 bit)";   // needs to be global as used in about box as well.
 #else
-const char * Prog_Name="CSVgraph (Github) 3v3 (32 bit)";   // needs to be global as used in about box as well.
+const char * Prog_Name="CSVgraph (Github) 3v4 (32 bit)";   // needs to be global as used in about box as well.
 #endif
 #if 1 /* if 1 then use fast_strtof() rather than atof() for floating point conversion. Note in this application this is only slightly faster (1-5%) */
 extern "C" float fast_strtof(const char *s,char **endptr); // if endptr != NULL returns 1st character thats not in the number
