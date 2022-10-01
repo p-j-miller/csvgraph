@@ -1,5 +1,5 @@
 # csvgraph
-Csvgraph is designed to allow quick viewing of graphs of potentially very large (GB) csv files (for comparison most spreadsheets are limited to 1,048,576 rows). Csvgraph has no built-in limits, but ultimately it is limited by your available RAM (the 32-bit version will it will use up to 4GB of RAM if its available, while the 64-bit version will use all the available memory).  Even with extremely large files reading is fast and zooming is normally instantaneous.
+Csvgraph is designed to allow quick viewing of graphs of potentially very large (GB) csv files (for comparison most spreadsheets are limited to 1,048,576 rows). Csvgraph has no built-in limits, but ultimately it is limited by your available RAM (the 32-bit version will it will use up to 4GB of RAM if its available, while the 64-bit version will use all the available RAM and virtual memory).  Even with extremely large files reading is fast and zooming is normally instantaneous.
 
 These csv files are assumed to have column headers on their first line so a typical csv file would start:
 
@@ -80,6 +80,9 @@ Minor changes:
 	Allowed range of font sizes for main title and X/Y axis titles expanded.
 	FFT now makes use of multiple processor cores if they are present to deliver faster results.
 
+3v3 - 26/9/2022 - changes to the 64 bit version to allow loading even larger files (using virtual memory as well as RAM)
+
+3v4 - 1-10-2022 - fixed dpi handling issue when multiple monitors used on 64 bit version.
 
 
 # Installation
