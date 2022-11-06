@@ -40,6 +40,12 @@
 #include "stdint.h" /* for uint32_t etc */
 #include <stdarg.h> /* for va_start etc */
 
+#if 0
+ /* disable try/catch - crude but can help debugging, results in quite a few warnings, but should still compile */
+#define TRY_CATCH_DISABLED
+#define try /* disabled */
+#define catch(...) if(false) /* disabled*/
+#endif 
 
 void red_text(void); /* set text colour to red for new text [Richedit only]*/
 void blue_text(void); /* set text colour to blue for new text [Richedit only]*/

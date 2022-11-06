@@ -110,11 +110,12 @@
         <BCC_SourceDebuggingOn>true</BCC_SourceDebuggingOn>
         <BCC_DebugLineNumbers>true</BCC_DebugLineNumbers>
         <VerInfo_Locale>1033</VerInfo_Locale>
-        <LinkPackageStatics>rtl.lib;vcl.lib;bcbsmp.lib;vclx.lib</LinkPackageStatics>
+        <LinkPackageStatics>rtl.lib;vcl.lib;bcbsmp.lib;vclx.lib;vclimg.lib</LinkPackageStatics>
         <BCC_MonitorInlinePtrAccess>true</BCC_MonitorInlinePtrAccess>
         <BCC_MonitorGlobalAndStackData>true</BCC_MonitorGlobalAndStackData>
         <BCC_MonitorThis>true</BCC_MonitorThis>
         <ILINK_FullDebugInfo>true</ILINK_FullDebugInfo>
+        <BCC_UseClassicCompiler>false</BCC_UseClassicCompiler>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_1_Win64)'!=''">
         <AppEnableRuntimeThemes>true</AppEnableRuntimeThemes>
@@ -127,7 +128,10 @@
         <BCC_AllWarnings>true</BCC_AllWarnings>
         <BCC_SelectedWarnings>false</BCC_SelectedWarnings>
         <VerInfo_Keys>CompanyName=;FileDescription=$(MSBuildProjectName);FileVersion=1.0.0.0;InternalName=;LegalCopyright=;LegalTrademarks=;OriginalFilename=;ProgramID=com.embarcadero.$(MSBuildProjectName);ProductName=$(MSBuildProjectName);ProductVersion=1.0.0.0;Comments=</VerInfo_Keys>
-        <BCC_UserSuppliedOptions>-Wno-c++98-compat -Wno-double-promotion -Wno-old-style-cast -Wno-float-equal -Wno-date-time -Wno-exit-time-destructors -Wno-global-constructors -Wno-padded -Wno-missing-noreturn  -Wno-c++98-compat-pedantic</BCC_UserSuppliedOptions>
+        <BCC_UserSuppliedOptions>-Wno-c++98-compat -Wno-double-promotion -Wno-old-style-cast -Wno-float-equal -Wno-date-time -Wno-exit-time-destructors -Wno-global-constructors -Wno-padded -Wno-missing-noreturn  -Wno-c++98-compat-pedantic </BCC_UserSuppliedOptions>
+        <BCC_OptimizeMaximum>false</BCC_OptimizeMaximum>
+        <ILINK_FullDebugInfo>true</ILINK_FullDebugInfo>
+        <BCC_OptimizeForSize>true</BCC_OptimizeForSize>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_2)'!=''">
         <Defines>NDEBUG;$(Defines)</Defines>
@@ -145,7 +149,7 @@
         <VerInfo_Keys>CompanyName=Peter Miller;FileVersion=1.0.0.0;InternalName=;LegalCopyright=2019,2020,2022 Peter Miller;LegalTrademarks=;OriginalFilename=;ProductVersion=1.0.0.0;Comments=;ProgramID=com.embarcadero.$(MSBuildProjectName);FileDescription=$(MSBuildProjectName);ProductName=$(MSBuildProjectName)</VerInfo_Keys>
         <BCC_UseClassicCompiler>false</BCC_UseClassicCompiler>
         <PackageImports>vcl;vclx;rtl;bcbsmp</PackageImports>
-        <Debugger_RunParams>C:\PMi\devC++-my-projects\csv-files\csvfun1.csv</Debugger_RunParams>
+        <Debugger_RunParams>D:\csv-files\csvfun1.csv</Debugger_RunParams>
         <BT_BuildType>Debug</BT_BuildType>
         <BCC_AllWarnings>true</BCC_AllWarnings>
         <BCC_SelectedWarnings>false</BCC_SelectedWarnings>
@@ -166,6 +170,8 @@
         <BCC_ShowLSPMessages>true</BCC_ShowLSPMessages>
         <BCC_EnableLSPIndexing>true</BCC_EnableLSPIndexing>
         <BCC_EnableLSPIndexingOnChange>true</BCC_EnableLSPIndexingOnChange>
+        <BCC_RequireMathFuncErrorNumber>false</BCC_RequireMathFuncErrorNumber>
+        <Debugger_RunParams>D:\csv-files\csvfun.csv</Debugger_RunParams>
     </PropertyGroup>
     <ItemGroup>
         <CppCompile Include="..\Common-files\atof.c">
@@ -298,6 +304,11 @@
                         <Overwrite>true</Overwrite>
                     </Platform>
                 </DeployFile>
+                <DeployFile Condition="'$(DynamicRTL)'=='true'" LocalName="$(BDS)\Redist\osx64\libcgstl.dylib" Class="DependencyModule">
+                    <Platform Name="OSX64">
+                        <Overwrite>true</Overwrite>
+                    </Platform>
+                </DeployFile>
                 <DeployFile Condition="'$(DynamicRTL)'=='true' And '$(Multithreaded)'!='true'" LocalName="$(BDS)\bin\cc32270.dll" Class="DependencyModule">
                     <Platform Name="Win32">
                         <Overwrite>true</Overwrite>
@@ -305,11 +316,6 @@
                 </DeployFile>
                 <DeployFile Condition="'$(DynamicRTL)'=='true'" LocalName="$(BDS)\Redist\osx32\libcgcrtl.dylib" Class="DependencyModule">
                     <Platform Name="OSX32">
-                        <Overwrite>true</Overwrite>
-                    </Platform>
-                </DeployFile>
-                <DeployFile Condition="'$(DynamicRTL)'=='true'" LocalName="$(BDS)\Redist\osx64\libcgstl.dylib" Class="DependencyModule">
-                    <Platform Name="OSX64">
                         <Overwrite>true</Overwrite>
                     </Platform>
                 </DeployFile>

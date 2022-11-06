@@ -94,6 +94,19 @@
 //                  fseek() also did not work with very large files, resulting in floating point divide by zero errors.
 //                  Note when you run out of physical ram csvgraph will still continue (using virtual memory), but adding traces gets very slow, as does redrawing unzoomed screen. Zooming is still quick!
 //  3v4 1/10/22     Fixed issue with 64 bit version about dpi awareness with multiple monitors.
+//  3v5 20/10/22    an expression containing a function like max(1,2) would fail as the , would be treated as the terminator of the expression.
+//                  Also ledgend for filtered traces with a time constant don't put (s) in as x axis might be eg hours.
+//                  listbox updating for y variables now deals correctly with expressions.
+//                  divide by 0 error when polynomial order =0 worked around (could not find actual issue! - but goes away when floating point exceptions turned off - see below).
+//                  if csvgraph appears to be busy when user asks for a function like add trace then give them the option to fix this if csvgraph is not busy (eg if previous action caused an exception)
+//                  Right mouse click now gives slope of line, and results are presented in a clearer way.
+//                  _controlfp() {in csvgraph.cpp) used to turn off floating point exceptions (otherwise can get divide by zero errors etc)
+//                  if filename given on command line, 64 bit version did not pick it up - fixed.
+//
+// TO DO:
+//
+//
+// Note if executable is called (eg) csvgraph64.exe then manual needs to be called csvgraph64.pdf
 //
 //---------------------------------------------------------------------------
 /*----------------------------------------------------------------------------
@@ -154,16 +167,18 @@
 #include "multiple-lin-reg-fn.h"
 #include "time_local.h"
 
+#if 1
 // I'm sorry for the next 2 lines, but otherwise I get a lot of warnings "zero as null pointer constant"
 #undef NULL
 #define NULL (nullptr)
+#endif
 
 extern TForm1 *Form1;
 extern const char * Prog_Name;
 #ifdef _WIN64
-const char * Prog_Name="CSVgraph (Github) 3v4 (64 bit)";   // needs to be global as used in about box as well.
+const char * Prog_Name="CSVgraph (Github) 3v5 (64 bit)";   // needs to be global as used in about box as well.
 #else
-const char * Prog_Name="CSVgraph (Github) 3v4 (32 bit)";   // needs to be global as used in about box as well.
+const char * Prog_Name="CSVgraph (Github) 3v5 (32 bit)";   // needs to be global as used in about box as well.
 #endif
 #if 1 /* if 1 then use fast_strtof() rather than atof() for floating point conversion. Note in this application this is only slightly faster (1-5%) */
 extern "C" float fast_strtof(const char *s,char **endptr); // if endptr != NULL returns 1st character thats not in the number
@@ -956,19 +971,19 @@ void __fastcall TPlotWindow::Image1MouseUp(TObject *Sender,
          buf[0]=0;
          if(xmin==xmax && ymin==ymax)
                 {// user pressed and released right mouse button on a point without moving mouse
-                 snprintf(buf,sizeof(buf),"X = %g : Y = %g",xmin,ymin);
+                 snprintf(buf,sizeof(buf),"X = %g\nY = %g",xmin,ymin);
                 }
          else if(xmin==xmax)
                 { // only y changed
-                 snprintf(buf,sizeof(buf),"X = %g : Y from %g to %g (size %g)",xmin,ymin,ymax,ymax-ymin);
+				 snprintf(buf,sizeof(buf),"X = %g\nY from %g to %g (size %g)",xmin,ymin,ymax,ymax-ymin);
                 }
           else if(ymin==ymax)
                 { // only x changed
-                 snprintf(buf,sizeof(buf),"X from %g to %g (size %g) : Y = %g",xmin,xmax,xmax-xmin,ymin);
+				 snprintf(buf,sizeof(buf),"X from %g to %g (size %g)\nY = %g",xmin,xmax,xmax-xmin,ymin);
                 }
          else
-                {// normal case , both changed
-                 snprintf(buf,sizeof(buf),"X from %g to %g (size %g) : Y from %g to %g (size %g)",xmin,xmax,xmax-xmin,ymin,ymax,ymax-ymin);
+				{// normal case , both changed   [ means we cannot have a divide by zero error on slope ]
+				 snprintf(buf,sizeof(buf),"X from %g to %g (size %g)\nY from %g to %g (size %g)\nSlope dY/dX=%g",xmin,xmax,xmax-xmin,ymin,ymax,ymax-ymin,(ymax-ymin)/(xmax-xmin));
                 }
          rprintf("%s\n",buf); // record on text form as well as telling user now via a messagebox
          ShowMessage(buf);
@@ -1039,6 +1054,16 @@ void TPlotWindow::fnReDraw()
 
 void __fastcall TPlotWindow::Button_clear_all_traces1Click(TObject *Sender)
 { P_UNUSED(Sender);
+  if(addtraceactive || xchange_running!=-1)
+	{// appear to still be busy doing something - ask user if this is true
+	 UnicodeString errorText="csvgraph appears to still be busy - continue waiting?";
+	 if( MessageDlg(errorText,mtConfirmation,TMsgDlgButtons() <<mbYes <<mbNo ,0) == mrNo)
+		{addtraceactive= false;   // if user says "no" then clear flags  (if they say "yes" don't clear flags and we will return below)
+		 xchange_running= -1;
+		}
+	}
+
+
   if(addtraceactive) return; // if still processing a previous call of addtrace return now
   if(xchange_running!=-1) return; // still processing a change in x offset
   rprintf("Clear all traces button pressed\n");
@@ -1367,7 +1392,7 @@ void __fastcall TPlotWindow::Button_add_trace1Click(TObject *Sender)
   bool showerrmessage=true; // ditto for message to warn users of errors in format of csv file
   float previousxvalue=0,previousyvalue=0;
   double median_ahead_t; // >0 for median filtering to be used
-  int poly_order;
+  int poly_order=2;
   long double first_time=0; // used when reading times in for x axis, store times relative to 1st time
   int nos_traces_added=0;
   bool allvalidxvals=true;
@@ -1385,7 +1410,16 @@ void __fastcall TPlotWindow::Button_add_trace1Click(TObject *Sender)
 #define ERR_TYPE7 6
 #define MAX_ERR_TYPES 7
   bool found_error_type[MAX_ERR_TYPES];
+try{
   for(int i=0;i<MAX_ERR_TYPES;++i) found_error_type[i]=false;// set to true when an example of this type of error is found
+  if(addtraceactive || xchange_running!=-1)
+	{// appear to still be busy doing something - ask user if this is true
+	 UnicodeString errorText="csvgraph appears to still be busy - continue waiting?";
+	 if( MessageDlg(errorText,mtConfirmation,TMsgDlgButtons() <<mbYes <<mbNo ,0) == mrNo)
+		{addtraceactive= false;   // if user says "no" then clear flags  (if they say "yes" don't clear flags and we will return below)
+		 xchange_running= -1;
+		}
+	}
   start_t=clock(); // want total execution time
   if(xchange_running!=-1) return; // still processing a change in x offset
   if(addtraceactive) return; // if still processing a previous call of addtrace
@@ -1398,7 +1432,18 @@ void __fastcall TPlotWindow::Button_add_trace1Click(TObject *Sender)
          }
    compress=CheckBox_Compress->Checked;
    median_ahead_t=atof(AnsiOf(Edit_median_len->Text.c_str()));
-   poly_order=_wtoi(Polyorder->Text.c_str());  // polynomial order for poly fit
+   // poly_order=_wtoi(Polyorder->Text.c_str());  // polynomial order for poly fit
+   poly_order=(int)atof(AnsiOf(Polyorder->Text.c_str()));  // polynomial order for poly fit
+   extern int my_initialisation;
+   // rprintf("my_initialisation=%d (should be 12345)\n",my_initialisation);    // used to check _tMinMain() ran OK
+#if 1
+   if(poly_order<1)
+		{ShowMessage("Warning: polynomial order set to 0, but its minimum value is 1 - I will set it to 1");
+		 poly_order=1;// min of 1   [ without this get divide by zero error when compiled for w64 ! {before _controlfp() added to csvgraph.cpp} ]
+		 Polyorder->Text="1"; // actuall set it in the gui
+		}
+#endif
+   //rprintf("Poly_order=%d\n",poly_order);
    if(FilterType->ItemIndex>0)
 		FString=FilterType->Items->Strings[FilterType->ItemIndex]; // get name of filter user has specified directly from Listbox "FilterType"
    else FString="" ; // "" means no filtering
@@ -1600,7 +1645,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
   gotyvalue=false; // have not got a valid y value yet
 
   while(isspace(*ys)) ++ys; // skip optional leading whitespace
-  start_s=ys; // start of this item [skipped initial whirespace]
+  start_s=ys; // start of this item [skipped initial whitespace]
   if(*ys=='$') ++ys; // allow for an optional $
   ns=ys; // start of actual number
   isnumber=false;
@@ -1615,29 +1660,37 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
          ycol=atoi(ns);   // number (leading $ removed), conversion will be stopped on comma   or end of string
         }
   else // not a simple number - see if its an expression
-    {if(*start_s!=0)
-        {// not a number or $nnn so could be an expression  , if so need to set yexpr=true
-          se=strdup(start_s); // take a copy of the potential expression
-          char *sp=se;
-		  while(*sp!=',' && *sp) ++sp; // look for a comma
-          if(*sp==',') *sp=0; // end of expression
-          while(*ys!=',' && *ys) ++ys; // also need to move ys forward to next item
-		  rprintf("Found an expression for y:%s\n",se);
-          to_rpn(se); // compile expression to rpn
-          if(last_expression_ok())
-                { yexpr=true; // flag expression as valid
-                  ycol=1; // so existing code does not raise an error
-                  optimise_rpn(); // optimise rpn just generated
+	{if(*start_s!=0)
+		{// not a number or $nnn so could be an expression  , if so need to set yexpr=true
+		 // the expression is terminated by a comma (,), but a command can be used in the expression eg as in max(1,2) so need to keep track of brackets as well as commas...
+		  int nos_bracket=0;
+		  se=strdup(start_s); // take a copy of the potential expression
+		  char *sp=se;
+		  while(!(nos_bracket==0 && *sp==',' ) && *sp)
+			{if(*sp=='(') nos_bracket++;
+			 else if(*sp==')' && nos_bracket>0) nos_bracket--;
+			 ++sp; // look for a comma outside of a bracket
+			}
+		  if(*sp==',')
+			 {*sp=0; // end of expression
+			 }
+		  ys=start_s+(sp-se); // also need to move ys forward to next item
+		  rprintf("Found an expression for y:%s (remaining string is \"%s\")\n",se,ys);
+		  to_rpn(se); // compile expression to rpn
+		  if(last_expression_ok())
+				{ yexpr=true; // flag expression as valid
+				  ycol=1; // so existing code does not raise an error
+				  optimise_rpn(); // optimise rpn just generated
 #if 0
-                  print_rpn(); // print out rpn for debugging
-                  rprintf("\n");
+				  print_rpn(); // print out rpn for debugging
+				  rprintf("\n");
 #endif
 				  // use se later in title for trace so cannot free yet
-                }
-          else
-                {
-                 // not a number , or a valid expression
-                 ShowMessage("Error: ycol ["+Edit_ycol->Text+"] contains an invalid expression["+se+"]");
+				}
+		  else
+				{
+				 // not a number , or a valid expression
+				 ShowMessage("Error: ycol ["+Edit_ycol->Text+"] contains an invalid expression["+se+"]");
                  fclose(fin);
                  StatusText->Caption="Invalid expression for ycol";
                  free(s);
@@ -1803,19 +1856,19 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 			  snprintf(cap_str,sizeof(cap_str),"%s",se);
 		  else
 			{
-			 if(is_filter) snprintf(cap_str,sizeof(cap_str),"%s (%s:%g sec t/c)",se,FString.c_str(), median_ahead_t);
+			 if(is_filter) snprintf(cap_str,sizeof(cap_str),"%s (%s, t/c=%g)",se,FString.c_str(), median_ahead_t);
 			 else          snprintf(cap_str,sizeof(cap_str),"%s (%s)",se,FString.c_str());
 			}
 		  pScientificGraph->fnSetCaption(cap_str,iGraph); //graph caption
-          free(se); // can free se now as have printed titles
-        }
+		  free(se); // can free se now as have printed titles
+		}
   else
 		{ rprintf("Adding trace of %s (col %d)\n vs %s (col %d)\n",hdr_col_ptrs[ycol-1],ycol,hdr_col_ptrs[xcol-1],xcol);
 		  if(FString=="")
 			  snprintf(cap_str,sizeof(cap_str),"%s",hdr_col_ptrs[ycol-1]);
 		  else
 			{
-			 if(is_filter) snprintf(cap_str,sizeof(cap_str),"%s (%s:%g sec t/c)",hdr_col_ptrs[ycol-1],FString.c_str(), median_ahead_t);
+			 if(is_filter) snprintf(cap_str,sizeof(cap_str),"%s (%s, t/c=%g)",hdr_col_ptrs[ycol-1],FString.c_str(), median_ahead_t);
 			 else          snprintf(cap_str,sizeof(cap_str),"%s (%s)",hdr_col_ptrs[ycol-1],FString.c_str());
 			}
 		  pScientificGraph->fnSetCaption(cap_str,iGraph); //graph caption
@@ -2250,7 +2303,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
                 break;
         case 3:
 				// linear filter  with user specified time constant and order. No filtering is done if order=0
-                if(median_ahead_t>0.0)
+				if(median_ahead_t>0.0 && poly_order>0)
 						{
 						 StatusText->Caption=FString;
 						 for(int i=0;i<poly_order;++i)
@@ -2555,6 +2608,32 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
   StatusText->Caption=cstring;
   Application->ProcessMessages(); /* allow windows to update (but not go idle) */
   addtraceactive=false;// finished
+ } // end of try
+catch (Exception &exception)
+	{
+		xchange_running= -1; // avoid running multiple instances of Edit_XoffsetChange() in parallel, but still do correct number of updates, -1 is initial value
+		addtraceactive=false; // set to true when add trace active to avoid multiple clicks
+		rprintf("Exception3:\n");
+#ifndef TRY_CATCH_DISABLED
+		Application->ShowException(&exception);
+#endif
+	}
+catch (...)
+	{
+		try
+		{
+			throw Exception("");
+		}
+		catch (Exception &exception)
+		{
+			xchange_running= -1; // avoid running multiple instances of Edit_XoffsetChange() in parallel, but still do correct number of updates, -1 is initial value
+			addtraceactive=false; // set to true when add trace active to avoid multiple clicks
+			rprintf("Exception4:\n");
+#ifndef TRY_CATCH_DISABLED
+			Application->ShowException(&exception);
+#endif
+		}
+	}
 }
 //---------------------------------------------------------------------------
 
@@ -2574,8 +2653,18 @@ static void set_ListboxXY(void) // highlight default columns in ListBoxX/Y (if v
   // first clear all existing selections
   for(i=0;i<nos_cols_in_file;++i)
 	   Form1->pPlotWindow->ListBoxY->Selected[i]=false;
-  // now parse string in Edit_ycol which is a list of comma seperated numbers or expressions to extract column numbers
+
   char *s=AnsiOf(Form1->pPlotWindow->Edit_ycol->Text.c_str());
+  // first check that string contains just whitespace, integers and comma's  (as we cannot do highlighting for anything more complex)
+  while(*s)
+	{while(isspace(*s)) ++s;// skip leading whitespace
+	 while(isdigit(*s)) ++s;// skip an integer
+	 while(isspace(*s)) ++s;// skip trailing whitespace
+	 if(*s==',') ++s;// look to see if there is a comma, if there is skip it and go around loop looking for more
+	 else if(*s) return;// else if not end of the string we have found something more complex, do not do highlighting
+	}
+  // now parse string in Edit_ycol which is a list of comma seperated numbers to extract column numbers
+  s=AnsiOf(Form1->pPlotWindow->Edit_ycol->Text.c_str());
   while(*s)
 	{if(isspace(*s)) ++s;// skip leading whitespace
 	 if(isdigit(*s))
@@ -2688,12 +2777,20 @@ void proces_open_filename(char *fn) // open filename - just to peek at header ro
   AnsiString basename;
   char str_buf[100];  // temp buffer
   int64_t filesize;    // gives filesize which is then used to show progress as a %
+  if(addtraceactive || xchange_running!=-1)
+	{// appear to still be busy doing something - ask user if this is true
+	 UnicodeString errorText="csvgraph appears to still be busy - continue waiting?";
+	 if( MessageDlg(errorText,mtConfirmation,TMsgDlgButtons() <<mbYes <<mbNo ,0) == mrNo)
+		{addtraceactive= false;   // if user says "no" then clear flags  (if they say "yes" don't clear flags and we will return below)
+		 xchange_running= -1;
+		}
+	}
   if(addtraceactive) return; // currently adding traces so cannot change filename
   nos_lines_in_file=0; // we need to count the number of lines in the file
   if(fn==NULL || strcmp(fn,"")==0)
-        {filename="";
-         Form1->pPlotWindow->StatusText->Caption="No filename set";
-         Form1->pPlotWindow->StaticText_filename->Text="Not set";
+		{filename="";
+		 Form1->pPlotWindow->StatusText->Caption="No filename set";
+		 Form1->pPlotWindow->StaticText_filename->Text="Not set";
          return; // if no filename then done here
 		}
   filename=fn;
@@ -2868,6 +2965,14 @@ void proces_open_filename(char *fn) // open filename - just to peek at header ro
 void __fastcall TPlotWindow::Button_Filename1Click(TObject *Sender)
 {  P_UNUSED(Sender);
   // pressed to set filename, as well as setting filename displays column headers
+  if(addtraceactive || xchange_running!=-1)
+	{// appear to still be busy doing something - ask user if this is true
+	 UnicodeString errorText="csvgraph appears to still be busy - continue waiting?";
+	 if( MessageDlg(errorText,mtConfirmation,TMsgDlgButtons() <<mbYes <<mbNo ,0) == mrNo)
+		{addtraceactive= false;   // if user says "no" then clear flags  (if they say "yes" don't clear flags and we will return below)
+		 xchange_running= -1;
+		}
+	}
   if(addtraceactive) return; // if still processing a previous call of addtrace return
   if(xchange_running!=-1) return; // still processing a change in x offset
   rcls();
@@ -2939,6 +3044,14 @@ void __fastcall TPlotWindow::Edit_xChange(TObject *Sender)
 void __fastcall TPlotWindow::Edit_XoffsetChange(TObject *Sender)
 { P_UNUSED(Sender);
   static double last_Xoffset=0;
+  if(addtraceactive || xchange_running!=-1)
+	{// appear to still be busy doing something - ask user if this is true
+	 UnicodeString errorText="csvgraph appears to still be busy - continue waiting?";
+	 if( MessageDlg(errorText,mtConfirmation,TMsgDlgButtons() <<mbYes <<mbNo ,0) == mrNo)
+		{addtraceactive= false;   // if user says "no" then clear flags  (if they say "yes" don't clear flags and we will return below)
+		 xchange_running= -1;
+		}
+	}
   if(addtraceactive) return; // if still processing a previous call of addtrace return now
   if(++xchange_running!=0) return; // normally xchange_running would start at -1 so ++ makes it 0 , if code is already running just return here
 

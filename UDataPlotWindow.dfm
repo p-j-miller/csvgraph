@@ -4729,10 +4729,10 @@ object PlotWindow: TPlotWindow
     object Label13: TLabel
       Left = 166
       Top = 876
-      Width = 75
+      Width = 42
       Height = 13
       Anchors = [akTop, akRight]
-      Caption = 'constant (Secs)'
+      Caption = 'constant'
     end
     object Label14: TLabel
       Left = 164
@@ -4947,8 +4947,8 @@ object PlotWindow: TPlotWindow
       Width = 46
       Height = 21
       Hint = 
-        'Time that median will be taken over (same units as x-axis). 0 me' +
-        'ans no filtering'
+        'Time constant for filter (same units as x-axis). 0 means no filt' +
+        'ering'
       Anchors = [akTop, akRight]
       AutoSize = False
       ParentShowHint = False

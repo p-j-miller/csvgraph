@@ -32,8 +32,8 @@
     <Transaction>2022/09/13 20:11:44.000.929,=D:\builder-10-3-progs\Common-files\rprintf.cpp</Transaction>
     <Transaction>2022/09/13 20:11:44.000.929,=D:\builder-10-3-progs\Common-files\getfloat.cpp</Transaction>
     <Transaction>2022/09/13 20:12:19.000.496,=D:\builder-10-3-progs\Common-files\ya-sort2.c</Transaction>
-    <Transaction>2022/09/13 20:12:19.000.479,=D:\builder-10-3-progs\Common-files\ya-median.c</Transaction>
     <Transaction>2022/09/13 20:12:19.000.462,=D:\builder-10-3-progs\Common-files\matrix.c</Transaction>
+    <Transaction>2022/09/13 20:12:19.000.479,=D:\builder-10-3-progs\Common-files\ya-median.c</Transaction>
     <Transaction>2022/09/13 20:12:19.000.462,=D:\builder-10-3-progs\Common-files\expr-code.c</Transaction>
     <Transaction>2022/09/13 20:12:19.000.479,=D:\builder-10-3-progs\Common-files\multiple-lin-reg-fn.c</Transaction>
     <Transaction>2022/09/13 20:12:19.000.462,=D:\builder-10-3-progs\Common-files\interpolate.c</Transaction>
@@ -44,4 +44,5 @@
     <Transaction>2022/09/13 20:20:22.000.079,=D:\builder-10-3-progs\Common-files\strptime.c</Transaction>
     <Transaction>2022/09/13 20:20:22.000.063,=D:\builder-10-3-progs\Common-files\strftime.c</Transaction>
   </Transactions>
+	<BT_BuildType>Debug</BT_BuildType>
 </BorlandProject>

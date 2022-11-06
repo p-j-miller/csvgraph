@@ -118,6 +118,7 @@ version 6.0 14/9/2022 - split out pure C code - rprintf.cpp and getfloat.cpp mad
 #include <stdint.h> /* for uint32_t etc */
 #include "interpolate.h"
 
+
 #define  onepassreg /* if defined use functions that only make 1 pass over data for regression, otherwise 2 passes are used . Normally 1 pass is faster and gives same results as 2 pass */
 #define STATIC_ASSERT(condition) extern int STATIC_ASSERT_##__FILE__##__LINE__[2*!!(condition)-1]  /* check at compile time and works in a global or function context see https://scaryreasoner.wordpress.com/2009/02/28/checking-sizeof-at-compile-time/ */
 
@@ -350,7 +351,7 @@ static void addrpn_variable(pnlist v) /* adds variable to rpn */
  size_t i;
  addrpn_op(VARIABLE);
  u.p=v;
- for(i=0;i<sizeof(pnlist);++i) /* write out all 4 bytes of value */
+ for(i=0;i<sizeof(pnlist);++i) /* write out all 4/8 bytes of pointer */
         {
          addrpn_c(u.c[i]);
         }
@@ -459,7 +460,7 @@ static void expr0(void) /* deal with ?: operators */
                  return;
                 }
           ++e; /* pass over : */
-          expr0(); /* expression value if fals */
+          expr0(); /* expression value if false */
           if(!flag) return;
           while(isspace(*e))++e; /* skip whitespace */
           addrpn_op(QN);

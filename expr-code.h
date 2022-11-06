@@ -42,6 +42,7 @@
 #define Allow_dollar_vars_in_expr /* if defined allow variables of $1 .. like awk in xepr */
 #define Allow_dollar_T /* if defined (as well as above) allow variables like $T1 for "trace 1" */
 
+
 /* general purpose hash functions based on Fowler/Noll/Vo hash fnv-1a , with optional "mixing" at the end */
 void hash_reset(uint32_t *h); // reset hash h to its initial value
 void hash_add(char *s, uint32_t *h); // adds string s to hash h, updates h

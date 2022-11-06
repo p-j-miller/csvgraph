@@ -32,6 +32,8 @@
 
 #include "UScientificGraph.h"
 #include "UScalesWindow.h"
+#define NoForm1
+#include "rprintf.h"
 
 //---------------------------------------------------------------------
 #pragma resource "*.dfm"
@@ -84,7 +86,10 @@ void __fastcall TScalesWindow::OKBtnClick(TObject *Sender)
 
   }
   catch(const EConvertError &e)                //wrong input
-  {P_UNUSED(e)
+  {
+#ifndef TRY_CATCH_DISABLED
+   P_UNUSED(e)
+#endif
    Application->MessageBox(L"Not a Number.", L"Input Error", MB_OK);
   }
 
