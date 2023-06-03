@@ -84,6 +84,17 @@ Minor changes:
 
 3v4 - 1-10-2022 - fixed dpi handling issue when multiple monitors used on 64 bit version.
 
+3v5 – 6/11/2022 – on a right mouse click when a line is selected then the slope of this line (dy/dx) is 
+given as well as the coordinates of both end of the line. A filename can be given on the command line (on earlier versions this did not work for the 64-bit version). An expression containing a function is now allowed for the y axis (e.g. max($2,0) ).
+
+3v6 3/6/2023 –
+ Long column headers now cause a scroll bar to be automatically added to the X & Y listboxes so they can be fully seen.
+Save x range on screen as CSV added to File menu.
+Option (tickbox) added to add basename of filename to legends of traces on the graph, which is useful if the same column is read from multiple files.
+Y axis title automatically added unless user specifies one (based on column header of 1st trace added).
+Added option to load X as Value/60 (sec->min), Val/3600 (sec->hrs), val/86400 (sec->days).
+Error handling for X values in a user defined date/time format improved, and trailing whitespace now allowed.
+
 
 # Installation
 Cvsgraph is a portable program which does not need installation.
