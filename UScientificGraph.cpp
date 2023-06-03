@@ -3142,8 +3142,8 @@ void TScientificGraph::fnCheckScales()
         }
 }
 
-bool TScientificGraph::SaveCSV(char *filename,char *x_axis_name)
-{          // save data into specified csv filename
+bool TScientificGraph::SaveCSV(char *filename,char *x_axis_name, double xmin, double xmax)
+{          // save data into specified csv filename - only save xvalues in defined range
  size_t j=0;
  SGraph *aGraph,*xGraph;
  FILE *fp;
@@ -3206,6 +3206,7 @@ bool TScientificGraph::SaveCSV(char *filename,char *x_axis_name)
 		 Application->ProcessMessages(); /* allow windows to update (but not go idle) */
 		}
 	  xj= xGraph->x_vals[j];
+	  if(xj<xmin || xj>xmax) continue; // outside of range to save
 	  fprintf(fp,"%.9g",xj);    // printf x value first. %.9g (9sf) gives max resolution for a float
 	  for (int i=0; i<iNumberOfGraphs; i++)  // now print y values for all traces
 		{aGraph=(SGraph*) pHistory->Items[i];

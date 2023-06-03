@@ -219,7 +219,7 @@ public:
   int fnBottomBorder() {return (int)(iBitmapHeight*(1-fBottomBorder));}
 
   // save functions
-  bool SaveCSV(char *filename,char *x_axis_name);
+  bool SaveCSV(char *filename,char *x_axis_name, double xmin, double xmax);
   //Repaint
   void fnPaint();
 };

@@ -102,6 +102,13 @@
 //                  Right mouse click now gives slope of line, and results are presented in a clearer way.
 //                  _controlfp() {in csvgraph.cpp) used to turn off floating point exceptions (otherwise can get divide by zero errors etc)
 //                  if filename given on command line, 64 bit version did not pick it up - fixed.
+// 3v6 6/4/2023     Long column headers now cause a scroll bar to be automatically added to the X & Y listboxes so they can be fully seen
+//                  Save x range on screen as CSV added to File menu.
+//                  Option (tickbox) added to add basename of filename to legends of traces on the graph,
+//                   which is useful if the same column is read from multiple files.
+//                  Y axis title automatically added unless user specifies one (based on column header of 1st trace added).
+//                  Added option to load X as Value/60 (sec->min), Val/3600 (sec->hrs), val/86400 (sec->days)
+//                  Error handling for X values in a user defined date/time format improved, and trailing whitespace now allowed
 //
 // TO DO:
 //
@@ -163,6 +170,7 @@
 #include <dos.h>
 #include <stdlib.h>
 #include <float.h>
+#include <values.h>
 #include "matrix.h" /* must come before include of multiple-lin-reg.h */
 #include "multiple-lin-reg-fn.h"
 #include "time_local.h"
@@ -176,9 +184,9 @@
 extern TForm1 *Form1;
 extern const char * Prog_Name;
 #ifdef _WIN64
-const char * Prog_Name="CSVgraph (Github) 3v5 (64 bit)";   // needs to be global as used in about box as well.
+const char * Prog_Name="CSVgraph (Github) 3v6 (64 bit)";   // needs to be global as used in about box as well.
 #else
-const char * Prog_Name="CSVgraph (Github) 3v5 (32 bit)";   // needs to be global as used in about box as well.
+const char * Prog_Name="CSVgraph (Github) 3v6 (32 bit)";   // needs to be global as used in about box as well.
 #endif
 #if 1 /* if 1 then use fast_strtof() rather than atof() for floating point conversion. Note in this application this is only slightly faster (1-5%) */
 extern "C" float fast_strtof(const char *s,char **endptr); // if endptr != NULL returns 1st character thats not in the number
@@ -234,6 +242,7 @@ static unsigned int MAX_COLS=0;
 static AnsiString filename;
 static AnsiString save_filename;
 const static char *default_x_label="Horizontal axis title";
+const static char *default_y_label="Vertical axis title";
 
 void proces_open_filename(char *fn); // open filename - just to peek at header row
 
@@ -462,6 +471,7 @@ __fastcall TPlotWindow::TPlotWindow(TComponent* Owner) : TForm(Owner)
 #endif
   pScientificGraph->bZeroLine=true;        //zero line in plot
   Edit_x->Text=default_x_label;            // set default x label
+  Edit_y->Text=default_y_label;            // set default y label
   fnReDraw();                               //redraw plot
 }
 #else
@@ -608,6 +618,7 @@ __fastcall TPlotWindow::TPlotWindow(TComponent* Owner) : TForm(Owner)
 #endif
   pScientificGraph->bZeroLine=true;        //zero line in plot
   Edit_x->Text=default_x_label;            // set default x label
+  Edit_y->Text=default_y_label;            // set default x label
   fnReDraw();                               //redraw plot
 }
 #endif
@@ -1073,6 +1084,9 @@ void __fastcall TPlotWindow::Button_clear_all_traces1Click(TObject *Sender)
   line_colour=0; // always start with the same line colour
   Edit_x->Text=default_x_label;
   pScientificGraph->XLabel=default_x_label;
+  Edit_y->Text=default_y_label;
+  pScientificGraph->YLabel1=default_y_label;   // 2 Y axis labels (2 lines allowed)
+  pScientificGraph->YLabel2="";
   zoomed=false;
   fnReDraw();
   StatusText->Caption="Cleared all traces";
@@ -1567,7 +1581,7 @@ try{
   bool isnumber;
   char *date_time_fmt=NULL;
   date_time_fmt=strdup(AnsiOf(Date_time_fmt->Text.c_str()));  // only do this once
-  if(Xcol_type->ItemIndex==3) rprintf("Date/time format is: %s\n",date_time_fmt);
+  if(Xcol_type->ItemIndex==6) rprintf("Date/time format is: %s\n",date_time_fmt);
   s=strdup(AnsiOf(Edit_ycol->Text.c_str()));
   if(s==NULL||date_time_fmt==NULL)
         {
@@ -1594,7 +1608,7 @@ try{
 							}
                         break;
 				 case 1: // time h:m:s.s  - converted into time (secs)
-				 case 3: // date & time - also converted into seconds
+				 case 6: // date & time - also converted into seconds
 						if(is_fft)
 							{
 							 pScientificGraph->XLabel="Frequency (Hz)";
@@ -1605,7 +1619,43 @@ try{
 							 pScientificGraph->XLabel="Time (secs)";
 							 Edit_x->Text="Time (secs)";
 							}
-                        break;
+						break;
+				 case 3: // val/60 assume this gives minutes
+						if(is_fft)
+							{  // frequency, but not Hz!
+							 pScientificGraph->XLabel="Frequency";
+							 Edit_x->Text="Frequency";
+							}
+						else
+							{
+							 pScientificGraph->XLabel="Time (mins)";
+							 Edit_x->Text="Time (mins)";
+							}
+						break;
+				 case 4: // val/3600 assume this gives hours
+						if(is_fft)
+							{  // frequency, but not Hz!
+							 pScientificGraph->XLabel="Frequency";
+							 Edit_x->Text="Frequency";
+							}
+						else
+							{
+							 pScientificGraph->XLabel="Time (hours)";
+							 Edit_x->Text="Time (hours)";
+							}
+						break;
+				 case 5: // val/86400 assume this gives days
+						if(is_fft)
+							{  // frequency, but not Hz!
+							 pScientificGraph->XLabel="Frequency";
+							 Edit_x->Text="Frequency";
+							}
+						else
+							{
+							 pScientificGraph->XLabel="Time (days)";
+							 Edit_x->Text="Time (days)";
+							}
+						break;
 				 default: // should only be "2" - value in specified column
 						if(is_fft)
 							{pScientificGraph->XLabel="Frequency"; // x=linenumber in file
@@ -1850,6 +1900,8 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 
   char cap_str[256]; // caption for trace   (used for error messages later as well as graph caption her)
   // add ledgend for trace - add (XXX filter=%g) if a filter is in use
+  AnsiString basename;
+  basename=filename.SubString(filename.LastDelimiter("\\:")+1,128)+" : ";// in case CheckBox_legend_add_filename is ticked
   if(yexpr)
 		{ rprintf("Adding trace of %s (expression)\n vs %s (col %d)\n",se,hdr_col_ptrs[xcol-1],xcol);
 		  if(FString=="")
@@ -1859,33 +1911,37 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 			 if(is_filter) snprintf(cap_str,sizeof(cap_str),"%s (%s, t/c=%g)",se,FString.c_str(), median_ahead_t);
 			 else          snprintf(cap_str,sizeof(cap_str),"%s (%s)",se,FString.c_str());
 			}
-		  pScientificGraph->fnSetCaption(cap_str,iGraph); //graph caption
+		  if(CheckBox_legend_add_filename->State==cbChecked)
+			{// add basename of filename to legend
+			 pScientificGraph->fnSetCaption(basename+cap_str,iGraph); //graph caption
+			}
+		  else
+			pScientificGraph->fnSetCaption(cap_str,iGraph); //graph caption
 		  free(se); // can free se now as have printed titles
 		}
   else
 		{ rprintf("Adding trace of %s (col %d)\n vs %s (col %d)\n",hdr_col_ptrs[ycol-1],ycol,hdr_col_ptrs[xcol-1],xcol);
 		  if(FString=="")
-			  snprintf(cap_str,sizeof(cap_str),"%s",hdr_col_ptrs[ycol-1]);
+			  snprintf(cap_str,sizeof(cap_str),"%s ",hdr_col_ptrs[ycol-1]);
 		  else
 			{
 			 if(is_filter) snprintf(cap_str,sizeof(cap_str),"%s (%s, t/c=%g)",hdr_col_ptrs[ycol-1],FString.c_str(), median_ahead_t);
 			 else          snprintf(cap_str,sizeof(cap_str),"%s (%s)",hdr_col_ptrs[ycol-1],FString.c_str());
 			}
-		  pScientificGraph->fnSetCaption(cap_str,iGraph); //graph caption
-        }
-
-#if 0
-  // automatically add axis labels
-  // note these are global so assume user does something sensible when displaying multiple graphs
-  pScientificGraph->XLabel=col_ptrs[xcol-1]; // use latest name for X axis
-  if(iGraph==0)
-        {pScientificGraph->YLabel1=hdr_col_ptrs[ycol-1];  // use for 1st graph Y axis
-         pScientificGraph->YLabel2="";
-        }
-  else
-        {
-         pScientificGraph->YLabel2=hdr_col_ptrs[ycol-1];  // last name added for 2nd on...
-        }
+		  if(CheckBox_legend_add_filename->State==cbChecked)
+			{// add basename of filename to legend
+			 pScientificGraph->fnSetCaption(basename+cap_str,iGraph); //graph caption
+			}
+		  else
+			pScientificGraph->fnSetCaption(cap_str,iGraph); //graph caption
+		}
+#if 1
+  // automatically add y axis label
+  // note there is only 1 y axis, so assume user does something sensible when displaying multiple graphs
+  if(Edit_y->Text==default_y_label && iGraph==0)
+	{// if y axis title has not been set, and this is the 1st trace added, set it automatically here
+	 Edit_y->Text=hdr_col_ptrs[ycol-1];
+	}
 #endif
 
   unsigned int max_col=max((unsigned int)xcol,(unsigned int)ycol);
@@ -2056,7 +2112,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 							 xval=(float)ti; // can loose resolution for big times, but we are limited by storing xvalues as floats.
 							}
 						break;
-				 case 3: // date/time with user specified format  - stored in char * date_time_fmt
+				 case 6: // date/time with user specified format  - stored in char * date_time_fmt
 						{ // there is no need to skip initial whitespace or deal with quotes here as can be defined in date_time_fmt
 						 //char * ya_strptime(const char *s, const char *format, struct tm *tm)
 						 char *dptr;
@@ -2068,25 +2124,26 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						 if(dptr==NULL)
 							{// something was wrong with date/time or format
 							 allvalidxvals=false;
-							 if((++nos_errs<=MAX_ERRS || !found_error_type[ERR_TYPE1]) )
+							 if(++nos_errs<=MAX_ERRS || !found_error_type[ERR_TYPE1] )
 								{found_error_type[ERR_TYPE1]=true; // note we have printed an example of this type of error
 								 rprintf("Warning: x value on line %d has an invalid date/time (strptime(\"%s\") returned NULL): %s\n",lines_in_file+1,date_time_fmt,col_ptrs[xcol-1]);
 								}
 							 continue;      // ignore line
 							}
+						 while(isspace(*dptr)) ++dptr; // if remainder is whitespace then thats OK
 						 if(*dptr!=0)
 							{ // ya_strptime() did not process all of the string  again issue could be date/time or format
 							 allvalidxvals=false;
-							 if((nos_errs<=MAX_ERRS || !found_error_type[ERR_TYPE2]) )
+							 if(++nos_errs<=MAX_ERRS || !found_error_type[ERR_TYPE2] )
 								{found_error_type[ERR_TYPE2]=true;  // note we have printed an example of this type of error
-								 rprintf("Warning: x value on line %d has an invalid date/time (format \"%s\" did not match whole string): %s\n",lines_in_file+1,date_time_fmt,col_ptrs[xcol-1]);
+								 rprintf("Warning: x value on line %d has an invalid date/time (format \"%s\" did not match whole string: %s [\"%s\" left])\n",lines_in_file+1,date_time_fmt,col_ptrs[xcol-1],dptr);
 								}
 							 continue;      // ignore line
 							}
 						 if(!check_tm(&my_tm))
-							{ // ya_strptime() did not process all of the string  again issue could be date/time or format
+							{ // invalid date/time found
 							 allvalidxvals=false;
-							 if((nos_errs<=MAX_ERRS || !found_error_type[ERR_TYPE3]) )
+							 if(++nos_errs<=MAX_ERRS || !found_error_type[ERR_TYPE3] )
 								{found_error_type[ERR_TYPE3]=true;  // note we have printed an example of this type of error
 								 rprintf("Warning: x value on line %d has an invalid date/time (check_tm() failed): %s\n",lines_in_file+1,col_ptrs[xcol-1]);
 								}
@@ -2116,7 +2173,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 #endif
 						}
 						break;
-				 default: // should only be "2" - value in specified column
+				 default: // could be 2,3,4 or 5 value in specified column, potentially divided by a constant
 						st=col_ptrs[xcol-1];
 						while(isspace(*st)) ++st; // skip any leading whitespace
 						if(*st=='"')
@@ -2135,6 +2192,12 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 							 continue;    // no valid number found
 							}
 						// if(xval!=yval) rprintf("**** xval (col %d) %s=>%g\n",xcol,st,xval);
+						if(Xcol_type->ItemIndex==3)
+							xval/=60.0; // sec->min
+						else if(Xcol_type->ItemIndex==4)
+							xval/=3600.0; // sec->hrs
+						else if(Xcol_type->ItemIndex==5)
+							xval/=86400.0; // sec->days
 						break;
 				}
 			}
@@ -2775,7 +2838,7 @@ void proces_open_filename(char *fn) // open filename - just to peek at header ro
   unsigned int nos_cols_in_file;
   unsigned int j;
   AnsiString basename;
-  char str_buf[100];  // temp buffer
+  char str_buf[1000];  // temp buffer
   int64_t filesize;    // gives filesize which is then used to show progress as a %
   if(addtraceactive || xchange_running!=-1)
 	{// appear to still be busy doing something - ask user if this is true
@@ -2916,36 +2979,62 @@ void proces_open_filename(char *fn) // open filename - just to peek at header ro
   MAX_COLS=j;
   nos_cols_in_file=parsecsv(col_names,hdr_col_ptrs, MAX_COLS);// 1st line = headers
   parsecsv(csv_line,col_ptrs,MAX_COLS); // 2nd line (real data)
-  Form1->pPlotWindow->ListBoxX->Items->Clear();
-  Form1->pPlotWindow->ListBoxY->Items->Clear();
-  for(j=0;j<nos_cols_in_file;++j)
-        { // example column name from REPS is /'Data'/'Date/Time', dlete leading data and single quotes
-         if(strncmp(hdr_col_ptrs[j],"/'Data'/'",strlen("/'Data'/'"))==0)
-                {hdr_col_ptrs[j]+=strlen("/'Data'/'");  // get rid of leading portion
+   {// update list boxes with names of columns found, use { so we can declare local variables
+	// add in horizontal scroll bar only if its required
+	int max_str_len_pixels=0,str_len_pixels;
+	TLabel* label = new TLabel(Form1); // dynamic TLabel, just used so we can get the length of strings
+	label->AutoSize = true;
+	label->Font=Form1->pPlotWindow->ListBoxX->Font;
+	//label->Font->Name = font; // your font
+	// label->Font->Size = size; // your font size
+	Form1->pPlotWindow->ListBoxX->Items->Clear();
+	Form1->pPlotWindow->ListBoxY->Items->Clear();
+	for(j=0;j<nos_cols_in_file;++j)
+		{ // example column name from REPS is /'Data'/'Date/Time', dlete leading data and single quotes
+		 if(strncmp(hdr_col_ptrs[j],"/'Data'/'",strlen("/'Data'/'"))==0)
+				{hdr_col_ptrs[j]+=strlen("/'Data'/'");  // get rid of leading portion
 
-                 for(char *s=hdr_col_ptrs[j];*s;++s)
-                        {if(s[1]==0 && *s=='\'') *s=0;   // get rid of final '
-                        }
-                }
-         if(hdr_col_ptrs[j][0]=='"') // if column name is in double quotes then delete them
-                {hdr_col_ptrs[j]++;  // get rid of leading "
+				 for(char *s=hdr_col_ptrs[j];*s;++s)
+						{if(s[1]==0 && *s=='\'') *s=0;   // get rid of final '
+						}
+				}
+		 if(hdr_col_ptrs[j][0]=='"') // if column name is in double quotes then delete them
+				{hdr_col_ptrs[j]++;  // get rid of leading "
 
-                 for(char *s=hdr_col_ptrs[j];*s;++s)
-                        {if(s[1]==0 && *s=='"') *s=0;   // get rid of final "
-                        }
+				 for(char *s=hdr_col_ptrs[j];*s;++s)
+						{if(s[1]==0 && *s=='"') *s=0;   // get rid of final "
+						}
 				}
 		 rprintf("Col %-3d : %s  =%s,...\n",j+1,hdr_col_ptrs[j],col_ptrs[j]);// print col number, name of column from header line and value from 2nd line
 #if 1
 		 /* add text as column number:text from header . This helps if column headers are not very descriptive [or missing] */
+
+
+
 		 snprintf(str_buf,sizeof(str_buf)-1,"%d: %s",j+1,hdr_col_ptrs[j]);
+		 label->Caption =str_buf;
+		 str_len_pixels=label->Width+5; // gets width of string in pixels . The extra "+5" gives a little space at the end so the whole character can be seen
+		 if(str_len_pixels>max_str_len_pixels) max_str_len_pixels=str_len_pixels;
 		 Form1->pPlotWindow->ListBoxX->Items->Add(str_buf);
 		 Form1->pPlotWindow->ListBoxY->Items->Add(str_buf);
 #else
+		 label->Caption =hdr_col_ptrs[j];
+		 str_len_pixels=label->Width;
+		 if(str_len_pixels>max_str_len_pixels) max_str_len_pixels=str_len_pixels;
 		 Form1->pPlotWindow->ListBoxX->Items->Add(hdr_col_ptrs[j]);
 		 Form1->pPlotWindow->ListBoxY->Items->Add(hdr_col_ptrs[j]);
 #endif
 		}
-
+	if(max_str_len_pixels>Form1->pPlotWindow->ListBoxX->Width)
+		 Form1->pPlotWindow->ListBoxX->ScrollWidth=max_str_len_pixels;  // allow scrolling
+	else
+		Form1->pPlotWindow->ListBoxX->ScrollWidth=0;     // no scroll bar needed as text fits
+	if(max_str_len_pixels>Form1->pPlotWindow->ListBoxY->Width)
+		 Form1->pPlotWindow->ListBoxY->ScrollWidth=max_str_len_pixels;
+	else
+		Form1->pPlotWindow->ListBoxY->ScrollWidth=0;
+	delete label;
+   }
   fclose(fin);// only want 1st line here (just display headers so user can select ones to graph
   set_ListboxXY(); // highlight items in ListBoxX & Y that have been selected in Edit_xcol & Edit_ycol
   Application->ProcessMessages(); /* allow windows to update (but not go idle), do this regularly  */
@@ -3177,7 +3266,7 @@ void __fastcall TPlotWindow::SaveDataAs1Click(TObject *Sender)
  save_filename=getsaveCSVfilename();// use windows file selector
  if(save_filename!="")
 		{
-		 if(pScientificGraph->SaveCSV(save_filename.c_str(),AnsiOf(Edit_x->Text.c_str())))   // use x axis title as name of 1st column in csv file
+		 if(pScientificGraph->SaveCSV(save_filename.c_str(),AnsiOf(Edit_x->Text.c_str()),-MAXDOUBLE,MAXDOUBLE))   // use x axis title as name of 1st column in csv file
 				{ShowMessage("CSV save completed OK");
 				}
 		}
@@ -3185,7 +3274,7 @@ void __fastcall TPlotWindow::SaveDataAs1Click(TObject *Sender)
   // use VCL "vista" fileselector
   if(FileSaveDialogCSV->Execute()) // get a filename     was SavePictureDialog1->Execute()
 		{save_filename=FileSaveDialogCSV->FileName;
-		 if(pScientificGraph->SaveCSV(save_filename.c_str(),AnsiOf(Edit_x->Text.c_str())))   // use x axis title as name of 1st column in csv file
+		 if(pScientificGraph->SaveCSV(save_filename.c_str(),AnsiOf(Edit_x->Text.c_str()),-MAXDOUBLE,MAXDOUBLE))   // use x axis title as name of 1st column in csv file
 				{ShowMessage("CSV save completed OK");
 				}
 		}
@@ -3490,6 +3579,33 @@ void __fastcall TPlotWindow::Action1Execute(TObject *Sender)
 void __fastcall TPlotWindow::Time_from0Click(TObject *Sender)
 { P_UNUSED(Sender);
   start_time_from_0=Time_from0->State==cbChecked;
+}
+//---------------------------------------------------------------------------
+
+void __fastcall TPlotWindow::Save2Click(TObject *Sender)
+{  // save x range on screen as CSV
+ P_UNUSED(Sender);
+ double xmin,xmax;
+ xmin=pScientificGraph->fnGetScaleXMin();
+ xmax=pScientificGraph->fnGetScaleXMax();
+ rprintf("Save X range on screen (%g to %g) as CSV\n",xmin,xmax);
+#ifndef UseVCLdialogs
+ save_filename=getsaveCSVfilename();// use windows file selector
+ if(save_filename!="")
+		{
+		 if(pScientificGraph->SaveCSV(save_filename.c_str(),AnsiOf(Edit_x->Text.c_str()),xmin,xmax))   // use x axis title as name of 1st column in csv file
+				{ShowMessage("CSV save of X range on screen completed OK");
+				}
+		}
+#else
+  // use VCL "vista" fileselector
+  if(FileSaveDialogCSV->Execute()) // get a filename     was SavePictureDialog1->Execute()
+		{save_filename=FileSaveDialogCSV->FileName;
+		 if(pScientificGraph->SaveCSV(save_filename.c_str(),AnsiOf(Edit_x->Text.c_str()),xmin,xmax))   // use x axis title as name of 1st column in csv file
+				{ShowMessage("CSV save of X range on screen completed OK");
+				}
+		}
+#endif
 }
 //---------------------------------------------------------------------------
 

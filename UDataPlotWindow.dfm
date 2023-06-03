@@ -4294,7 +4294,7 @@ object PlotWindow: TPlotWindow
   OnResize = FormResize
   DesignSize = (
     1290
-    1002)
+    982)
   PixelsPerInch = 96
   TextHeight = 13
   object Panel1: TPanel
@@ -4614,9 +4614,9 @@ object PlotWindow: TPlotWindow
     end
   end
   object Panel2: TScrollBox
-    Left = 975
-    Top = -1
-    Width = 295
+    Left = 990
+    Top = 0
+    Width = 299
     Height = 980
     HorzScrollBar.Smooth = True
     HorzScrollBar.Tracking = True
@@ -4625,6 +4625,7 @@ object PlotWindow: TPlotWindow
     Anchors = [akTop, akRight]
     AutoScroll = False
     AutoSize = True
+    BevelEdges = []
     DockSite = True
     DragKind = dkDock
     DragMode = dmAutomatic
@@ -4632,10 +4633,10 @@ object PlotWindow: TPlotWindow
     OnEndDock = Panel2EndDock
     OnResize = Panel2Resize
     DesignSize = (
-      291
+      295
       976)
     object Label3: TLabel
-      Left = 15
+      Left = 12
       Top = 487
       Width = 42
       Height = 13
@@ -4643,7 +4644,7 @@ object PlotWindow: TPlotWindow
       Caption = 'X column'
     end
     object Label4: TLabel
-      Left = 12
+      Left = 9
       Top = 655
       Width = 42
       Height = 13
@@ -4651,8 +4652,8 @@ object PlotWindow: TPlotWindow
       Caption = 'Y column'
     end
     object Label5: TLabel
-      Left = 4
-      Top = 252
+      Left = 9
+      Top = 206
       Width = 61
       Height = 16
       Anchors = [akTop, akRight]
@@ -4665,24 +4666,24 @@ object PlotWindow: TPlotWindow
       ParentFont = False
     end
     object Label6: TLabel
-      Left = 28
-      Top = 295
+      Left = 17
+      Top = 264
       Width = 25
       Height = 13
       Anchors = [akTop, akRight]
       Caption = 'Y (^)'
     end
     object Label7: TLabel
-      Left = 28
-      Top = 319
+      Left = 17
+      Top = 283
       Width = 29
       Height = 13
       Anchors = [akTop, akRight]
       Caption = 'X (->)'
     end
     object Label8: TLabel
-      Left = 12
-      Top = 351
+      Left = 9
+      Top = 311
       Width = 25
       Height = 16
       Anchors = [akTop, akRight]
@@ -4695,7 +4696,7 @@ object PlotWindow: TPlotWindow
       ParentFont = False
     end
     object Label9: TLabel
-      Left = 157
+      Left = 154
       Top = 487
       Width = 38
       Height = 13
@@ -4703,23 +4704,23 @@ object PlotWindow: TPlotWindow
       Caption = 'X offset'
     end
     object Label10: TLabel
-      Left = 166
-      Top = 859
+      Left = 180
+      Top = 864
       Width = 45
       Height = 13
       Anchors = [akTop, akRight]
       Caption = 'filter time'
     end
     object Label11: TLabel
-      Left = 28
-      Top = 274
+      Left = 17
+      Top = 228
       Width = 44
       Height = 13
       Anchors = [akTop, akRight]
       Caption = 'Font Size'
     end
     object Label12: TLabel
-      Left = 9
+      Left = 6
       Top = 814
       Width = 107
       Height = 13
@@ -4727,7 +4728,7 @@ object PlotWindow: TPlotWindow
       Caption = 'Processing of Y values'
     end
     object Label13: TLabel
-      Left = 166
+      Left = 190
       Top = 876
       Width = 42
       Height = 13
@@ -4735,7 +4736,7 @@ object PlotWindow: TPlotWindow
       Caption = 'constant'
     end
     object Label14: TLabel
-      Left = 164
+      Left = 162
       Top = 898
       Width = 79
       Height = 13
@@ -4743,24 +4744,24 @@ object PlotWindow: TPlotWindow
       Caption = 'Polynomial order'
     end
     object Label15: TLabel
-      Left = 184
-      Top = 378
+      Left = 181
+      Top = 338
       Width = 43
       Height = 13
       Anchors = [akTop, akRight]
       Caption = 'Skip lines'
     end
     object Label16: TLabel
-      Left = 189
-      Top = 397
+      Left = 186
+      Top = 357
       Width = 88
       Height = 13
       Anchors = [akTop, akRight]
       Caption = 'before csv header'
     end
     object CheckBox1: TCheckBox
-      Left = 20
-      Top = 231
+      Left = 144
+      Top = 147
       Width = 97
       Height = 17
       Anchors = [akTop, akRight]
@@ -4771,7 +4772,7 @@ object PlotWindow: TPlotWindow
       OnClick = ReDrawExecute
     end
     object RadioGroup2: TRadioGroup
-      Left = 20
+      Left = 17
       Top = 95
       Width = 121
       Height = 105
@@ -4786,7 +4787,7 @@ object PlotWindow: TPlotWindow
       TabOrder = 14
     end
     object RadioGroup3: TRadioGroup
-      Left = 20
+      Left = 17
       Top = 0
       Width = 121
       Height = 89
@@ -4805,8 +4806,8 @@ object PlotWindow: TPlotWindow
       TabOrder = 19
     end
     object CheckBox3: TCheckBox
-      Left = 20
-      Top = 207
+      Left = 144
+      Top = 116
       Width = 105
       Height = 17
       Anchors = [akTop, akRight]
@@ -4814,7 +4815,7 @@ object PlotWindow: TPlotWindow
       TabOrder = 20
     end
     object Edit_xcol: TEdit
-      Left = 74
+      Left = 71
       Top = 479
       Width = 67
       Height = 21
@@ -4829,7 +4830,7 @@ object PlotWindow: TPlotWindow
       OnChange = Edit_xcolChange
     end
     object Edit_ycol: TEdit
-      Left = 74
+      Left = 71
       Top = 647
       Width = 214
       Height = 21
@@ -4846,7 +4847,7 @@ object PlotWindow: TPlotWindow
       OnChange = Edit_ycolChange
     end
     object StatusText: TStaticText
-      Left = 7
+      Left = 4
       Top = 960
       Width = 281
       Height = 16
@@ -4857,8 +4858,8 @@ object PlotWindow: TPlotWindow
       TabOrder = 15
     end
     object Edit_y: TEdit
-      Left = 60
-      Top = 295
+      Left = 56
+      Top = 253
       Width = 231
       Height = 21
       Hint = 'Vertical (y) axis title - use \n to add a newline'
@@ -4871,8 +4872,8 @@ object PlotWindow: TPlotWindow
       OnChange = Edit_yChange
     end
     object Edit_x: TEdit
-      Left = 60
-      Top = 319
+      Left = 56
+      Top = 280
       Width = 231
       Height = 21
       Hint = 'Horizontal (x) axis title'
@@ -4885,13 +4886,12 @@ object PlotWindow: TPlotWindow
       OnChange = Edit_xChange
     end
     object StaticText_filename: TEdit
-      Left = 41
-      Top = 351
+      Left = 40
+      Top = 311
       Width = 250
       Height = 18
       Hint = 'Press '#39'Set Filename'#39' Button to  select file'
       Anchors = [akTop, akRight]
-      AutoSize = False
       BorderStyle = bsNone
       Color = clMenu
       Constraints.MaxWidth = 250
@@ -4908,10 +4908,10 @@ object PlotWindow: TPlotWindow
       Text = 'Not Set'
     end
     object Xcol_type: TRadioGroup
-      Left = 20
-      Top = 375
-      Width = 153
-      Height = 97
+      Left = 0
+      Top = 336
+      Width = 162
+      Height = 129
       Hint = 'Select data source for the x-axis'
       Anchors = [akTop, akRight]
       Caption = 'X axis data source'
@@ -4920,13 +4920,16 @@ object PlotWindow: TPlotWindow
         'Line number in file'
         'Time (h:m:s) in X column'
         'Value in X column'
-        'Date/Time in X column')
+        'Value/60 (sec->min)'
+        'Value/3600(sec->hour)'
+        'Value/86400 (sec->days)'
+        'Date/Time in format to right')
       ParentShowHint = False
       ShowHint = True
       TabOrder = 5
     end
     object Edit_Xoffset: TEdit
-      Left = 214
+      Left = 211
       Top = 479
       Width = 60
       Height = 21
@@ -4942,7 +4945,7 @@ object PlotWindow: TPlotWindow
       OnChange = Edit_XoffsetChange
     end
     object Edit_median_len: TEdit
-      Left = 242
+      Left = 240
       Top = 868
       Width = 46
       Height = 21
@@ -4957,7 +4960,7 @@ object PlotWindow: TPlotWindow
       Text = '0'
     end
     object FilterType: TListBox
-      Left = 0
+      Left = 1
       Top = 833
       Width = 160
       Height = 93
@@ -5002,8 +5005,8 @@ object PlotWindow: TPlotWindow
       TabOrder = 3
     end
     object CSpinEdit_Fontsize: TCSpinEdit
-      Left = 84
-      Top = 271
+      Left = 75
+      Top = 225
       Width = 50
       Height = 22
       Hint = 'Font size for Titles (typically 12 point)'
@@ -5017,7 +5020,7 @@ object PlotWindow: TPlotWindow
       OnChange = CSpinEdit_FontsizeChange
     end
     object ListBoxY: TListBox
-      Left = 4
+      Left = 1
       Top = 671
       Width = 270
       Height = 137
@@ -5034,7 +5037,7 @@ object PlotWindow: TPlotWindow
       OnClick = ListBoxYClick
     end
     object ListBoxX: TListBox
-      Left = 4
+      Left = 1
       Top = 506
       Width = 270
       Height = 137
@@ -5050,7 +5053,7 @@ object PlotWindow: TPlotWindow
       OnClick = ListBoxXClick
     end
     object CheckBox_Compress: TCheckBox
-      Left = 129
+      Left = 126
       Top = 809
       Width = 161
       Height = 25
@@ -5059,7 +5062,7 @@ object PlotWindow: TPlotWindow
       TabOrder = 17
     end
     object Button_Filename: TBitBtn
-      Left = 5
+      Left = 2
       Top = 929
       Width = 89
       Height = 25
@@ -5072,7 +5075,7 @@ object PlotWindow: TPlotWindow
       OnClick = Button_Filename1Click
     end
     object Button_add_trace: TBitBtn
-      Left = 100
+      Left = 97
       Top = 929
       Width = 89
       Height = 25
@@ -5085,7 +5088,7 @@ object PlotWindow: TPlotWindow
       OnClick = Button_add_trace1Click
     end
     object Button_clear_all_traces: TBitBtn
-      Left = 199
+      Left = 196
       Top = 929
       Width = 89
       Height = 25
@@ -5095,8 +5098,8 @@ object PlotWindow: TPlotWindow
       OnClick = Button_clear_all_traces1Click
     end
     object BitBtn_set_colour: TBitBtn
-      Left = 158
-      Top = 120
+      Left = 155
+      Top = 37
       Width = 113
       Height = 25
       Hint = 'Press to set the colour of the next added trace'
@@ -5108,7 +5111,7 @@ object PlotWindow: TPlotWindow
       OnClick = BitBtn_set_colourClick
     end
     object Polyorder: TEdit
-      Left = 242
+      Left = 240
       Top = 895
       Width = 46
       Height = 21
@@ -5118,8 +5121,8 @@ object PlotWindow: TPlotWindow
       Text = '2'
     end
     object Edit_skip_lines: TEdit
-      Left = 233
-      Top = 375
+      Left = 230
+      Top = 335
       Width = 41
       Height = 21
       Hint = 'Enter number of lines to skip in csv file before  header line'
@@ -5131,8 +5134,8 @@ object PlotWindow: TPlotWindow
       Text = '0'
     end
     object Time_from0: TCheckBox
-      Left = 179
-      Top = 416
+      Left = 186
+      Top = 376
       Width = 109
       Height = 17
       Hint = 
@@ -5146,9 +5149,9 @@ object PlotWindow: TPlotWindow
       OnClick = Time_from0Click
     end
     object Date_time_fmt: TEdit
-      Left = 179
-      Top = 452
-      Width = 109
+      Left = 164
+      Top = 444
+      Width = 130
       Height = 21
       Hint = 'Enter date/time format eg %d/%m/%y %H:%M:%S.%f'
       Anchors = [akTop, akRight]
@@ -5157,6 +5160,18 @@ object PlotWindow: TPlotWindow
       TabOrder = 25
       Text = '%d-%b-%y %H:%M:%S.%f'
       OnChange = Edit_xcolChange
+    end
+    object CheckBox_legend_add_filename: TCheckBox
+      Left = 144
+      Top = 182
+      Width = 148
+      Height = 18
+      Hint = 'When ticked the filename is added to traces legends'
+      Anchors = [akTop, akRight]
+      Caption = 'Add filename to legend'
+      ParentShowHint = False
+      ShowHint = True
+      TabOrder = 26
     end
   end
   object ActionList1: TActionList
@@ -5663,6 +5678,10 @@ object PlotWindow: TPlotWindow
         object SaveDataAs1: TMenuItem
           Caption = 'Save Data As CSV'
           OnClick = SaveDataAs1Click
+        end
+        object Save2: TMenuItem
+          Caption = 'Save xrange on screen As CSV'
+          OnClick = Save2Click
         end
       end
       object Exit1: TMenuItem
