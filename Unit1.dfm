@@ -4276,14 +4276,12 @@ object Form1: TForm1
     F7FFFFFEFEFFFFFEFEFFFEF7F7FFFEFBFBFFFFFFFFFFFFFFFFFF000000000000
     0000000000000000000000000000000000000000000000000000000000000000
     0000000000000000000000000000000000000000000000000000}
-  OldCreateOrder = False
   Visible = True
   OnCreate = FormCreate
   OnDestroy = FormDestroy
   DesignSize = (
     617
     342)
-  PixelsPerInch = 96
   TextHeight = 13
   object Results: TRichEdit
     Left = 0
@@ -4303,6 +4301,7 @@ object Form1: TForm1
     ScrollBars = ssBoth
     TabOrder = 0
     WordWrap = False
-    Zoom = 100
+    ExplicitWidth = 613
+    ExplicitHeight = 342
   end
 end

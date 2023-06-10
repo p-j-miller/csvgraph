@@ -17,12 +17,13 @@
 #include <Menus.hpp>
 #include <Dialogs.hpp>
 #include <ComCtrls.hpp>
-#include "cspin.h"
+//#include "cspin.h"
 #include <ExtDlgs.hpp>
 #include <System.Actions.hpp>
 #include <System.ImageList.hpp>
 //---------------------------------------------------------------------------
 #include "multiple-lin-reg-fn.h"
+#include <Vcl.Samples.Spin.hpp>
 
 class TPlotWindow : public TForm
 {
@@ -86,7 +87,6 @@ __published:	// IDE-managed Components
         TMenuItem *Help1;
         TMenuItem *About1;
 	TListBox *FilterType;
-        TCSpinEdit *CSpinEdit_Fontsize;
         TLabel *Label11;
         TMenuItem *Exit1;
         TSavePictureDialog *SavePictureDialog1;
@@ -124,6 +124,10 @@ __published:	// IDE-managed Components
 	TEdit *Date_time_fmt;
 	TMenuItem *Save2;
 	TCheckBox *CheckBox_legend_add_filename;
+	TSpinEdit *SpinEdit_Fontsize;
+	TLabel *Label17;
+	TLabel *Label18;
+	TCheckBox *CheckBox_legend;
         void __fastcall FormDestroy(TObject *Sender);
         void __fastcall FormClose(TObject *Sender, TCloseAction &Action);
         void __fastcall ResizeExecute(TObject *Sender);
@@ -153,7 +157,6 @@ __published:	// IDE-managed Components
         void __fastcall About1Click(TObject *Sender);
         void __fastcall FormCreate(TObject *Sender);
         void __fastcall Edit_titleChange(TObject *Sender);
-        void __fastcall CSpinEdit_FontsizeChange(TObject *Sender);
         void __fastcall Exit1Click(TObject *Sender);
         void __fastcall ButtonSave1Click(TObject *Sender);
         void __fastcall Button_PlotToClipboard1Click(TObject *Sender);
@@ -174,6 +177,11 @@ __published:	// IDE-managed Components
 	void __fastcall Action1Execute(TObject *Sender);
 	void __fastcall Time_from0Click(TObject *Sender);
 	void __fastcall Save2Click(TObject *Sender);
+	void __fastcall SpinEdit_FontsizeChange(TObject *Sender);
+	void __fastcall SpinEdit_FontsizeKeyPress(TObject *Sender, System::WideChar &Key);
+	void __fastcall FormGetSiteInfo(TObject *Sender, TControl *DockClient, TRect &InfluenceRect,
+          TPoint &MousePos, bool &CanDock);
+
 private:	 // User declarations
         int iShape1X,iShape1Y;
         void virtual  __fastcall WmDropFiles(TWMDropFiles& Message);     // for drag n drop

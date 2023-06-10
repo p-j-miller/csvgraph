@@ -551,11 +551,11 @@ void TScientificGraph::fnPaint()
 #ifdef USE_double_to_str_exp
    /* void double_to_str_exp(double x, int sf,enum fpout_type out_type, int len, char *s) // sf = significant figures - max 19 */
    {int sf=12; // have space for at most 12 chars
-    if(dADoub<0) sf--; // negative sign takes 1
-    do{// try until it fits in <= 12 chars
+	if(dADoub<0) sf--; // negative sign takes 1
+	do{// try until it fits in <= 12 chars
 	   double_to_str_exp(dADoub,sf--,round_nearest | fmt_g,sizeof(szAString),szAString);
-      }
-    while(strlen(szAString)>12 && sf>1);   // && sf>1 traps infinite loop (just in case!)
+	  }
+	while(strlen(szAString)>12 && sf>1);   // && sf>1 traps infinite loop (just in case!)
    }
 #else
    {int sf=12; // have space for at most 12 chars
@@ -566,94 +566,94 @@ void TScientificGraph::fnPaint()
 	while(strlen(szAString)>12 && sf>1);   // && sf>1 traps infinite loop (just in case!)
    }
 #endif
-    AAnsiString=AnsiString(szAString);
-    fnKoord2Point(pPoint,sScaleX.dMin,dADoub);
-    ASize = pBitmap->Canvas->TextExtent(AAnsiString);
-    pBitmap->Canvas->Font->Color=ColText;
-    pBitmap->Canvas->Font->Size=iTextSize;
+	AAnsiString=AnsiString(szAString);
+	fnKoord2Point(pPoint,sScaleX.dMin,dADoub);
+	ASize = pBitmap->Canvas->TextExtent(AAnsiString);
+	pBitmap->Canvas->Font->Color=ColText;
+	pBitmap->Canvas->Font->Size=iTextSize;
 	pBitmap->Canvas->TextOut(pPoint->x-ASize.cx-iTextOffset,pPoint->y-ASize.cy/2,AAnsiString);
    }
   //Zeroline
   if (!bGrids & bZeroLine)                             //zeroline not necess. if
-                                                       //grids are enabled
-    if (fnInScaleY(0))                                 //zeroline in plot?
-    {
-      fnKoord2Point(pPoint,sScaleX.dMin,0);            //paint line in gridstyle
-      pBitmap->Canvas->PenPos=*pPoint;
-      fnKoord2Point(pPoint,sScaleX.dMax,0);
-      pBitmap->Canvas->Pen->Color = ColGrid;
-      pBitmap->Canvas->Pen->Width = iPenWidthGrid;
-      pBitmap->Canvas->Pen->Style = PSGrid;
-      pBitmap->Canvas->LineTo(pPoint->x,pPoint->y);
-    }
-
+													   //grids are enabled
+	if (fnInScaleY(0))                                 //zeroline in plot?
+	{
+	  fnKoord2Point(pPoint,sScaleX.dMin,0);            //paint line in gridstyle
+	  pBitmap->Canvas->PenPos=*pPoint;
+	  fnKoord2Point(pPoint,sScaleX.dMax,0);
+	  pBitmap->Canvas->Pen->Color = ColGrid;
+	  pBitmap->Canvas->Pen->Width = iPenWidthGrid;
+	  pBitmap->Canvas->Pen->Style = PSGrid;
+	  pBitmap->Canvas->LineTo(pPoint->x,pPoint->y);
+	}
+#if 0 /* set to 1 to print legend 1st, before traces (means it may not be visible) */
   //Legend
-                                                               //calc position
+															   //calc position
   dX=dLegendStartX*(sScaleX.dMax
-     -sScaleX.dMin)+sScaleX.dMin
+	 -sScaleX.dMin)+sScaleX.dMin
      ;
   dY=dLegendStartY*(sScaleY.dMax
      -sScaleY.dMin)+sScaleY.dMin
-     ;
+	 ;
   fnKoord2Point(pPoint,dX,dY);                                //calc. coordinat.
   pBitmap->Canvas->Font->Size=iTextSize;
   for (j=0; j<iNumberOfGraphs; j++)                           //all graphs
   {
     pAGraph = ((SGraph*) pHistory->Items[j]);
-    if (pAGraph->Caption!="")
+	if (pAGraph->Caption!="")
     {
-      *pPoint2=*pPoint;
-      if (((pAGraph->ucStyle) & 1) == 1)                      //paint data point
-      {                                                       //for legend
-        i=pBitmap->Canvas->TextHeight(pAGraph->Caption);
-        i/=2;
-        pPoint->y+=i;
-        pPoint->x+=pBitmap->Canvas->TextWidth("22");
-        LayoutRect.Left=(pPoint->x)-(pAGraph->iSizeDataPoint/2);
-        LayoutRect.Right=(pPoint->x)+(pAGraph->iSizeDataPoint/2);
-        LayoutRect.Top=(pPoint->y)-(pAGraph->iSizeDataPoint/2);
-        LayoutRect.Bottom=(pPoint->y)+(pAGraph->iSizeDataPoint/2);
-        pBitmap->Canvas->Pen->Width=1;
-        pBitmap->Canvas->Pen->Color=pAGraph->ColDataPoint;
-        pBitmap->Canvas->Pen->Style=psSolid;
-        pBitmap->Canvas->Brush->Color=pAGraph->ColDataPoint;
-        fnPaintDataPoint(LayoutRect,pAGraph->ucPointStyle);
-        if (((pAGraph->ucStyle) & 4) == 4)
-        {
-          *pPoint=*pPoint2;
-        }
-        else
-        {
-          pPoint->y-=i;
-          pPoint->x+=pBitmap->Canvas->TextWidth("333");
-          pBitmap->Canvas->Font->Color=pAGraph->ColDataPoint;
-        }
-      }
-      if (((pAGraph->ucStyle) & 4) == 4)                     //paint short line
-      {                                                      //for legend
-        i=pBitmap->Canvas->TextHeight(pAGraph->Caption);
-        i/=2;
-        pPoint->y+=i;
-        pBitmap->Canvas->PenPos=*pPoint;
-        pPoint->x+=pBitmap->Canvas->TextWidth("4444");
-        pBitmap->Canvas->Pen->Width=pAGraph->iWidthLine;;
-        pBitmap->Canvas->Pen->Color=pAGraph->ColLine;
-        pBitmap->Canvas->Pen->Style=pAGraph->LineStyle;
-        pBitmap->Canvas->LineTo(pPoint->x,pPoint->y);
-        pPoint->y-=i;
-        pPoint->x+=pBitmap->Canvas->TextWidth("1");
-        pBitmap->Canvas->Font->Color=pAGraph->ColLine;
-      }
-      pBitmap->Canvas->Font->Size=iTextSize;                //paint caption
+	  *pPoint2=*pPoint;
+	  if (((pAGraph->ucStyle) & 1) == 1)                      //paint data point
+	  {                                                       //for legend
+		i=pBitmap->Canvas->TextHeight(pAGraph->Caption);
+		i/=2;
+		pPoint->y+=i;
+		pPoint->x+=pBitmap->Canvas->TextWidth("22");
+		LayoutRect.Left=(pPoint->x)-(pAGraph->iSizeDataPoint/2);
+		LayoutRect.Right=(pPoint->x)+(pAGraph->iSizeDataPoint/2);
+		LayoutRect.Top=(pPoint->y)-(pAGraph->iSizeDataPoint/2);
+		LayoutRect.Bottom=(pPoint->y)+(pAGraph->iSizeDataPoint/2);
+		pBitmap->Canvas->Pen->Width=1;
+		pBitmap->Canvas->Pen->Color=pAGraph->ColDataPoint;
+		pBitmap->Canvas->Pen->Style=psSolid;
+		pBitmap->Canvas->Brush->Color=pAGraph->ColDataPoint;
+		fnPaintDataPoint(LayoutRect,pAGraph->ucPointStyle);
+		if (((pAGraph->ucStyle) & 4) == 4)
+		{
+		  *pPoint=*pPoint2;
+		}
+		else
+		{
+		  pPoint->y-=i;
+		  pPoint->x+=pBitmap->Canvas->TextWidth("333");
+		  pBitmap->Canvas->Font->Color=pAGraph->ColDataPoint;
+		}
+	  }
+	  if (((pAGraph->ucStyle) & 4) == 4)                     //paint short line
+	  {                                                      //for legend
+		i=pBitmap->Canvas->TextHeight(pAGraph->Caption);
+		i/=2;
+		pPoint->y+=i;
+		pBitmap->Canvas->PenPos=*pPoint;
+		pPoint->x+=pBitmap->Canvas->TextWidth("4444");
+		pBitmap->Canvas->Pen->Width=pAGraph->iWidthLine;;
+		pBitmap->Canvas->Pen->Color=pAGraph->ColLine;
+		pBitmap->Canvas->Pen->Style=pAGraph->LineStyle;
+		pBitmap->Canvas->LineTo(pPoint->x,pPoint->y);
+		pPoint->y-=i;
+		pPoint->x+=pBitmap->Canvas->TextWidth("1");
+		pBitmap->Canvas->Font->Color=pAGraph->ColLine;
+	  }
+	  pBitmap->Canvas->Font->Size=iTextSize;                //paint caption
 	  pBitmap->Canvas->TextOut(pPoint->x,pPoint->y,pAGraph->Caption);
-      *pPoint=*pPoint2;
-      if ((pAGraph->iSizeDataPoint>pBitmap->Canvas->TextHeight("0"))&&
-         (((pAGraph->ucStyle) & 1) == 1))
-        pPoint->y+=pAGraph->iSizeDataPoint+5;
-      else pPoint->y+=pBitmap->Canvas->TextHeight("0");
-    }
+	  *pPoint=*pPoint2;
+	  if ((pAGraph->iSizeDataPoint>pBitmap->Canvas->TextHeight("0"))&&
+		 (((pAGraph->ucStyle) & 1) == 1))
+		pPoint->y+=pAGraph->iSizeDataPoint+5;
+	  else pPoint->y+=pBitmap->Canvas->TextHeight("0");
+	}
   }
-
+#endif
   //Clip Rect
   HRGN MyRgn;
 
@@ -911,6 +911,97 @@ fnpaint_end:  // tidy up then return if we get here via a goto.
   ::DeleteObject(MyRgn);
   if(zoom_fun_level>1)
        return; // finish now as need to restart over with new scaling
+
+#if 1 /* set to 1 to print trace legends last (means they should be visible) if using "LEGEND_CLEAR_BACKGROUND" code */
+  //Legend , if required draw them
+ if(Form1!=NULL && Form1->pPlotWindow!=NULL && Form1->pPlotWindow->CheckBox_legend->State==cbChecked)
+ {//calc position
+  dX=dLegendStartX*(sScaleX.dMax
+	 -sScaleX.dMin)+sScaleX.dMin
+	 ;
+  dY=dLegendStartY*(sScaleY.dMax
+	 -sScaleY.dMin)+sScaleY.dMin
+	 ;
+  fnKoord2Point(pPoint,dX,dY);                                //calc. coordinat.
+  pBitmap->Canvas->Font->Size=iTextSize;
+  for (j=0; j<iNumberOfGraphs; j++)                           //all graphs
+  {
+	pAGraph = ((SGraph*) pHistory->Items[j]);
+	if (pAGraph->Caption!="")
+	{
+	  *pPoint2=*pPoint;
+#if 1 /* LEGEND_CLEAR_BACKGROUND */
+	  {
+		i=pBitmap->Canvas->TextHeight(pAGraph->Caption);
+		i/=2;
+		pPoint->y+=i;
+		//pPoint->x+=pBitmap->Canvas->TextWidth("22");
+		LayoutRect.Left=(pPoint->x)-(pAGraph->iSizeDataPoint/2);
+		LayoutRect.Right=(pPoint->x)+(pAGraph->iSizeDataPoint/2)+pBitmap->Canvas->TextWidth("22");
+		//LayoutRect.Top=(pPoint->y)-(pAGraph->iSizeDataPoint/2);
+		//LayoutRect.Bottom=(pPoint->y)+(pAGraph->iSizeDataPoint/2);
+		LayoutRect.Top=(pPoint->y)-(i);
+		LayoutRect.Bottom=(pPoint->y)+(i);
+		LayoutRect.Right+=pBitmap->Canvas->TextWidth("4444");
+		LayoutRect.Right+=pBitmap->Canvas->TextWidth(pAGraph->Caption);
+		pBitmap->Canvas->Brush->Color = ColBackGround;
+		pBitmap->Canvas->FillRect(LayoutRect);
+		*pPoint=*pPoint2;// restore back ready for code below
+	  }
+#endif
+	  if (((pAGraph->ucStyle) & 1) == 1)                      //paint data point
+	  {                                                       //for legend
+		i=pBitmap->Canvas->TextHeight(pAGraph->Caption);
+		i/=2;
+		pPoint->y+=i;
+		pPoint->x+=pBitmap->Canvas->TextWidth("22");
+		LayoutRect.Left=(pPoint->x)-(pAGraph->iSizeDataPoint/2);
+		LayoutRect.Right=(pPoint->x)+(pAGraph->iSizeDataPoint/2);
+		LayoutRect.Top=(pPoint->y)-(pAGraph->iSizeDataPoint/2);
+		LayoutRect.Bottom=(pPoint->y)+(pAGraph->iSizeDataPoint/2);
+
+		pBitmap->Canvas->Pen->Width=1;
+		pBitmap->Canvas->Pen->Color=pAGraph->ColDataPoint;
+		pBitmap->Canvas->Pen->Style=psSolid;
+		pBitmap->Canvas->Brush->Color=pAGraph->ColDataPoint;
+		fnPaintDataPoint(LayoutRect,pAGraph->ucPointStyle);
+		if (((pAGraph->ucStyle) & 4) == 4)
+		{
+		  *pPoint=*pPoint2;
+		}
+		else
+		{
+		  pPoint->y-=i;
+		  pPoint->x+=pBitmap->Canvas->TextWidth("333");
+		  pBitmap->Canvas->Font->Color=pAGraph->ColDataPoint;
+		}
+	  }
+	  if (((pAGraph->ucStyle) & 4) == 4)                     //paint short line
+	  {                                                      //for legend
+		i=pBitmap->Canvas->TextHeight(pAGraph->Caption);
+		i/=2;
+		pPoint->y+=i;
+		pBitmap->Canvas->PenPos=*pPoint;
+		pPoint->x+=pBitmap->Canvas->TextWidth("4444");
+		pBitmap->Canvas->Pen->Width=pAGraph->iWidthLine;;
+		pBitmap->Canvas->Pen->Color=pAGraph->ColLine;
+		pBitmap->Canvas->Pen->Style=pAGraph->LineStyle;
+		pBitmap->Canvas->LineTo(pPoint->x,pPoint->y);
+		pPoint->y-=i;
+		pPoint->x+=pBitmap->Canvas->TextWidth("1");
+		pBitmap->Canvas->Font->Color=pAGraph->ColLine;
+	  }
+	  pBitmap->Canvas->Font->Size=iTextSize;                //paint caption
+	  pBitmap->Canvas->TextOut(pPoint->x,pPoint->y,pAGraph->Caption);
+	  *pPoint=*pPoint2;
+	  if ((pAGraph->iSizeDataPoint>pBitmap->Canvas->TextHeight("0"))&&
+		 (((pAGraph->ucStyle) & 1) == 1))
+		pPoint->y+=pAGraph->iSizeDataPoint+5;
+	  else pPoint->y+=pBitmap->Canvas->TextHeight("0");
+	}
+  }
+ }
+#endif
 
   //axis caption
 

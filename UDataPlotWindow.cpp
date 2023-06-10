@@ -109,6 +109,15 @@
 //                  Y axis title automatically added unless user specifies one (based on column header of 1st trace added).
 //                  Added option to load X as Value/60 (sec->min), Val/3600 (sec->hrs), val/86400 (sec->days)
 //                  Error handling for X values in a user defined date/time format improved, and trailing whitespace now allowed
+//  3v7 4/6/2023
+//                  Swapped to Builder C++ 11.3 compiler
+//                      Fontsize TCSpinEdit caused runtime exceptions (write to invalid address) so changed to SpinEdit control which works.
+//                      made Fonts more consistent (Arial used on graph,  Segoe UI used for controls on bar on right)
+//                      some font sizes tweaked and controls moved on bar to right to make everything fit
+//						Title now centered over graph (and has same width as the graph).
+//                      Trace legends now have a "clear" background so are visible even when they overlap traces.
+//                      Trace Legends can now be turned off (via tick box)
+//                      Set Mantfest/DPI awareness to gdi scaling (was "none").
 //
 // TO DO:
 //
@@ -155,7 +164,7 @@
 
 //---------------------------------------------------------------------------
 #pragma package(smart_init)
-#pragma link "CSPIN"
+// #pragma link "CSPIN"
 #pragma resource "*.dfm"
 
 #define NoForm1   /* says Form1 is defined in another file */
@@ -184,9 +193,9 @@
 extern TForm1 *Form1;
 extern const char * Prog_Name;
 #ifdef _WIN64
-const char * Prog_Name="CSVgraph (Github) 3v6 (64 bit)";   // needs to be global as used in about box as well.
+const char * Prog_Name="CSVgraph (Github) 3v7 (64 bit)";   // needs to be global as used in about box as well.
 #else
-const char * Prog_Name="CSVgraph (Github) 3v6 (32 bit)";   // needs to be global as used in about box as well.
+const char * Prog_Name="CSVgraph (Github) 3v7 (32 bit)";   // needs to be global as used in about box as well.
 #endif
 #if 1 /* if 1 then use fast_strtof() rather than atof() for floating point conversion. Note in this application this is only slightly faster (1-5%) */
 extern "C" float fast_strtof(const char *s,char **endptr); // if endptr != NULL returns 1st character thats not in the number
@@ -460,6 +469,7 @@ __fastcall TPlotWindow::TPlotWindow(TComponent* Owner) : TForm(Owner)
 #if 1  /* scale positions based on size */
  // 0.1*initial_Panel1_Width/Panel1->ClientWidth;
   pScientificGraph->fLeftBorder = 0.1f*BASE_PWIDTH/initial_Panel1_Width;      //Borders of Plot in Bitmap in %/100  was 0.2
+  Edit_title->Width=Panel1->Width-Edit_title->Left-20; // allow to go to (nearly) the far edge  (Title is centered)
   pScientificGraph->fBottomBorder = 0.1f*BASE_HEIGHT/initial_Panel1_Height;   // was 0.25
   pScientificGraph->dLegendStartX=dLegendStartX_val; // Top left positions of trace legends in %/100 in Plot was 0.8 - don't need this to change if user rescaled main window
   pScientificGraph->dLegendStartY=dLegendStartY_val; // was 0.95
@@ -511,7 +521,7 @@ __fastcall TPlotWindow::TPlotWindow(TComponent* Owner) : TForm(Owner)
 		 CheckBox1->Visible =false;
 		 Label5->Visible =false;
 		 Label11->Visible =false;
-		 CSpinEdit_Fontsize->Visible =false;
+		 SpinEdit_Fontsize->Visible =false;
 		 Label6->Top-=voffset;
 		 Edit_y->Top-=voffset;
 		 Label7->Top-=voffset;
@@ -546,7 +556,7 @@ __fastcall TPlotWindow::TPlotWindow(TComponent* Owner) : TForm(Owner)
 	 CheckBox1->Left+=ofset;
 	 Label5->Left+=ofset;
 	 Label11->Left+=ofset;
-	 CSpinEdit_Fontsize->Left+=ofset;
+	 SpinEdit_Fontsize->Left+=ofset;
 	 Label6->Left+=ofset;
 	 Edit_y->Left+=ofset;
 	 Label7->Left+=ofset;
@@ -3186,13 +3196,6 @@ void __fastcall TPlotWindow::Edit_titleChange(TObject *Sender)
 }
 //---------------------------------------------------------------------------
 
-void __fastcall TPlotWindow::CSpinEdit_FontsizeChange(TObject *Sender)
-{ P_UNUSED(Sender);
- pScientificGraph->aTextSize=CSpinEdit_Fontsize->Value;   // set size of text for axis titles and main title
-
-}
-//---------------------------------------------------------------------------
-
 void __fastcall TPlotWindow::Exit1Click(TObject *Sender)
 { P_UNUSED(Sender);
   DragAcceptFiles(Handle, false);    // stop accepting drag n drop files
@@ -3386,6 +3389,8 @@ extern int zoom_fun_level;  // used to keep track of level of recursion in zoom 
 	 Panel1->Height = ClientHeight<initial_Panel1_Height? initial_Panel1_Height : ClientHeight;
 	}
 
+  Edit_title->Width=Panel1->Width-Edit_title->Left-20; // allow to go to (nearly) the far edge  (Title is centered)
+
  /* scale positions based on size */
 
   pScientificGraph->fLeftBorder = 0.1f*BASE_PWIDTH/Panel1->ClientWidth;      //Borders of Plot in Bitmap in %/100  was 0.2
@@ -3473,7 +3478,6 @@ void __fastcall TPlotWindow::FormResize(TObject *Sender)
 #endif
 //---------------------------------------------------------------------------
 
-
 static bool firstpanel2undock=true;
 
 void __fastcall TPlotWindow::Panel2EndDock(TObject *Sender, TObject *Target, int X,
@@ -3482,10 +3486,12 @@ void __fastcall TPlotWindow::Panel2EndDock(TObject *Sender, TObject *Target, int
  P_UNUSED(X);
  P_UNUSED(Y);
  // undock of panel2 (the main control panel)  - Note the Undock() event does not appear to be called so do it this way instead
- // rprintf("EndDock!\n");
+
+#if 0
  if(Panel2->Floating)
 	{SetFocus();
 	}
+#endif
  if(firstpanel2undock)
 	{ if(Panel2->Floating)
 		{firstpanel2undock=false;
@@ -3495,8 +3501,18 @@ void __fastcall TPlotWindow::Panel2EndDock(TObject *Sender, TObject *Target, int
 		 Panel3->Enabled =true;
 		 visible1->Visible =true; // enable menu item so can make visible again if user clicks "X".
 		 visible1->Enabled =true;
-		 Application->ProcessMessages();
+		 Panel2->AutoSize =false; // needs to be false to see scroll bars
+		 Panel2->AutoScroll =true; // enable scroll bars
 		 FormResize(Sender); // do the rest of the work for a form resize
+		 Application->ProcessMessages();
+#if 0    /* horiz scroll bar does not work very well..   */
+		 rprintf("Panel2->VertScrollBar->Size=%d\n",(int)(Panel2->VertScrollBar->Size));
+		 rprintf("Panel2: Width=%d Left=%d Top=%d Height=%d\n", Panel2->Width,Panel2->Left,Panel2->Top,Panel2->Height);
+		 //Panel2->Width=Panel2->Width+20;
+		 Panel2->HorzScrollBar->Range=Panel2->Width;   // +20 to allow for vertical scroll bar
+         Panel2->HorzScrollBar->Visible=true;
+		 Application->ProcessMessages();
+#endif
 		}
 	}
 }
@@ -3506,10 +3522,12 @@ void __fastcall TPlotWindow::Panel2EndDock(TObject *Sender, TObject *Target, int
 
 void __fastcall TPlotWindow::Panel2Resize(TObject *Sender)
 {P_UNUSED(Sender);
+#if 0
  if(Panel2->Floating  )
 	{Panel2->AutoSize =false;
 	 Panel2->AutoScroll =true; // enable scroll bars
 	}
+#endif
 }
 //---------------------------------------------------------------------------
 
@@ -3606,6 +3624,33 @@ void __fastcall TPlotWindow::Save2Click(TObject *Sender)
 				}
 		}
 #endif
+}
+//---------------------------------------------------------------------------
+
+void __fastcall TPlotWindow::SpinEdit_FontsizeChange(TObject *Sender)
+{
+ P_UNUSED(Sender);
+ pScientificGraph->aTextSize=SpinEdit_Fontsize->Value;   // set size of text for axis titles and main title
+ Edit_title->Font->Size=SpinEdit_Fontsize->Value;
+ fnReDraw(); // redraw screen with new font size
+}
+//---------------------------------------------------------------------------
+
+void __fastcall TPlotWindow::SpinEdit_FontsizeKeyPress(TObject *Sender, System::WideChar &Key)
+
+{ P_UNUSED(Sender); // stops user typing a number into the font size (this would not be clipped to be between MinValue & MaxValue
+   Key=0;  // make system ignore key
+}
+//---------------------------------------------------------------------------
+
+void __fastcall TPlotWindow::FormGetSiteInfo(TObject *Sender, TControl *DockClient,
+		  TRect &InfluenceRect, TPoint &MousePos, bool &CanDock)
+{
+ P_UNUSED(Sender);
+ P_UNUSED(DockClient);
+ P_UNUSED(InfluenceRect);
+ P_UNUSED(MousePos);
+ CanDock=false;// no docking allowed
 }
 //---------------------------------------------------------------------------
 
