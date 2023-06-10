@@ -95,6 +95,13 @@ Y axis title automatically added unless user specifies one (based on column head
 Added option to load X as Value/60 (sec->min), Val/3600 (sec->hrs), val/86400 (sec->days).
 Error handling for X values in a user defined date/time format improved, and trailing whitespace now allowed.
 
+3v7 10/6/2023 –
+“Show legends” tick-box added.
+Changed to using Builder C++ 11.3 compiler.
+Title is now centred above the graph.
+Minor changes to sizes, fonts, etc in csvgraph.
+
+
 
 # Installation
 Cvsgraph is a portable program which does not need installation.
@@ -109,7 +116,7 @@ See the file LICENSE for details, but csvgraph is free for both commercial and n
 csvgraph runs on Windows (10 32 or 64 bit). It should run on earlier versions (to Vista) or under Wine on Linux but this is untested.
 
 # source code
-The source code was compiled with Embarcadero® C++Builder 10.4 - a suitable project file is included in the archive. It should compile with no errors or warnings.
+From the 3v7 release, the source code was compiled with Embarcadero® C++Builder 11.3 - a suitable project file is included in the archive. It should compile with no errors or warnings.
 It should be easy to move to a more recent version of C++Builder (at least for a 32/64 bit Windows target), but equally it would not be very hard to revert to earlier versions (back to Builder C++ V5) if necessary. 
 
 Many parts of the source code could be of interest if you don't use C++Builder - for example atof.c is part of ya-sprintf see https://github.com/p-j-miller/ya-sprintf
