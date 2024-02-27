@@ -101,6 +101,22 @@ Changed to using Builder C++ 11.3 compiler.
 Title is now centred above the graph.
 Minor changes to sizes, fonts, etc in csvgraph.
 
+3v8 4/7/2023
+csvsave where 2nd trace had less points than 1st trace caused an error - fixed.
+
+3v9 26/2/2024
+
+Can now open a file that excel already has open (and error messages are better on failing to open files).
+Better trapping of user pressing a "command" button while a previous command is still running.
+Derivative now uses 17-point Savitzky Golay algorithm with user specified order (1->10 is actually used, can be set 1->infinity by user).
+Savitzky Golay smoothing added as a filtering option (25 points, with user specified order, 1->10 is actually used, can be set 1->infinity by user).
+Added 2nd derivative (d2y/d2x) to list of filters which uses a 25-point Savitzky Golay algorithm with user specified order (1->10 is actually used, can be set 1->infinity by user).
+If a number is missing in a column referred to in an expression this will be set to nan.
+Added constant "nan" for expressions.
+If an expression evaluates to nan the line is skipped so this can be a powerful way to select points for csvgraph to display.
+Added "variables" x and line to expressions. x is current x value, and line is current line number.
+Updated expression handler so nan==nan and nan!=nan work as expected in expressions.
+
 
 
 # Installation
