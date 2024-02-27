@@ -118,9 +118,22 @@
 //                      Trace legends now have a "clear" background so are visible even when they overlap traces.
 //                      Trace Legends can now be turned off (via tick box)
 //                      Set Mantfest/DPI awareness to gdi scaling (was "none").
-//
+//  3v8 4/7/2023    csvsave where 2nd trace has less points than 1st trace caused error - fixed.
+//  3v9 1/2/2024    updated to work with latest common files (interp1D()->interp1D_f() )
+//                  can now open a file that excel already has open (and error messages are better on failing to open files)
+//                  Better trapping of someone pressing a "command" button while a previous command is still running.
+//                  Derivative now uses 17 point Savitzky Golay algorithm with user specified order (1->8 is actually used, can be set 0->infinity by user).
+//                  Savitzky Golay smoothing added as a filtering option  (17 or 25 points - left at 25)
+//                  If a number is missing in a column referred to in an expression this will be flagged and the line skipped.
+//                  added constant "nan" for expressions, if an expression evaluates to nan the line is skipped so this can be a powerful way to select points for csvgraph to display
+//                  added "variables" x and line to expressions. x is current x value, and line is current line number.
+//					added 2nd deriv (d2y/d2x) to list of filters either 17 or 25 point selected by #if -> left at 25 but both checked and OK
+//                  added "order" to legends for dy/dx and d2y/d2x (was already on Savitzky Golay smoothing legends).
+//                  updated expression handler (expr-code.c) so nan==nan and nan!=nan works as expected in expressions.
+//					This allows for example $3==nan?x:nan which shows all invalid rows in column $3
 // TO DO:
 //
+// WARNING : in builder 11 with 64 bit code generation long double is only 8 bytes (the same as double!).
 //
 // Note if executable is called (eg) csvgraph64.exe then manual needs to be called csvgraph64.pdf
 //
@@ -184,6 +197,7 @@
 #include "multiple-lin-reg-fn.h"
 #include "time_local.h"
 
+
 #if 1
 // I'm sorry for the next 2 lines, but otherwise I get a lot of warnings "zero as null pointer constant"
 #undef NULL
@@ -193,13 +207,13 @@
 extern TForm1 *Form1;
 extern const char * Prog_Name;
 #ifdef _WIN64
-const char * Prog_Name="CSVgraph (Github) 3v7 (64 bit)";   // needs to be global as used in about box as well.
+const char * Prog_Name="CSVgraph (Github) 3v9 (64 bit)";   // needs to be global as used in about box as well.
 #else
-const char * Prog_Name="CSVgraph (Github) 3v7 (32 bit)";   // needs to be global as used in about box as well.
+const char * Prog_Name="CSVgraph (Github) 3v9 (32 bit)";   // needs to be global as used in about box as well.
 #endif
 #if 1 /* if 1 then use fast_strtof() rather than atof() for floating point conversion. Note in this application this is only slightly faster (1-5%) */
 extern "C" float fast_strtof(const char *s,char **endptr); // if endptr != NULL returns 1st character thats not in the number
-#define strtod fast_strtof  /* set so we use it in place of strtod() */
+#define strtof fast_strtof  /* set so we use it in place of strtof() */
 #endif
 #define WHITE_BACKGROUND /* if defined then use a white background, otherwise use a black background*/
 #define UseVCLdialogs /* if defined used VCL dialogs, otherwise use "raw" windows ones */
@@ -1077,16 +1091,15 @@ void __fastcall TPlotWindow::Button_clear_all_traces1Click(TObject *Sender)
 { P_UNUSED(Sender);
   if(addtraceactive || xchange_running!=-1)
 	{// appear to still be busy doing something - ask user if this is true
-	 UnicodeString errorText="csvgraph appears to still be busy - continue waiting?";
+	 UnicodeString errorText="Clear all traces buttn pressed but csvgraph appears to still be busy - continue waiting?";
 	 if( MessageDlg(errorText,mtConfirmation,TMsgDlgButtons() <<mbYes <<mbNo ,0) == mrNo)
 		{addtraceactive= false;   // if user says "no" then clear flags  (if they say "yes" don't clear flags and we will return below)
 		 xchange_running= -1;
 		}
 	}
-
-
   if(addtraceactive) return; // if still processing a previous call of addtrace return now
   if(xchange_running!=-1) return; // still processing a change in x offset
+  addtraceactive=true; // tell other tasks we are busy
   rprintf("Clear all traces button pressed\n");
   StatusText->Caption="Clearing all traces ...";
   Application->ProcessMessages(); /* allow windows to update (but not go idle) */
@@ -1100,12 +1113,13 @@ void __fastcall TPlotWindow::Button_clear_all_traces1Click(TObject *Sender)
   zoomed=false;
   fnReDraw();
   StatusText->Caption="Cleared all traces";
+  addtraceactive=false;
 }
 //---------------------------------------------------------------------------
 
 
 #ifdef Allow_dollar_vars_in_expr
-double get_dollar_var_value(pnlist p) /* get value of $ variable */
+extern "C" double get_dollar_var_value(pnlist p) /* get value of $ variable */
         {char *v=p->name;
          unsigned int i=0;
 		 static int count=10; // set to 10 to disable debuging, 0 for debug
@@ -1133,20 +1147,32 @@ double get_dollar_var_value(pnlist p) /* get value of $ variable */
 			}
 #endif
 		 // if not $Tn must just be $n
-         if(col_ptrs==NULL || i>= MAX_COLS || col_ptrs[i]==NULL || *(col_ptrs[i])==0 ) return 0;
+         if(col_ptrs==NULL || i>= MAX_COLS || col_ptrs[i]==NULL || *(col_ptrs[i])==0 ) return NAN;
          if(count<10)
                 {rprintf("call to get_dollar_var_value(), i=%u, $i=%s (%g)\n",i,(i<MAX_COLS)?col_ptrs[i]:"error",(i<MAX_COLS)?atof(col_ptrs[i]):0.0);
                  count++;
                 }
          if(i<MAX_COLS)
-                {char *ys=col_ptrs[i];
-                 while(isspace(*ys)) ++ys; // skip any leading whitespace
-                 if(*ys=='"')
-                      {++ys;// skip " if present
-                       while(isspace(*ys)) ++ys; // skip any more whitespace
-                     }
-                 // hopefully just a number left, atof will terminate after the number so trailing whitespace and "'s will be ignored
-                 return atof(ys) ;
+				{char *ys=col_ptrs[i],*endc;
+				 double dollar_v;
+				 while(isspace(*ys)) ++ys; // skip any leading whitespace
+				 if(*ys=='"')
+					  {++ys;// skip " if present
+					   while(isspace(*ys)) ++ys; // skip any more whitespace
+					 }
+				 // hopefully just a number left
+				 dollar_v=strtod(ys,&endc);// strtod() will read NAN as a "valid" number, correctly returning NAN
+				 while(isspace(*endc)) ++endc; // skip any trailing whitespace
+				 if(*endc=='"')
+					  {++endc;// skip " if present
+					   while(isspace(*endc)) ++endc; // skip any more whitespace
+					 }
+				 if(*endc!=0 || *ys==0)
+					{// if not a number set to NAN
+					 dollar_v=NAN; // strtod("NAN",NULL);// c++ builder 5 does not appear to define NAN as a constant
+					}
+				 // rprintf("get_dollar_var_value() returning %g\n",dollar_v);
+                 return dollar_v ; // used to just use atof(), but this code returns NAN if no valid number found
                 }
          else return 0;
         }
@@ -1329,7 +1355,9 @@ void TPlotWindow::gen_lin_reg(enum reg_types r,int N,bool write_y,int iGraph)
  }
 
 #if 1
-static void deriv_trace(int iGraph)
+  /* this is the code used till 3v8 , derivative is now in UScientificGraph.cpp */
+void deriv_trace(int iGraph);
+void deriv_trace(int iGraph)
 { // take derivative of specified trace . No filtering (that can be applied using csvgraph if required then accessed with $Tn
   // derivative is based on previous point and next point (that means the derivative is centered around the point)
   // in general the results from this version "look better" that the alternative below
@@ -1356,24 +1384,8 @@ static void deriv_trace(int iGraph)
   y_arr[k]=(float)ld; // previous point
   y_arr[i]=(float)d; // last point
 }
-#else
-void deriv_trace(int iGraph)
-{ // take derivative of specified trace . No filtering (that can be applied using csvgraph if required then accessed with $Tn
-  // derivative is based on current point and next point (so slope appears by eye to be ofset by ~ 1/2 a sample).
-  float *x_arr,*y_arr;
-  double d=0;
-  unsigned int iCount=Form1->pPlotWindow->pScientificGraph->fnGetxyarr(&x_arr,&y_arr,iGraph); // allows access to x and y arrays of specified graph, returns nos points
-  int i,j;
-  if(iCount<2) return;
-  for(i=0; i<iCount-1;++i)  // for all points bar the last
-	{j=i+1;
-	 if(x_arr[j]==x_arr[i]) d=0;// avoid divide by zero when x value does not change
-	 else d=(y_arr[j]-y_arr[i])/(x_arr[j]-x_arr[i]); // slope
-	 y_arr[i]=d;
-	}
-  y_arr[i]=d; // last point has same slope as the point before
-}
 #endif
+
 static void integral_trace(int iGraph)
 { // take integral of specified trace .  Uses trapezoidal rule for integration
   float *x_arr,*y_arr,y_i;
@@ -1402,7 +1414,7 @@ void __fastcall TPlotWindow::Button_add_trace1Click(TObject *Sender)
   static char cstring[64]; // small buffer  to use with snprintf
   TColor Col;
   FILE *fin;
-  int lines_in_file;  // line number within file being read
+  size_t lines_in_file;  // line number within file being read
   char *csv_line=NULL;// line of csv file
   char *st;
   int xcol,ycol;
@@ -1422,7 +1434,7 @@ void __fastcall TPlotWindow::Button_add_trace1Click(TObject *Sender)
   bool allvalidxvals=true;
   double x_offset;
   clock_t start_t,end_t;
-  int nos_errs=0; // count of errors found when reading values
+  size_t nos_errs=0; // count of errors found when reading values
 #define MAX_ERRS 2 /* max errors that will be displayyed in full */
   /* defined below allow 1 example of each error type to be displayed to the user */
 #define ERR_TYPE1 0
@@ -1473,7 +1485,11 @@ try{
    else FString="" ; // "" means no filtering
    bool is_filter=strstr(FString.c_str(),"Filter")!= NULL;  // true if "filter" appears in the text
    bool is_fft=strstr(FString.c_str(),"FFT")!= NULL;  // true if "FFT" appears in the text
-   bool is_order=strstr(FString.c_str(),"order:")!= NULL;// true if "order:" appears in string (ie order must be set by user)
+   bool is_order=strstr(FString.c_str(),"order:")!= NULL
+				 || strstr(FString.c_str(),"Savitzky Golay smoothing")!= NULL
+				 || strstr(FString.c_str(),"Derivative (dy/dx)")!= NULL
+				 || strstr(FString.c_str(),"2nd derivative (d2y/d2x)")!= NULL
+				 ;// true if "order:" appears in string (ie order must be set by user)
    if(is_filter &&  median_ahead_t<=0)
 		{ShowMessage("Request to filter ignored as filter time constant has not been set");
 		 FString="";
@@ -1485,9 +1501,17 @@ try{
 		 int so=FString.Pos("order:");
 		 int LF=FString.Length() ;
 		 AnsiString FS1=FString;
-		 FString.SetLength(so-1); // get rid of order:  and anything after it
-		 snprintf(cstring,sizeof(cstring),"order %u ",poly_order);  // replace "order: with new text
-		 FString=FString+cstring+FS1.SubString(so+6,LF-(so-1+6));      // add on origonal text that was after "order:" (length 6)
+		 if(strstr(FString.c_str(),"order:")!= NULL)
+			{FString.SetLength(so-1); // get rid of order:  and anything after it
+			 snprintf(cstring,sizeof(cstring),"order %u ",poly_order);  // replace "order: with new text
+			 FString=FString+cstring+FS1.SubString(so+6,LF-(so-1+6));      // add on origonal text that was after "order:" (length 6)
+			}
+		 else
+			{
+			 snprintf(cstring,sizeof(cstring)," order %u ",poly_order);  // just add "order" to end
+			 FString=FString+cstring;
+			}
+
 		}
    else if(compress && FilterType->ItemIndex !=0)
 		{ShowMessage("Warning: both compress and filter requested so filtering will be done on compressed data");
@@ -1736,6 +1760,8 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 			 }
 		  ys=start_s+(sp-se); // also need to move ys forward to next item
 		  rprintf("Found an expression for y:%s (remaining string is \"%s\")\n",se,ys);
+		  install("x"); // adds variable, will be set to current x value
+		  install("line"); // adds variable,  will be set to current line number
 		  to_rpn(se); // compile expression to rpn
 		  if(last_expression_ok())
 				{ yexpr=true; // flag expression as valid
@@ -2039,7 +2065,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 								{snprintf(cstring,sizeof(cstring),"%.0f %% read of column %d",100.0*(double)_ftelli64(fin)/(double)filesize,ycol);
 								}
 #else
-						 snprintf(cstring,sizeof(cstring),"%d lines read ",lines_in_file);
+						 snprintf(cstring,sizeof(cstring),"%zu lines read ",lines_in_file);
 #endif
 						 StatusText->Caption=cstring;
                         }
@@ -2051,7 +2077,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 			{xval=(float)((double)(pScientificGraph->fnAddDataPoint_nextx(iGraph))-x_offset); // same value as previous graph loaded  as this is faster than decoding it again , x_offset will be added later but is already in previous trace so must subtract here
 			 if(!firstxvalue && xval<previousxvalue)
 				{if(++nos_errs<=MAX_ERRS)
-					rprintf("Error: adding x value from previous trace and values not monotonic at line %d xval=%g\n",lines_in_file+1,xval);
+					rprintf("Error: adding x value from previous trace and values not monotonic at line %zu xval=%g\n",lines_in_file+1,xval);
 				 xval=previousxvalue; // try and fix issue
 				 allvalidxvals=false; // stop problem repeating by turning off this optimisation
 				}
@@ -2095,11 +2121,11 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 							{allvalidxvals=false;
 							 if((++nos_errs<=MAX_ERRS || !found_error_type[ERR_TYPE1]) && ti== -1)
 								{found_error_type[ERR_TYPE1]=true; // note we have printed an example of this type of error
-								 rprintf("Warning: x value on line %d has an invalid date/time (time does not start with a number): %s\n",lines_in_file+1,col_ptrs[xcol-1]);
+								 rprintf("Warning: x value on line %zu has an invalid date/time (time does not start with a number): %s\n",lines_in_file+1,col_ptrs[xcol-1]);
 								}
 							 if((nos_errs<=MAX_ERRS || !found_error_type[ERR_TYPE2]) && ti!= -1)
 								{found_error_type[ERR_TYPE2]=true;  // note we have printed an example of this type of error
-								 rprintf("Warning: x value on line %d has an invalid date/time (time goes backwards!): %s\n",lines_in_file+1,col_ptrs[xcol-1]);
+								 rprintf("Warning: x value on line %zu has an invalid date/time (time goes backwards!): %s\n",lines_in_file+1,col_ptrs[xcol-1]);
 								}
 							 continue;   // gethms_days() returns a -ve value when it finds an error, so ignore this line when that happens
 							}
@@ -2107,7 +2133,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 							{ // this has to be after checks on time as we want a header line to be picked up as ERR_TYPE1 not type7
 							 if((++nos_errs<=MAX_ERRS || !found_error_type[ERR_TYPE7]) )
 								{found_error_type[ERR_TYPE7]=true; // note we have printed an example of this type of error
-								 rprintf("Warning: x value on line %d has no date but previous lines do have dates: %s\n",lines_in_file+1,col_ptrs[xcol-1]);
+								 rprintf("Warning: x value on line %zu has no date but previous lines do have dates: %s\n",lines_in_file+1,col_ptrs[xcol-1]);
 								}
 							}
 						if(firstxvalue) first_time=ti;  // remember 1st value, and potentially use as ofset for the rest of the values
@@ -2136,7 +2162,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 							 allvalidxvals=false;
 							 if(++nos_errs<=MAX_ERRS || !found_error_type[ERR_TYPE1] )
 								{found_error_type[ERR_TYPE1]=true; // note we have printed an example of this type of error
-								 rprintf("Warning: x value on line %d has an invalid date/time (strptime(\"%s\") returned NULL): %s\n",lines_in_file+1,date_time_fmt,col_ptrs[xcol-1]);
+								 rprintf("Warning: x value on line %zu has an invalid date/time (strptime(\"%s\") returned NULL): %s\n",lines_in_file+1,date_time_fmt,col_ptrs[xcol-1]);
 								}
 							 continue;      // ignore line
 							}
@@ -2146,7 +2172,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 							 allvalidxvals=false;
 							 if(++nos_errs<=MAX_ERRS || !found_error_type[ERR_TYPE2] )
 								{found_error_type[ERR_TYPE2]=true;  // note we have printed an example of this type of error
-								 rprintf("Warning: x value on line %d has an invalid date/time (format \"%s\" did not match whole string: %s [\"%s\" left])\n",lines_in_file+1,date_time_fmt,col_ptrs[xcol-1],dptr);
+								 rprintf("Warning: x value on line %zu has an invalid date/time (format \"%s\" did not match whole string: %s [\"%s\" left])\n",lines_in_file+1,date_time_fmt,col_ptrs[xcol-1],dptr);
 								}
 							 continue;      // ignore line
 							}
@@ -2155,7 +2181,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 							 allvalidxvals=false;
 							 if(++nos_errs<=MAX_ERRS || !found_error_type[ERR_TYPE3] )
 								{found_error_type[ERR_TYPE3]=true;  // note we have printed an example of this type of error
-								 rprintf("Warning: x value on line %d has an invalid date/time (check_tm() failed): %s\n",lines_in_file+1,col_ptrs[xcol-1]);
+								 rprintf("Warning: x value on line %zu has an invalid date/time (check_tm() failed): %s\n",lines_in_file+1,col_ptrs[xcol-1]);
 								}
 							 continue;   // ignore line
 							}
@@ -2178,7 +2204,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 #if 0
 						if(lines_in_file<5)
 							{// useful for debugging
-							 rprintf("date/time on line %d returns %g secs (format \"%s\" line: %s, ti=%g)\n",lines_in_file+1,xval,date_time_fmt,col_ptrs[xcol-1],ti);
+							 rprintf("date/time on line %zu returns %g secs (format \"%s\" line: %s, ti=%g)\n",lines_in_file+1,xval,date_time_fmt,col_ptrs[xcol-1],ti);
 							}
 #endif
 						}
@@ -2191,13 +2217,13 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 								 while(isspace(*st)) ++st; // skip any more whitespace
 								}
 						char *end;
-						xval= strtod(st,&end);   // get value for this column
+						xval= strtof(st,&end);   // get value for this column
 						// rprintf("Xval: xcol=%d string=%s =%g\n",xcol,st,xval);
 						if(st==end)
 							{allvalidxvals=false;
 							 if(++nos_errs<=MAX_ERRS || !found_error_type[ERR_TYPE3])
 								{found_error_type[ERR_TYPE3]=true;
-								 rprintf("Warning: x value on line %d has an invalid number: %s\n",lines_in_file+1,col_ptrs[xcol-1]);
+								 rprintf("Warning: x value on line %zu has an invalid number: %s\n",lines_in_file+1,col_ptrs[xcol-1]);
 								}
 							 continue;    // no valid number found
 							}
@@ -2212,13 +2238,31 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 				}
 			}
 		 if(yexpr)
-				{try
+				{double yval_d;
+                 // first set current values for predefined "variables"
+				 pnlist px=lookup("x");
+				 pnlist pline=lookup("line");
+				 if(px!=NULL)
+					px->value=xval;// current x value
+				 if(pline!=NULL)
+					pline->value=(double)lines_in_file;
+
+				 try
 						{
-						 yval=(float)execute_rpn(); // expression - excute it
+						 yval_d=execute_rpn(); // expression - excute it
 						}
 				 catch (...)   // assume the issue is an error in the expression
-						{yval=0;
+						{yval_d=NAN;
 						}
+				 if(isnan(yval_d))
+					{allvalidxvals=false; // line skipped
+					 if(++nos_errs<=MAX_ERRS || !found_error_type[ERR_TYPE4])
+							{found_error_type[ERR_TYPE4]=true;
+							 rprintf("Warning: y value on line %zu expression generates NAN (missing value?)\n",lines_in_file+1);
+							}
+					 continue;    // no valid number found
+					}
+                 yval=(float)yval_d;
 				}
          else
                 {st=col_ptrs[ycol-1];
@@ -2227,14 +2271,14 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
                         {++st;// skip " if present
                          while(isspace(*st)) ++st; // skip any more whitespace
                         }
-				 // now hope we have a number left - strtod() will terminate at the end of the number so any trailing whitespace or " will be ignored
+				 // now hope we have a number left - strtof() will terminate at the end of the number so any trailing whitespace or " will be ignored
                  char *end;
-				 yval= strtod(st,&end);   // just a column number - get value for this column
+				 yval= strtof(st,&end);   // just a column number - get value for this column
 				 if(st==end)
 					{allvalidxvals=false; // line skipped
 					 if(++nos_errs<=MAX_ERRS || !found_error_type[ERR_TYPE4])
 							{found_error_type[ERR_TYPE4]=true;
-							 rprintf("Warning: y value on line %d has an invalid number: %s\n",lines_in_file+1,col_ptrs[ycol-1]);
+							 rprintf("Warning: y value on line %zu has an invalid number: %s\n",lines_in_file+1,col_ptrs[ycol-1]);
 							}
 					 continue;    // no valid number found
 					}
@@ -2245,11 +2289,11 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 			{allvalidxvals=false; // line skipped
 			 if(!_finite(xval) && (++nos_errs<=MAX_ERRS || !found_error_type[ERR_TYPE5]))
 				{found_error_type[ERR_TYPE5]=true;
-				 rprintf("Warning: x value on line %d has an invalid number: %s\n",lines_in_file+1,col_ptrs[xcol-1]);
+				 rprintf("Warning: x value on line %zu has an invalid number: %s\n",lines_in_file+1,col_ptrs[xcol-1]);
 				}
 			 if( !_finite(yval) && (++nos_errs<=MAX_ERRS || !found_error_type[ERR_TYPE6]))
 				{found_error_type[ERR_TYPE6]=true;
-				 rprintf("Warning: y value on line %d has an invalid number: %s\n",lines_in_file+1,col_ptrs[ycol-1]);
+				 rprintf("Warning: y value on line %zu has an invalid number: %s\n",lines_in_file+1,col_ptrs[ycol-1]);
 				}
 			 continue; // need 2 valid numbers [eg ignore "inf" ]
 			}
@@ -2305,11 +2349,11 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 				}
 		}
   if(nos_errs==0)
-	rprintf("%d lines read from csv file (no errors found)\n",lines_in_file,nos_errs);
+	rprintf("%zu lines read from csv file (no errors found)\n",lines_in_file);
   else if(nos_errs==1)
-	rprintf("%d lines read from csv file (1 line skipped dues to errors)\n",lines_in_file,nos_errs);
+	rprintf("%zu lines read from csv file (1 line skipped dues to errors)\n",lines_in_file);
   else
-	rprintf("%d lines read from csv file (%d lines skipped dues to errors - at least one example of each error type is shown above)\n",lines_in_file,nos_errs);
+	rprintf("%zu lines read from csv file (%zu lines skipped dues to errors - at least one example of each error type is shown above)\n",lines_in_file,nos_errs);
   if(*ys!=',') fclose(fin);
   if(!gotyvalue)
         {// no valid y values found
@@ -2325,7 +2369,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 		{// errors found in file just read in , tell user (just once)
 		 char temp_str[100];
 		 showerrmessage=false;
-		 snprintf(temp_str,sizeof(temp_str),": Warning: %d errors found while reading file",nos_errs);
+		 snprintf(temp_str,sizeof(temp_str),": Warning: %zu errors found while reading file",nos_errs);
 		 strncat(cap_str,temp_str,sizeof(cap_str)-1-strlen(cap_str));
 		 ShowMessage(cap_str);
 		}
@@ -2373,8 +2417,13 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						 StatusText->Caption=FString;
 						 pScientificGraph->fnMedian_filt_time1(median_ahead_t,iGraph,filter_callback);
                         }
-                break;
-        case 3:
+				break;
+		case 3:
+				// Savitzky_Golay_smoothing
+				StatusText->Caption=FString;
+				pScientificGraph->Savitzky_Golay_smoothing((unsigned int)poly_order,iGraph);    // Savitzky Golay smoothing of specfied order (1,2,4 are very efficient)
+				break;
+		case 4:
 				// linear filter  with user specified time constant and order. No filtering is done if order=0
 				if(median_ahead_t>0.0 && poly_order>0)
 						{
@@ -2385,13 +2434,13 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						 	poly_order,median_ahead_t,sqrt(pow(2.0,1.0/(double)poly_order)-1.0)/(2.0*3.14159265358979*median_ahead_t));
                         }
 				break;
-		case 4:
+		case 5:
 
 				// lin regression y=mx
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg_origin(iGraph,filter_callback);
 				break;
-		case 5:
+		case 6:
 #if 0
 				{
 				 // test code uses general linear least squares fitting , false arguments means y values are not changed
@@ -2424,110 +2473,119 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(LinLin,iGraph,filter_callback);
 				break;
-		case 6:
+		case 7:
 				// lin regression y=mx+c  via GMR
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(LinLin_GMR,iGraph,filter_callback);
 				break;
-		case 7:
+		case 8:
 				// minimal max abs error: y=mx+c
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg_abs(false,iGraph,filter_callback);
 				break;
-		case 8:
+		case 9:
 				// minimal max abs relative error: y=mx+c
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg_abs(true,iGraph,filter_callback);
 				break;
-		case 9:
+		case 10:
 				// log regression
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(LogLin,iGraph,filter_callback);
 				break;
-		case 10:
+		case 11:
 				// exponentail regression
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(LinLog,iGraph,filter_callback);
 				break;
-		case 11:
+		case 12:
 				// powerregression
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(LogLog,iGraph,filter_callback);
 				break;
-		case 12:
+		case 13:
 				// recip regression
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(RecipLin,iGraph,filter_callback);
 				break;
-		case 13:
+		case 14:
 				// lin-recip regression
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(LinRecip,iGraph,filter_callback);
 				break;
-		case 14:
+		case 15:
 				// hyperbolic regression
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(RecipRecip,iGraph,filter_callback);
 				break;
-		case 15:
+		case 16:
 				// sqrt regression y=m*sqrt(x)+c
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(SqrtLin,iGraph,filter_callback);
 				break;
-		case 16:
+		case 17:
 				// nlog2(n) regression y=m*x*log2(x)+c
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(Nlog2nLin,iGraph,filter_callback);
 				break;
-		case 17:
+		case 18:
 				// y=a*x+b*sqrt(x)+c  (least squares fit)
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg_3(iGraph,filter_callback);
 				break;
 
-		case 18:
+		case 19:
 				// y=a+b*sqrt(x)+c*x+d*x^1.5
 				StatusText->Caption=FString;
 				gen_lin_reg(reg_sqrt,4,true,iGraph);
 				break;
-		case 19:
+		case 20:
 				// y=(a+bx)/(1+cx)  (least squares fit)
 				StatusText->Caption=FString;
 				pScientificGraph->fnrat_3(iGraph,filter_callback);
 				break;
-		case 20:
+		case 21:
 				// N=5=> y=(a0+a1*x+a2*x^2)/(1+b1*x+b2*x^2)
 				StatusText->Caption=FString;
 				gen_lin_reg(reg_rat,5,true,iGraph);
 				break;
-		case 21: //  general purpose polynomial fit   (least squares using orthogonal polynomials)
+		case 22: //  general purpose polynomial fit   (least squares using orthogonal polynomials)
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnPolyreg((unsigned int)poly_order,iGraph,filter_callback))
 						{StatusText->Caption="Polynomial fit failed";
 						 ShowMessage("Warning: Polynomial fit failed - adding original trace to graph");
 						}
 				break;
-		case 22:
+		case 23:
 				// general purpose polynomial fit in sqrt(x) with user defined order
 				StatusText->Caption=FString;
 				gen_lin_reg(reg_sqrt,poly_order+1,true,iGraph);
 				break;
-		case 23:
+		case 24:
 				// rational fit (poly1/poly2)  with user defined order
 				StatusText->Caption=FString;
 				gen_lin_reg(reg_rat,poly_order+1,true,iGraph);
 				break;
-		case 24:
+		case 25:
 				// derivative
 				StatusText->Caption=FString;
-				deriv_trace(iGraph);
+#if 1
+				pScientificGraph->deriv_filter((unsigned int)poly_order,iGraph);    // used fom 3v9 - uses Savitzky Golay filtered derivative of specfied order (1,2,4 are very efficient)
+#else
+				deriv_trace(iGraph); // this was used till csvgraph 3v8
+#endif
 				break;
-		case 25:
+		case 26:
+				// 2nd derivative
+				StatusText->Caption=FString;
+				pScientificGraph->deriv2_filter((unsigned int)poly_order,iGraph);    // used fom 3v9 - uses Savitzky Golay filtered derivative of specfied order (1,2,4 are very efficient)
+				break;
+		case 27:
 				// integral
 				StatusText->Caption=FString;
 				integral_trace(iGraph);
 				break;
-		case 26: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+		case 28: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 				// fft return ||
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnFFT(false,false,iGraph,filter_callback))
@@ -2535,7 +2593,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						 ShowMessage("Warning: FFT failed - adding original trace to graph");
 						}
 				break;
-		case 27: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+		case 29: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 				// fft return dBV
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnFFT(true,false,iGraph,filter_callback))
@@ -2543,7 +2601,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						 ShowMessage("Warning: FFT failed - adding original trace to graph");
 						}
 				break;
-		case 28: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+		case 30: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 				// fft with Hanning window, return ||
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnFFT(false,true,iGraph,filter_callback))
@@ -2551,7 +2609,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						 ShowMessage("Warning: FFT failed - adding original trace to graph");
 						}
 				break;
-		case 29: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+		case 31: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 				// fft with Hanning window return dBV
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnFFT(true,true,iGraph,filter_callback))
@@ -2785,14 +2843,29 @@ static size_t count_lines(char *cfilename, double filesize)
 	hFile = CreateFile(cfilename,               // file to open
 #endif
 					   GENERIC_READ,          // open for reading
-					   FILE_SHARE_READ,       // share for reading
+					   FILE_SHARE_READ | FILE_SHARE_WRITE ,       // share for reading & writing (needed to be able to open a file that excel already has open)
 					   NULL,                  // default security
 					   OPEN_EXISTING,         // existing file only
 					   FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, // normal file  , will be read sequentially
 					   NULL);                 // no attr. template
 
 	if (hFile == INVALID_HANDLE_VALUE)
-		{free(buf);
+		{
+		 DWORD dw = GetLastError();  // find out what the error was, then convert it to a string
+		 const DWORD size = 255;
+		 WCHAR buffer[size];
+		 FormatMessageW(
+
+			FORMAT_MESSAGE_FROM_SYSTEM |
+			FORMAT_MESSAGE_IGNORE_INSERTS,
+			NULL,
+			dw,
+			MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+			buffer,
+			size, NULL );
+		 rprintf("CreateFile returned %p INVALID_HANDLE_VALUE=%p\n",(void *)hFile,(void *)INVALID_HANDLE_VALUE);
+		 rprintf("CreateFile(%s): cannot open file\n: %s\n",cfilename,AnsiOf(buffer));
+		 free(buf);
 		 return 0; // cannot open file
 		}
 	while ( (bResult = ReadFile(hFile, buf, CL_BLOCK_SIZE, &nBytesRead, NULL)))    /* bResult is false only on error */
@@ -2859,11 +2932,13 @@ void proces_open_filename(char *fn) // open filename - just to peek at header ro
 		}
 	}
   if(addtraceactive) return; // currently adding traces so cannot change filename
+  addtraceactive=true;// use this flag to avoid running simulateneous button presses...
   nos_lines_in_file=0; // we need to count the number of lines in the file
   if(fn==NULL || strcmp(fn,"")==0)
 		{filename="";
 		 Form1->pPlotWindow->StatusText->Caption="No filename set";
 		 Form1->pPlotWindow->StaticText_filename->Text="Not set";
+		 addtraceactive=false; // tell other tasks we have finished
          return; // if no filename then done here
 		}
   filename=fn;
@@ -2874,7 +2949,8 @@ void proces_open_filename(char *fn) // open filename - just to peek at header ro
          Form1->pPlotWindow->StatusText->Caption="No filename set";
          Form1->pPlotWindow->StaticText_filename->Text="Not set";
 		 rprintf("Cannot open filename <%s>\n",filename.c_str());
-         filename="";
+		 filename="";
+		 addtraceactive=false; // tell other tasks we have finished
          return;
 		}
 
@@ -2905,8 +2981,13 @@ void proces_open_filename(char *fn) // open filename - just to peek at header ro
 #else
   rprintf("Compiled for unknown pointer size !\n");
 #endif
-  rprintf("sizeof int=%d,long=%d,float=%d,double=%d,size_t=%d,ssize_t=%d,uintptr_t=%d,intptr_t=%d,void *=%d\n",
-	sizeof(int),sizeof(long),sizeof(float),sizeof(double),sizeof(size_t),sizeof(ssize_t),sizeof(uintptr_t),sizeof(intptr_t),sizeof(void *));
+  rprintf("sizeof int=%d,long=%d,long long int=%d,float=%d,double=%d,long double=%d,size_t=%d,ssize_t=%d,uintptr_t=%d,intptr_t=%d,void *=%d\n",
+	sizeof(int),sizeof(long),sizeof(long long int),sizeof(float),sizeof(double),sizeof(long double),sizeof(size_t),sizeof(ssize_t),sizeof(uintptr_t),sizeof(intptr_t),sizeof(void *));
+#define str_bool(x)(x?"True":"False")
+ rprintf("NAN==NAN => %s, NAN==0.0 => %s 0.0==0.0 => %s INFINITY==INFINITY => %s 0==INFINITY => %s NAN==INFINITY => %s\n",
+	str_bool(NAN==NAN), str_bool(NAN==0.0), str_bool(0.0==0.0), str_bool(INFINITY==INFINITY), str_bool(0.0==INFINITY), str_bool(NAN==INFINITY));
+ rprintf("NAN!=NAN => %s, NAN!=0.0 => %s 0.0!=0.0 => %s INFINITY!=INFINITY => %s 0!=INFINITY => %s NAN!=INFINITY => %s\n",
+	str_bool(NAN!=NAN), str_bool(NAN!=0.0), str_bool(0.0!=0.0), str_bool(INFINITY!=INFINITY), str_bool(0.0!=INFINITY), str_bool(NAN!=INFINITY));
 
 #endif
   rprintf("filename selected is %s\n",filename.c_str());
@@ -2919,7 +3000,8 @@ void proces_open_filename(char *fn) // open filename - just to peek at header ro
          fclose(fin);
          filename="";
          Form1->pPlotWindow->StatusText->Caption="No filename set";
-         Form1->pPlotWindow->StaticText_filename->Text="Not set";
+		 Form1->pPlotWindow->StaticText_filename->Text="Not set";
+		 addtraceactive=false; // tell other tasks we have finished
          return;
         }
   if(col_names!=NULL) free(col_names);
@@ -2929,7 +3011,8 @@ void proces_open_filename(char *fn) // open filename - just to peek at header ro
          fclose(fin);
          filename="";
          Form1->pPlotWindow->StatusText->Caption="No filename set";
-         Form1->pPlotWindow->StaticText_filename->Text="Not set";
+		 Form1->pPlotWindow->StaticText_filename->Text="Not set";
+		 addtraceactive=false; // tell other tasks we have finished
          return;
         }
   j=csv_count_cols(col_names); // count how many columns are present in header row
@@ -2938,7 +3021,8 @@ void proces_open_filename(char *fn) // open filename - just to peek at header ro
          fclose(fin);
          filename="";
          Form1->pPlotWindow->StatusText->Caption="No filename set";
-         Form1->pPlotWindow->StaticText_filename->Text="Not set";
+		 Form1->pPlotWindow->StaticText_filename->Text="Not set";
+		 addtraceactive=false; // tell other tasks we have finished
          return;
         }
 
@@ -2950,7 +3034,8 @@ void proces_open_filename(char *fn) // open filename - just to peek at header ro
          fclose(fin);
          filename="";
          Form1->pPlotWindow->StatusText->Caption="No filename set";
-         Form1->pPlotWindow->StaticText_filename->Text="Not set";
+		 Form1->pPlotWindow->StaticText_filename->Text="Not set";
+		 addtraceactive=false; // tell other tasks we have finished
          return;
         }
   if(j!=csv_count_cols(csv_line))
@@ -2968,7 +3053,8 @@ void proces_open_filename(char *fn) // open filename - just to peek at header ro
   if(col_ptrs==NULL || hdr_col_ptrs==NULL)
         {ShowMessage("Error - malloc for col-ptrs failed - out of RAM\n");
          fclose(fin);
-         Form1->pPlotWindow->StatusText->Caption="No more RAM!";
+		 Form1->pPlotWindow->StatusText->Caption="No more RAM!";
+		 addtraceactive=false; // tell other tasks we have finished
          return;
         }
   if(j==1)
@@ -3049,15 +3135,26 @@ void proces_open_filename(char *fn) // open filename - just to peek at header ro
   set_ListboxXY(); // highlight items in ListBoxX & Y that have been selected in Edit_xcol & Edit_ycol
   Application->ProcessMessages(); /* allow windows to update (but not go idle), do this regularly  */
   // now do fast count of lines in file
-  addtraceactive=true;  // stop user adding traces until we have counted the number of lines in the file
   Form1->pPlotWindow->StatusText->Caption="Counting lines in file..." ;
   clock_t begin_t=clock();
   nos_lines_in_file=count_lines(filename.c_str(),filesize);  // this will keep user updated on its progress by updating status line message every 2 secs
-  addtraceactive=false;
-  rprintf(" File has %.0f lines (file read in %g secs)\n",(double)nos_lines_in_file,(double)(clock()-begin_t)/CLK_TCK);
-  snprintf(str_buf,sizeof(str_buf),"Ready : %.0f lines found in file",(double)nos_lines_in_file);
+  if(nos_lines_in_file==0 )   // no columns means empty line, 1 column means no commas so if line is long its suspect
+		{
+		 Form1->pPlotWindow->ListBoxX->Items->Clear();
+		 Form1->pPlotWindow->ListBoxY->Items->Clear();
+		 filename="";
+         Form1->pPlotWindow->StatusText->Caption="No filename set";
+		 Form1->pPlotWindow->StaticText_filename->Text="Not set";
+		 Application->ProcessMessages(); /* allow windows to update (but not go idle), do this regularly  */
+		 ShowMessage("Error: cannot count lines in file [open in another program?]\n");
+		 addtraceactive=false; // tell other tasks we have finished
+         return;
+		}
+  rprintf(" File has %zu lines (file read in %g secs)\n",nos_lines_in_file,(double)(clock()-begin_t)/CLK_TCK);
+  snprintf(str_buf,sizeof(str_buf),"Ready : %zu lines found in file",nos_lines_in_file);
   Form1->pPlotWindow->StatusText->Caption=str_buf;
   Form1->pPlotWindow->StaticText_filename->Text=basename;
+  addtraceactive=false; // tell other tasks we have finished
 }
 
 
@@ -3095,7 +3192,7 @@ void __fastcall TPlotWindow::Button_Filename1Click(TObject *Sender)
         {filename="";
         }
 #endif
- proces_open_filename(filename.c_str());
+ proces_open_filename(filename.c_str());  // this function sets/clears addtraceactive flag
 }
 
 //---------------------------------------------------------------------------
@@ -3198,6 +3295,15 @@ void __fastcall TPlotWindow::Edit_titleChange(TObject *Sender)
 
 void __fastcall TPlotWindow::Exit1Click(TObject *Sender)
 { P_UNUSED(Sender);
+  if(addtraceactive || xchange_running!=-1)
+	{// appear to still be busy doing something - ask user if this is true
+	 UnicodeString errorText="Exit requested but csvgraph appears to still be busy - continue waiting?";
+	 if( MessageDlg(errorText,mtConfirmation,TMsgDlgButtons() <<mbYes <<mbNo ,0) == mrNo)
+		{addtraceactive= false;   // if user says "no" then clear flags  (if they say "yes" don't clear flags and we will return below)
+		 xchange_running= -1;
+		}
+	}
+  if(addtraceactive) return; // currently busy so return to allow csvgraph to continue what it was doing
   DragAcceptFiles(Handle, false);    // stop accepting drag n drop files
   exit(1); // close this screen exits application      
 }
@@ -3206,6 +3312,15 @@ void __fastcall TPlotWindow::Exit1Click(TObject *Sender)
 void __fastcall TPlotWindow::ButtonSave1Click(TObject *Sender)
 { P_UNUSED(Sender);
  // saveas button pressed
+  if(addtraceactive || xchange_running!=-1)
+	{// appear to still be busy doing something - ask user if this is true
+	 UnicodeString errorText="Save requested but csvgraph appears to still be busy - continue waiting?";
+	 if( MessageDlg(errorText,mtConfirmation,TMsgDlgButtons() <<mbYes <<mbNo ,0) == mrNo)
+		{addtraceactive= false;   // if user says "no" then clear flags  (if they say "yes" don't clear flags and we will return below)
+		 xchange_running= -1;
+		}
+	}
+  if(addtraceactive) return; // currently busy so return to allow csvgraph to continue what it was doing
 #ifndef UseVCLdialogs
  save_filename=getsaveBMPfilename();// use new file selector
  if(save_filename!="")
@@ -3265,6 +3380,16 @@ void __fastcall TPlotWindow::Button_PlotToClipboard1Click(TObject *Sender)
 void __fastcall TPlotWindow::SaveDataAs1Click(TObject *Sender)
 { P_UNUSED(Sender);
  // save as CSV file
+  if(addtraceactive || xchange_running!=-1)
+	{// appear to still be busy doing something - ask user if this is true
+	 UnicodeString errorText="Save as CSV file requested but csvgraph appears to still be busy - continue waiting?";
+	 if( MessageDlg(errorText,mtConfirmation,TMsgDlgButtons() <<mbYes <<mbNo ,0) == mrNo)
+		{addtraceactive= false;   // if user says "no" then clear flags  (if they say "yes" don't clear flags and we will return below)
+		 xchange_running= -1;
+		}
+	}
+  if(addtraceactive) return; // currently busy so return to allow csvgraph to continue what it was doing
+  addtraceactive=true; // active during save
 #ifndef UseVCLdialogs
  save_filename=getsaveCSVfilename();// use windows file selector
  if(save_filename!="")
@@ -3282,6 +3407,7 @@ void __fastcall TPlotWindow::SaveDataAs1Click(TObject *Sender)
 				}
 		}
 #endif
+ addtraceactive=false;
 }
 //---------------------------------------------------------------------------
 
@@ -3290,6 +3416,15 @@ void __fastcall TPlotWindow::ListBoxYClick(TObject *Sender)
  // user has selected some item(s) for Y columns
  bool first=true;
  AnsiString new_text="";  // we cannot gradually update Edit_ycol->Text as that has an "OnChange" event which will mess up the updates
+ if(addtraceactive || xchange_running!=-1)
+	{// appear to still be busy doing something - ask user if this is true
+	 UnicodeString errorText="You clicked to add Y items but csvgraph appears to still be busy - continue waiting?";
+	 if( MessageDlg(errorText,mtConfirmation,TMsgDlgButtons() <<mbYes <<mbNo ,0) == mrNo)
+		{addtraceactive= false;   // if user says "no" then clear flags  (if they say "yes" don't clear flags and we will return below)
+		 xchange_running= -1;
+		}
+	}
+  if(addtraceactive) return; // currently busy so return to allow csvgraph to continue what it was doing
  //rprintf("Y column selection made: items selected=%d\n",ListBoxY->SelCount );
  for (int i = 0; i < ListBoxY->Items->Count; i++)
         {
@@ -3606,6 +3741,16 @@ void __fastcall TPlotWindow::Save2Click(TObject *Sender)
  double xmin,xmax;
  xmin=pScientificGraph->fnGetScaleXMin();
  xmax=pScientificGraph->fnGetScaleXMax();
+ if(addtraceactive || xchange_running!=-1)
+	{// appear to still be busy doing something - ask user if this is true
+	 UnicodeString errorText="Save screen as CSV requested but csvgraph appears to still be busy - continue waiting?";
+	 if( MessageDlg(errorText,mtConfirmation,TMsgDlgButtons() <<mbYes <<mbNo ,0) == mrNo)
+		{addtraceactive= false;   // if user says "no" then clear flags  (if they say "yes" don't clear flags and we will return below)
+		 xchange_running= -1;
+		}
+	}
+ if(addtraceactive) return; // currently busy so return to allow csvgraph to continue what it was doing
+ addtraceactive=true;
  rprintf("Save X range on screen (%g to %g) as CSV\n",xmin,xmax);
 #ifndef UseVCLdialogs
  save_filename=getsaveCSVfilename();// use windows file selector
@@ -3624,6 +3769,7 @@ void __fastcall TPlotWindow::Save2Click(TObject *Sender)
 				}
 		}
 #endif
+ addtraceactive=false;
 }
 //---------------------------------------------------------------------------
 

@@ -52,8 +52,8 @@
    					sig digits			6-9
 Also note that 0x0fff ffff ffff ffff =  1,152,921,504,606,846,975  	, so 18 digits easily fit into a 64 bit unsigned (with 4 bits spare) - which is enough for a double mantissa.
 2^64= 18,446,744,073,709,551,616 
-0xffff ffff = 	4,294,967,295 so 9 digits fits with a 32 bit unsigned (with 2 bits spare) which is NOT enough for a float mantissa			
- long double
+0xffff ffff = 	4,294,967,295 so 9 digits fits with a 32 bit unsigned (with 2 bits spare) which is NOT enough for a float mantissa
+
 */   					
 float fast_strtof(const char *s,char **endptr); // if endptr != NULL returns 1st character thats not in the number
 static const int maxfExponent = 38;	/* Largest possible base 10 for a float exponent. (must match array below) */
@@ -141,7 +141,7 @@ static uint32_t u32powersOf10[]=
  
 float fast_strtof(const char *s,char **endptr) // if endptr != NULL returns 1st character thats not in the number
  {
-  double dr; // may need to use double precision to get an accurate float - we try hard below to avoid this either by uisng just a uint32, or just by using float's
+  double dr; // may need to use double precision to get an accurate float - we try hard below to avoid this either by using just a uint32, or just by using float's
   bool sign=false,expsign=false,got_number=false;
   uint_fast32_t r32=0; // mantissa, uint32 can hold 9 digits 
   uint_fast64_t r64=0; // if we get too many digits in mantissa then we swap to using this

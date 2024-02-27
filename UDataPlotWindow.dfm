@@ -4614,7 +4614,7 @@ object PlotWindow: TPlotWindow
     end
   end
   object Panel2: TScrollBox
-    Left = 1018
+    Left = 1046
     Top = 0
     Width = 298
     Height = 978
@@ -4631,7 +4631,7 @@ object PlotWindow: TPlotWindow
     TabOrder = 1
     OnEndDock = Panel2EndDock
     OnResize = Panel2Resize
-    ExplicitLeft = 1014
+    ExplicitLeft = 1042
     DesignSize = (
       294
       974)
@@ -5019,6 +5019,7 @@ object PlotWindow: TPlotWindow
         'None'
         'Recursive Median Filter'
         'Standard Median Filter'
+        'Savitzky Golay smoothing'
         'Linear Filter order:'
         'Lin.regression: y=mx'
         'Lin. regression: y=mx+c'
@@ -5041,6 +5042,7 @@ object PlotWindow: TPlotWindow
         'Poly in sqrt(x) order:'
         'rational (poly/poly) order:'
         'Derivative (dy/dx)'
+        '2nd derivative (d2y/d2x)'
         'Integral (y dx)'
         'FFT returns |magnitude|'
         'FFT returns dBV'

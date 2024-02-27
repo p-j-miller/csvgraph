@@ -997,7 +997,7 @@ static inline void dbl_ins_sort( double *x, const size_t n)
 		 	 do
 		 		{j--;
 		 		} while(j>=x && *j>t);
-		 	 memmove(j+2,j+1,(p-j)*sizeof(elem_type_sort2));// move a portion of array x right by 1 to make space for t 		 
+		 	 memmove(j+2,j+1,(p-j)*sizeof(double));// move a portion of array x right by 1 to make space for t 		 
 		 	 j[1]=t;		
 		 	}
         }							

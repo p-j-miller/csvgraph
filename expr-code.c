@@ -102,7 +102,7 @@ version 4.2 27/3/2020 - added Allow_dollar_T option to allow variables of form $
 version 5.0 31/7/2022 - added wchar_t versions of some functions to make porting to builder 10 simpler
 version 5.1 11/9/2022 - merged csvgraph and cpmmon-files versions as had diverged.
 version 6.0 14/9/2022 - split out pure C code - rprintf.cpp and getfloat.cpp made seperate files.
-
+version 7.0 25/2/2024 - NAN added  as constant, comparison (== and !=) made to work as expected (ie NAN=NAN=true)
 */
 
 #include "expr-code.h"
@@ -155,7 +155,7 @@ void hash_reset(uint32_t *h) // reset hash h to its initial value
 {*h=2166136261;
 }
 
-static uint32_t hash_internal(char *s,uint32_t  hash) // returns start_hash "plus" string s
+static uint32_t hash_internal(const char *s,uint32_t  hash) // returns start_hash "plus" string s
 {uint32_t newchar;
  while(s!=NULL && *s!= '\0')
 		{newchar=(uint32_t)(*s++); /* get next character */
@@ -165,11 +165,11 @@ static uint32_t hash_internal(char *s,uint32_t  hash) // returns start_hash "plu
  return hash;
 }
 
-void hash_add(char *s, uint32_t *h) // adds string s to hash h, updates h
+void hash_add(const char *s, uint32_t *h) // adds string s to hash h, updates h
 {*h=hash_internal(s,*h);
 }
 
-uint32_t hash_str(char *s) // returns hash of string  , always starting from the same initial value for hash
+uint32_t hash_str(const char *s) // returns hash of string  , always starting from the same initial value for hash
 {uint32_t hash;
  hash_reset(&hash);
  hash=hash_internal(s,hash);
@@ -190,7 +190,7 @@ uint32_t hash_str(char *s) // returns hash of string  , always starting from the
 static pnlist hashtab[HASHSIZE]; /* array pointers to nlist structures (which are allocated using malloc() )*/
 
 #if 1
-static int hash(char *s)
+static int hash(const char *s)
     {
      return hash_str(s) % HASHSIZE;
     }
@@ -206,17 +206,17 @@ static int hash(char *s)
     }
 #endif
 
-pnlist lookup(char *s) /* lookup s , returns pointer to struct snlist or NULL if not found */
+pnlist lookup(const char *s) /* lookup s , returns pointer to struct snlist or NULL if not found */
     {pnlist np;
-     for(np=hashtab[hash(s)];np!=NULL;np=np->next)
+	 for(np=hashtab[hash(s)];np!=NULL;np=np->next)
         {if (strcmp(s,np->name)==0)
              return np; /* found it */
         }
      return NULL; /* not found */
     }
 
-char *strsave(char *s); /* forward declaration to avoid compiler warning */
-char *strsave(char *s)  /* save a copy of string s using malloc , returns NULL if no space */
+char *strsave(const char *s); /* forward declaration to avoid compiler warning */
+char *strsave(const char *s)  /* save a copy of string s using malloc , returns NULL if no space */
     {char *p;
 	 if((p=(char *)(malloc(strlen(s)+1))) != NULL)
         {strcpy(p,s); /* got space, copy string */
@@ -224,14 +224,14 @@ char *strsave(char *s)  /* save a copy of string s using malloc , returns NULL i
      return p;
     }
 
-pnlist install(char *name) /* adds name to hashtab if it does not exist, returns pointer to entry created or NULL on error */
+pnlist install(const char *name) /* adds name to hashtab if it does not exist, returns pointer to entry created or NULL on error */
     {pnlist np;
      int hashval;
      if((np=lookup(name))==NULL)
         { /* not found , create new entry */
 		 np=(pnlist)( malloc(sizeof(*np)));
          if(np==NULL) return NULL;/* out space */
-         if((np->name=strsave(name))==NULL)
+		 if((np->name=strsave(name))==NULL)
             return NULL; /* not enough space for "string" name */
          np->value=0.0; /* default value */   
          hashval=hash(np->name);
@@ -271,6 +271,7 @@ static struct functions       /* list of predefined functions/constants - must b
 		  {"log",1,LOG,0},
 		  {"max",2,MAX,0},
 		  {"min",2,MIN,0},
+		  {"nan",-1,CONSTANT, __builtin_nan("0") },  // NAN is not considered by the compiler as a constant
 		  {"pi",-1,CONSTANT, M_PI},
 		  {"pow",2,POW,0},
 		  {"sin",1,SIN,0},
@@ -451,7 +452,7 @@ static void expr0(void) /* deal with ?: operators */
  while(isspace(*e))++e; /* skip whitespace */
  while(*e=='?')
         {++e; /* pass over ? */
-         expr0(); /* expression value if true - need to cal expr0 here as 1==2? 3==4?1:0 :1 is valid as is 1==2?2:3 ? 1: 0 )2nd done by while loop here */
+		 expr0(); /* expression value if true - need to call expr0 here as 1==2? 3==4?1:0 :1 is valid as is 1==2?2:3 ? 1: 0 )2nd done by while loop here */
          if(!flag) return;
          while(isspace(*e))++e; /* skip whitespace */
          if(*e!=':')
@@ -991,9 +992,25 @@ static double execute_rpn_from(size_t from)  /* execute rpn created by previous 
                         /* bitwise operators work on uisigned ints (32 bits) which can be exactly represented as doubles */
                 case OR: stack[sp-2]= (unsigned int)(stack[sp-2]) | (unsigned int)(stack[sp-1]); sp-=1; break;
                 case XOR: stack[sp-2]= (unsigned int)(stack[sp-2]) ^ (unsigned int)(stack[sp-1]); sp-=1; break;
-                case AND: stack[sp-2]= (unsigned int)(stack[sp-2]) & (unsigned int)(stack[sp-1]); sp-=1; break;
-                case EQ: stack[sp-2]=stack[sp-2] == stack[sp-1]; sp-=1; break;
-                case NEQ: stack[sp-2]=stack[sp-2] != stack[sp-1]; sp-=1; break;
+				case AND: stack[sp-2]= (unsigned int)(stack[sp-2]) & (unsigned int)(stack[sp-1]); sp-=1; break;
+				case EQ:  if(isnan(stack[sp-1]) || isnan(stack[sp-2]) )
+							{// deal with NAN's as special case as we want NAN=NAN to give true
+							 stack[sp-2]=(isnan(stack[sp-1]) && isnan(stack[sp-2]) ) ;
+							}
+						  else
+							{// not NAN's - can use standard == operator
+							 stack[sp-2]=stack[sp-2] == stack[sp-1];
+							}
+						  sp-=1; break;
+				case NEQ: if(isnan(stack[sp-1]) || isnan(stack[sp-2]) )
+							{// deal with NAN's as special case as we want NAN!=NAN to give false
+							 stack[sp-2]=!(isnan(stack[sp-1]) && isnan(stack[sp-2]) ) ;
+							}
+						  else
+							{// not NAN's - can use standard != operator
+							 stack[sp-2]=stack[sp-2] != stack[sp-1];
+							}
+						  sp-=1; break;
                 case LESS: stack[sp-2]=stack[sp-2] < stack[sp-1]; sp-=1; break;
                 case GT: stack[sp-2]=stack[sp-2] > stack[sp-1]; sp-=1; break;
                 case LE: stack[sp-2]=stack[sp-2] <= stack[sp-1]; sp-=1; break;
@@ -1003,7 +1020,8 @@ static double execute_rpn_from(size_t from)  /* execute rpn created by previous 
                 case ADD: stack[sp-2]+=stack[sp-1]; sp-=1; break;
                 case SUB: stack[sp-2]-=stack[sp-1]; sp-=1; break;
                 case MULT: stack[sp-2]*=stack[sp-1]; sp-=1; break;
-                case DIV: if(stack[sp-1]!=0) stack[sp-2]/=stack[sp-1];
+				case DIV: if(isnan(stack[sp-1]) || isnan(stack[sp-2]) ) stack[sp-2]=NAN;
+						   else if(stack[sp-1]!=0) stack[sp-2]/=stack[sp-1];
                            else if(stack[sp-2]!=0) stack[sp-2]=MAXFLOAT; // x/0 = big  - cannot use MAXDOUBLE as use floats for values elsewhere
                            else stack[sp-2]=0; // 0/0 = 0 here (should perhaps be NAN)
                           sp-=1; break;
@@ -3143,8 +3161,8 @@ float t90(int dt) /* returns t score for checking both upper and lower limits at
 						};
 STATIC_ASSERT(ELEMENTS_IN_ARR(t90dt) == ELEMENTS_IN_ARR(t90val));
 
- // float interp1D(float *xa, float *ya, int size, float x, bool clip)
- return interp1D(t90dt,t90val,ELEMENTS_IN_ARR(t90dt),dt,true);
+ // float interp1D_f(float *xa, float *ya, int size, float x, bool clip)
+ return interp1D_f(t90dt,t90val,ELEMENTS_IN_ARR(t90dt),dt,true);
 }
 
 float t99(int dt) /* returns t score for checking both upper and lower limits at 99% certainty - from pp154 Texas Instruments TI-51-III owners manual */
@@ -3167,8 +3185,8 @@ float t99(int dt) /* returns t score for checking both upper and lower limits at
 						};
 STATIC_ASSERT(ELEMENTS_IN_ARR(t99dt) == ELEMENTS_IN_ARR(t99val));
 
- // float interp1D(float *xa, float *ya, int size, float x, bool clip)
- return interp1D(t99dt,t99val,ELEMENTS_IN_ARR(t99dt),dt,true);
+ // float interp1D_f(float *xa, float *ya, int size, float x, bool clip)
+ return interp1D_f(t99dt,t99val,ELEMENTS_IN_ARR(t99dt),dt,true);
 }
 
 float r2test90(int nossamples) /* gives r2test value for 90% confidence  - from pp77 Texas Instruments TI-51-III owners manual */

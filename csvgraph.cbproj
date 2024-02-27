@@ -162,7 +162,7 @@
         <LinkPackageStatics>rtl.lib;vcl.lib;bcbsmp.lib;vclx.lib;vclimg.lib;VclSmp.lib</LinkPackageStatics>
         <VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>
         <VerInfo_Locale>1033</VerInfo_Locale>
-        <VerInfo_Keys>CompanyName=Peter Miller;FileDescription=$(MSBuildProjectName);FileVersion=3.6.0.4;InternalName=csvgraph;LegalCopyright=Peter Miller 2023;LegalTrademarks=;OriginalFilename=;ProgramID=com.embarcadero.$(MSBuildProjectName);ProductName=$(MSBuildProjectName);ProductVersion=3.6.0.0;Comments=</VerInfo_Keys>
+        <VerInfo_Keys>CompanyName=Peter Miller;FileDescription=$(MSBuildProjectName);FileVersion=3.6.0.8;InternalName=csvgraph;LegalCopyright=Peter Miller 2023;LegalTrademarks=;OriginalFilename=;ProgramID=com.embarcadero.$(MSBuildProjectName);ProductName=$(MSBuildProjectName);ProductVersion=3.6.0.0;Comments=</VerInfo_Keys>
         <BCC_AllWarnings>true</BCC_AllWarnings>
         <BCC_SelectedWarnings>false</BCC_SelectedWarnings>
         <BCC_UserSuppliedOptions>-Wno-c++98-compat -Wno-double-promotion -Wno-old-style-cast -Wno-float-equal -Wno-date-time -Wno-exit-time-destructors -Wno-global-constructors -Wno-padded -Wno-missing-noreturn  -Wno-c++98-compat-pedantic</BCC_UserSuppliedOptions>
@@ -178,7 +178,7 @@
         <VerInfo_MinorVer>6</VerInfo_MinorVer>
         <VerInfo_AutoIncVersion>true</VerInfo_AutoIncVersion>
         <AppDPIAwarenessMode>gdiScaling</AppDPIAwarenessMode>
-        <VerInfo_Build>4</VerInfo_Build>
+        <VerInfo_Build>8</VerInfo_Build>
     </PropertyGroup>
     <ItemGroup>
         <CppCompile Include="..\Common-files\atof.c">
@@ -207,6 +207,9 @@
         </CppCompile>
         <CppCompile Include="..\Common-files\rprintf.cpp">
             <BuildOrder>12</BuildOrder>
+        </CppCompile>
+        <CppCompile Include="..\Common-files\smooth_diff.c">
+            <BuildOrder>20</BuildOrder>
         </CppCompile>
         <CppCompile Include="..\Common-files\strftime.c">
             <BuildOrder>18</BuildOrder>
@@ -354,6 +357,12 @@
                 </DeployFile>
                 <DeployFile LocalName=".\Win32\Release\csvgraph.exe" Configuration="Release" Class="ProjectOutput"/>
                 <DeployFile LocalName=".\Win64\Release\csvgraph.exe" Configuration="Release" Class="ProjectOutput"/>
+                <DeployFile LocalName=".\Win64\Release\csvgraph.exe" Configuration="Release" Class="ProjectOutput">
+                    <Platform Name="Win64">
+                        <RemoteName>csvgraph.exe</RemoteName>
+                        <Overwrite>true</Overwrite>
+                    </Platform>
+                </DeployFile>
                 <DeployFile LocalName="icon-150x150.png" Configuration="Release" Class="UWP_CppLogo150"/>
                 <DeployFile LocalName="icon-44x44.png" Configuration="Release" Class="UWP_CppLogo44"/>
                 <DeployClass Name="AdditionalDebugSymbols">

@@ -45,8 +45,8 @@
 
 /* general purpose hash functions based on Fowler/Noll/Vo hash fnv-1a , with optional "mixing" at the end */
 void hash_reset(uint32_t *h); // reset hash h to its initial value
-void hash_add(char *s, uint32_t *h); // adds string s to hash h, updates h
-uint32_t hash_str(char *s); // returns hash of string  , always starting from the same initial value for hash
+void hash_add(const char *s, uint32_t *h); // adds string s to hash h, updates h
+uint32_t hash_str(const char *s); // returns hash of string  , always starting from the same initial value for hash
 
 /* table lookup code based on K&R The C programming language (1st Ed) section 6.6 */
 
@@ -57,8 +57,8 @@ typedef struct snlist
       struct snlist *next; /* pointer to next entry in chain at this hash value */
     } nlist, *pnlist;
 
-pnlist lookup(char *s); /* lookup s , returns pointer to struct snlist or NULL if not found */
-pnlist install(char *name); /* adds name to hashtab if it does not exist, returns pointer to entry created or NULL on error */
+pnlist lookup(const char *s); /* lookup s , returns pointer to struct snlist or NULL if not found */
+pnlist install(const char *name); /* adds name to hashtab if it does not exist, returns pointer to entry created or NULL on error */
 #ifdef Allow_dollar_vars_in_expr
 double get_dollar_var_value(pnlist p); /* get value of $ variable */
 #endif

@@ -53,6 +53,7 @@
 #include "yasort2.h" /* needs to be set so we sort float's ie include "#define elem_type_sort2 float" */
 #include "yamedian.h" /* needs to be set to work on floats eg  #define elem_type_median float */
 #include "interpolate.h"
+#include "smooth_diff.h"
 
 // #define USE_double_to_str_exp /* define to use double_to_str_exp() for y axis with max 12 chars, if not defined use gcvt() */
 
@@ -1143,7 +1144,7 @@ float TScientificGraph::fnAddDataPoint_thisy(int iGraphNumber)    // returns nex
   if(iGraphNumber<0 || iGraphNumber >=iNumberOfGraphs-1) return 0; // invalid graph number (-1 as cannot refer to current trace
   SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumber]); // previous trace added
   // float interp1D(float *xa, float *ya, int size, float x, bool clip)
-  return interp1D(pAGraph->x_vals,pAGraph->y_vals,pAGraph->nos_vals ,xval,false);
+  return interp1D_f(pAGraph->x_vals,pAGraph->y_vals,pAGraph->nos_vals ,xval,false);
 };
 #else /* original code - does not work if x values need to be sorted afterwards */
 float TScientificGraph::fnAddDataPoint_thisy(int iGraphNumber)    // returns next y value of iGraphNumber (locn from current graph number)  used to do $T1
@@ -1725,6 +1726,85 @@ size_t TScientificGraph::fnGetxyarr(float **x_arr,float **y_arr,int iGraphNumber
   *y_arr=pAGraph->y_vals;
   return iCount;
  }
+
+void deriv_trace(int iGraph); // in UDataPlotWindow.cpp
+void TScientificGraph::deriv_filter(unsigned int diff_order,int iGraphNumberF)
+{ // take derivative of specified trace .
+  //  uses 17 point Savitzky Golay algorithm
+  // needs to create a new array for results as uses points either side of index to calculate derivative
+  float *x_arr,*y_arr;
+  SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
+  size_t iCount=pAGraph->nos_vals ;
+  float *newy=(float *)malloc(iCount*sizeof(float));
+  if(newy==NULL)
+		{rprintf("deriv_filter: Not enough ram to calculate filtered derivative, using unfiltered derivative\n");
+		 deriv_trace(iGraphNumberF) ;
+		 return;
+		}
+  x_arr=pAGraph->x_vals;
+  y_arr=pAGraph->y_vals;
+  for(size_t i=0;i<iCount;++i)
+	{
+	 newy[i]=(float)dy_dx17(y_arr, x_arr,0,iCount-1, i,diff_order );  // calculate derivative at point "i"
+	}
+  free(y_arr); // delete original y values
+  pAGraph->y_vals=newy;// put in new y values
+  return; // all done
+}
+
+void TScientificGraph::deriv2_filter(unsigned int diff_order,int iGraphNumberF)
+{ // take 2nd derivative of specified trace .
+  //  uses 25/17 point Savitzky Golay algorithm
+  // needs to create a new array for results as uses points either side of index to calculate derivative
+  float *x_arr,*y_arr;
+  SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
+  size_t iCount=pAGraph->nos_vals ;
+  float *newy=(float *)malloc(iCount*sizeof(float));
+  if(newy==NULL)
+		{rprintf("deriv2_filter: Not enough ram to calculate filtered 2nd derivative - no filter applied\n");
+		 return;
+		}
+  x_arr=pAGraph->x_vals;
+  y_arr=pAGraph->y_vals;
+  for(size_t i=0;i<iCount;++i)
+	{
+#if 1
+	 newy[i]=(float)d2y_d2x25(y_arr, x_arr,0,iCount-1, i,diff_order );  // calculate 2nd derivative at point "i"
+#else
+	 newy[i]=(float)d2y_d2x17(y_arr, x_arr,0,iCount-1, i,diff_order );  // calculate 2nd derivative at point "i"
+#endif
+	}
+  free(y_arr); // delete original y values
+  pAGraph->y_vals=newy;// put in new y values
+  return; // all done
+}
+
+void TScientificGraph::Savitzky_Golay_smoothing(unsigned int s_order,int iGraphNumberF) // Savitzky Golay smoothing
+{ // Savitzky Golay smoothing of specified trace fitting a polynomial of specified order
+  //  uses 25/17 point Savitzky Golay algorithm
+  // needs to create a new array for results as uses points either side of index to calculate filtered value
+  float *x_arr,*y_arr;
+  SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
+  size_t iCount=pAGraph->nos_vals ;
+  float *newy=(float *)malloc(iCount*sizeof(float));
+  if(newy==NULL)
+		{rprintf("Savitzky Golay smoothing: Not enough ram to calculate filtered result\n");
+		 return;
+		}
+  x_arr=pAGraph->x_vals;
+  y_arr=pAGraph->y_vals;
+  for(size_t i=0;i<iCount;++i)
+	{
+#if 1
+     newy[i]=(float)Savitzky_Golay_smoothing25(y_arr, x_arr,0,iCount-1, i,s_order );  // calculate smoothed value at point "i"
+#else
+	 newy[i]=(float)Savitzky_Golay_smoothing17(y_arr, x_arr,0,iCount-1, i,s_order );  // calculate smoothed value at point "i"
+#endif
+	}
+  free(y_arr); // delete original y values
+  pAGraph->y_vals=newy;// put in new y values
+  return; // all done
+}
 
 void TScientificGraph::fnLinreg_origin( int iGraphNumberF, void (*callback)(size_t cnt,size_t maxcnt))
 { // straight line passing through origin    y=m*x
@@ -3302,12 +3382,12 @@ bool TScientificGraph::SaveCSV(char *filename,char *x_axis_name, double xmin, do
 	  for (int i=0; i<iNumberOfGraphs; i++)  // now print y values for all traces
 		{aGraph=(SGraph*) pHistory->Items[i];
 		 if(i==0)  fprintf(fp,",%.9g",aGraph->y_vals[j]); // trace 0: can always just print 1st y value as that trace provides x values
-		 else if(aGraph->x_vals[j]==xj)
+		 else if(j<aGraph->nos_vals && aGraph->x_vals[j]==xj)
 			fprintf(fp,",%.9g",aGraph->y_vals[j]);// if x value matches trace 0 then just print matching y value (this is faster than always interpolating)
 		 else
 			{// need to interpolate to get correct y value
 			 // float interp1D(float *xa, float *ya, int size, float x, bool clip);
-			 float yj=interp1D(aGraph->x_vals,aGraph->y_vals,aGraph->nos_vals,xj,true);
+			 float yj=interp1D_f(aGraph->x_vals,aGraph->y_vals,aGraph->nos_vals,xj,true);
 			 fprintf(fp,",%.9g",yj); // interpolated value
 			}
 		}

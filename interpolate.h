@@ -2,6 +2,8 @@
  header file for intrepolate.c
 
  Written by Peter Miller 16-11-12
+ 
+ This version 30/10/2023 adds double and float versions
 
 */
 /*----------------------------------------------------------------------------
@@ -32,16 +34,27 @@
  #ifdef __cplusplus
   extern "C" {
  #endif 
-ssize_t binarysearch(float *a, size_t size_a,float key); /* assumes array a sorted into increasing order */
-float interp1D(float *xa, float *ya, size_t size, float x, bool clip); /* interpolate y corresponding to x from xa (increasing) and corresponding ya */
-
+ /* for floats */
+ssize_t binarysearch_f(float *a, size_t size_a,float key); /* assumes array a sorted into increasing order */
+float interp1D_f(float *xa, float *ya, size_t size, float x, bool clip); /* interpolate y corresponding to x from xa (increasing) and corresponding ya */
 typedef struct {
         float *xa;
         float *ya;
         size_t size;
-        } interp1;
+        } interp1_f;
 
-float interp2D(interp1 *p1, float *za,size_t sizearr_p1,float z,float x, bool clip); /* 2D interpolation p1 is an array of interp1 structures that match elemnts of p1[] */
+float interp2D_f(interp1_f *p1, float *za,size_t sizearr_p1,float z,float x, bool clip); /* 2D interpolation p1 is an array of interp1 structures that match elemnts of p1[] */
+/* for doubles */
+ssize_t binarysearch_d(double *a, size_t size_a,double key); /* assumes array a sorted into increasing order */
+double interp1D_d(double *xa, double *ya, size_t size, double x, bool clip); /* interpolate y corresponding to x from xa (increasing) and corresponding ya */
+
+typedef struct {
+        double *xa;
+        double *ya;
+        size_t size;
+        } interp1_d;
+
+double interp2D_d(interp1_d *p1, double *za,size_t sizearr_p1,double z,double x, bool clip); /* 2D interpolation p1 is an array of interp1 structures that match elemnts of p1[] */
 
  #ifdef __cplusplus
     }

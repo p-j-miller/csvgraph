@@ -28,10 +28,10 @@
 #pragma hdrstop
 #include <tchar.h>
 //---------------------------------------------------------------------------
+USEFORM("About.cpp", AboutBox);
+USEFORM("UScalesWindow.cpp", ScalesWindow);
 USEFORM("Unit1.cpp", Form1);
 USEFORM("UDataPlotWindow.cpp", PlotWindow);
-USEFORM("UScalesWindow.cpp", ScalesWindow);
-USEFORM("About.cpp", AboutBox);
 //---------------------------------------------------------------------------
 USEFORM("Unit1.cpp", Form1)
 USEFORM("UScalesWindow.cpp", ScalesWindow)
@@ -74,9 +74,9 @@ int WINAPI _tWinMain(HINSTANCE, HINSTANCE, LPTSTR, int)
 		 Application->Title = "CSVgraph";
 		 // Application->CreateForm(__classid(TAboutBox), &AboutBox);
 		 Application->CreateForm(__classid(TForm1), &Form1);
-		 Application->CreateForm(__classid(TScalesWindow), &ScalesWindow);
-		 Application->CreateForm(__classid(TAboutBox), &AboutBox);
-		 if(szArglist != nullptr && nArgs==2)  // one argument, assume its a filename and load this file
+		Application->CreateForm(__classid(TScalesWindow), &ScalesWindow);
+		Application->CreateForm(__classid(TAboutBox), &AboutBox);
+		if(szArglist != nullptr && nArgs==2)  // one argument, assume its a filename and load this file
 				  {
 				   proces_open_filename( AnsiOf(szArglist[1])); // open filename supplied on command line - just to peek at header row
 				  }

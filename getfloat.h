@@ -32,4 +32,20 @@ bool getfloatge0(char *s, float *d);/* as above but requires number to be >0 */
 bool getfloat(wchar_t *s, float *d);
 bool getfloatgt0(wchar_t *s, float *d);
 bool getfloatge0(wchar_t *s, float *d);
+// duplicates of all the above returning doubles, c++ allows the use of the same function name
+bool getfloat(char *s, double *d); /*reads a floating point number returns true if valid - allows whitespace as well as a number , d=0 on error*/
+bool getfloatgt0(char *s, double *d);/* as above but requires number to be >0 */
+bool getfloatge0(char *s, double *d);/* as above but requires number to be >0 */
+// functions like above that take wchar_t *
+bool getfloat(wchar_t *s, double *d);
+bool getfloatgt0(wchar_t *s, double *d);
+bool getfloatge0(wchar_t *s, double *d);
+
+// now repeat for int's
+bool getint(char *s, int *d);
+bool getintgt0(char *s, int *d);
+bool getintge0(char *s, int *d);
+bool getint(wchar_t *s, int*d);
+bool getintgt0(wchar_t *s, int *d);
+bool getintge0(wchar_t *s, int *d);
 #endif

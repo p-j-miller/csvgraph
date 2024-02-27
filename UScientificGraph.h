@@ -163,6 +163,9 @@ public:
   bool fnPolyreg(unsigned int order,int iGraphNumberF, void (*callback)(size_t cnt,size_t maxcnt)); // fit polynomial of specified order regression to graph in place
   bool fnFFT(bool dBV_result,bool Hanning,int iGraphNumberF, void (*callback)(size_t cnt,size_t maxcnt)); // apply FFT to data. returns true if OK, false if failed.
   void compress_y(int iGraphNumberF); // compress by deleting points with equal y values except for 1st and last in a row
+  void deriv_filter(unsigned int diff_order,int iGraphNumberF); // smoothed derivative
+  void deriv2_filter(unsigned int diff_order,int iGraphNumberF); // smoothed 2nd derivative
+  void Savitzky_Golay_smoothing(unsigned int s_order,int iGraphNumberF); // Savitzky Golay smoothing
 
   void sortx( int iGraphNumberF); // sort ordered on x values
   int fnAddGraph(size_t max_points) ;  // create new line for graph with at most max_points
