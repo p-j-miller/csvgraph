@@ -25,6 +25,9 @@
  *--------------------------------------------------------------------------*/
 #ifndef _getfloat_h
 #define _getfloat_h
+bool getdouble(char *s, double *d);/*reads a floating point number (double)  returns true if valid - allows whitespace as well as a number , d=0 on error*/
+bool getdouble(wchar_t *s, double *d);
+
 bool getfloat(char *s, float *d); /*reads a floating point number returns true if valid - allows whitespace as well as a number , d=0 on error*/
 bool getfloatgt0(char *s, float *d);/* as above but requires number to be >0 */
 bool getfloatge0(char *s, float *d);/* as above but requires number to be >0 */

@@ -44,6 +44,30 @@ static char* __fastcall AnsiOf(wchar_t* w)
 	return(c);
 }
 
+ bool getdouble(char *s, double *d)
+ /*reads a floating point number returns true if valid - allows whitespace as well as a number , d=0 on error */
+{double r=0;
+ bool valid=false;
+ while(isspace(*s))++s; /* skip whitespace */
+ if(isdigit(*s)|| *s=='.' || *s=='-' || *s=='+')
+        {/* number must start with decimal point or a digit or a sign (+/-)*/
+		 r=strtod(s,&s);       /* read floating point number */
+         while(isspace(*s))++s; /* skip whitespace */
+         if(*s=='\0') valid=true; /* whitespace number whitespace */
+		}
+ if(!valid  )
+        {*d=0.0;
+         return false; /* not valid or too big */
+        }
+ /* valid */
+ *d=r;
+ return true;
+}
+
+bool getdouble(wchar_t *s, double *d)
+{return getdouble(AnsiOf(s),d);
+}
+
  bool getfloat(char *s, float *d)
  /*reads a floating point number returns true if valid - allows whitespace as well as a number , d=0 on error */
 {float r=0;

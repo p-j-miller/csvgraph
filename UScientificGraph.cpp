@@ -54,6 +54,7 @@
 #include "yamedian.h" /* needs to be set to work on floats eg  #define elem_type_median float */
 #include "interpolate.h"
 #include "smooth_diff.h"
+#include "smoothing_spline.h"
 
 // #define USE_double_to_str_exp /* define to use double_to_str_exp() for y axis with max 12 chars, if not defined use gcvt() */
 
@@ -1806,6 +1807,14 @@ void TScientificGraph::Savitzky_Golay_smoothing(unsigned int s_order,int iGraphN
   return; // all done
 }
 
+void TScientificGraph::Spline_smoothing(double tc,int iGraphNumberF) // Smoothing spline smoothing "tc" is a number 0..1
+{ // Smoothing spline smoothing of specified trace
+  SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
+  // void SmoothingSpline( s_spline_float *x, s_spline_float *y, s_spline_float *yo, size_t _n, double lambda);
+  SmoothingSpline(pAGraph->x_vals, pAGraph->y_vals,NULL, pAGraph->nos_vals,tc);  // does all the hard work!
+  return; // all done
+}
+
 void TScientificGraph::fnLinreg_origin( int iGraphNumberF, void (*callback)(size_t cnt,size_t maxcnt))
 { // straight line passing through origin    y=m*x
   // underlying equation for the best straight line through the origin=sum(XiYi)/sum(Xi^2) from Yang Feng (Columbia Univ) Simultaneous Inferences, pp 18/20.
@@ -2602,17 +2611,50 @@ void TScientificGraph::sortx( int iGraphNumberF) // sort ordered on x values  (m
  yasort2(xa,ya,iCount);
  rprintf(" sort (yasort2()) completed in %g secs\n",(clock()-start_t)/(double)CLOCKS_PER_SEC);
 
-#if 1  /* check array actually is sorted correctly */
+ /* check array actually is sorted correctly, also fixes repeated values (so code is always required) */
  int errs=0;
 
-  for(size_t i=0;i<iCount-1;++i)
-	 if(pAGraph->x_vals[i]>pAGraph->x_vals[i+1])
-		errs++;
-  if(errs>0)
-	{rprintf("sortx: error %d values out of order\n",errs);
+ for(size_t i=0;i<iCount-1;++i)
+	 { // sort will bring identical x values together, increase slightly to make different (this may make later values > so fix those to..)
+	  if(xa[i]>=xa[i+1])
+		{//rprintf("  sort: values equal at x[%zu]=%.9g x[%zu]=%.9g\n",i,(double)pAGraph->x_vals[i],i+1,(double)pAGraph->x_vals[i+1]);
+		 xa[i+1]=nextafterf(xa[i],FLT_MAX); // increase slightly to make different
+		 //rprintf("   adjusted to x[%zu]=%.9g\n",i+1,pAGraph->x_vals[i+1]);
+		 ++errs;// number of corrections
+		}
+	 }
+ if(errs>0)
+	{ // recheck after corrections above
+	  rprintf("  sort: warning %d x values out of order after 1st sort due to duplicate values, checking corrections\n",errs);
+	  errs=0;  // ready to try again
+	  for(size_t i=0;i<iCount-1;++i)
+		 { // check result is monotonically increasing (no duplicates)
+		  if(xa[i]>=xa[i+1])
+			{rprintf("  sort: x values not increasing at x[%zu]=%.9g x[%zu]=%.9g\n",i,(double)(xa[i]),i+1,(double)(xa[i+1]));
+			 errs++;
+			}
+		 }
+	  if(errs==0) rprintf("  sort: x values are now monotonically increasing\n");
+	}
+ if(errs>0)    // this should never happen as code above should have fixed up any equal values while keeping the x values sorted
+	{rprintf("  sort: warning %d x values out of order after 1st sort due to duplicate values - repeating sort\n",errs);
+	 yasort2(xa,ya,iCount);
+	 rprintf(" sort (yasort2()) completed total time for both sorts was %g secs\n",(clock()-start_t)/(double)CLOCKS_PER_SEC);
+
+	 errs=0;  // ready to try again
+
+	 for(size_t i=0;i<iCount-1;++i)
+		 { // check result is monotonically increasing (no duplicates)
+		  if(xa[i]>=xa[i+1])
+			{//rprintf("  sort: x values not increasing at x[%zu]=%.9g x[%zu]=%.9g\n",i,(double)(xa[i]),i+1,(double)(xa[i+1]));
+			 errs++;
+			}
+		 }
+	}
+ if(errs>0)
+	{rprintf(" sort: error %d x values out of order\n",errs);
 	 ShowMessage("Error: sorting x values failed!\n");
 	}
-#endif
 }
 
 //------------------------------------------------------------------------------

@@ -131,6 +131,11 @@
 //                  added "order" to legends for dy/dx and d2y/d2x (was already on Savitzky Golay smoothing legends).
 //                  updated expression handler (expr-code.c) so nan==nan and nan!=nan works as expected in expressions.
 //					This allows for example $3==nan?x:nan which shows all invalid rows in column $3
+// 3v10 27/2/2024   About box copyright years updated.
+//                  smoothing splines filter option added
+//                  sorting of x values revised so equal x values are changed to ones slightly higher (1 bit) [previoulsy equal x values were allowed].
+//                  if input x values are increasing or equal, then now fix up to make always increasing without needing to sort
+//
 // TO DO:
 //
 // WARNING : in builder 11 with 64 bit code generation long double is only 8 bytes (the same as double!).
@@ -196,6 +201,7 @@
 #include "matrix.h" /* must come before include of multiple-lin-reg.h */
 #include "multiple-lin-reg-fn.h"
 #include "time_local.h"
+#include "getfloat.h"
 
 
 #if 1
@@ -207,9 +213,9 @@
 extern TForm1 *Form1;
 extern const char * Prog_Name;
 #ifdef _WIN64
-const char * Prog_Name="CSVgraph (Github) 3v9 (64 bit)";   // needs to be global as used in about box as well.
+const char * Prog_Name="CSVgraph (Github) 3v10 (64 bit)";   // needs to be global as used in about box as well.
 #else
-const char * Prog_Name="CSVgraph (Github) 3v9 (32 bit)";   // needs to be global as used in about box as well.
+const char * Prog_Name="CSVgraph (Github) 3v10 (32 bit)";   // needs to be global as used in about box as well.
 #endif
 #if 1 /* if 1 then use fast_strtof() rather than atof() for floating point conversion. Note in this application this is only slightly faster (1-5%) */
 extern "C" float fast_strtof(const char *s,char **endptr); // if endptr != NULL returns 1st character thats not in the number
@@ -1426,7 +1432,7 @@ void __fastcall TPlotWindow::Button_add_trace1Click(TObject *Sender)
   bool compress;
   bool showsortmessage=true; // only show "sort message" once per press of the "add traces" button
   bool showerrmessage=true; // ditto for message to warn users of errors in format of csv file
-  float previousxvalue=0,previousyvalue=0;
+  float previousxvalue=0,previousyvalue=0,last_actual_x_value=0;
   double median_ahead_t; // >0 for median filtering to be used
   int poly_order=2;
   long double first_time=0; // used when reading times in for x axis, store times relative to 1st time
@@ -1467,14 +1473,19 @@ try{
          return;
          }
    compress=CheckBox_Compress->Checked;
+#if 1
+   if(!getfloatge0(Edit_median_len->Text.c_str(),&median_ahead_t))
+		median_ahead_t=-1;// set to -1 on error so its easy to trap below
+#else
    median_ahead_t=atof(AnsiOf(Edit_median_len->Text.c_str()));
+#endif
    // poly_order=_wtoi(Polyorder->Text.c_str());  // polynomial order for poly fit
    poly_order=(int)atof(AnsiOf(Polyorder->Text.c_str()));  // polynomial order for poly fit
    extern int my_initialisation;
    // rprintf("my_initialisation=%d (should be 12345)\n",my_initialisation);    // used to check _tMinMain() ran OK
 #if 1
    if(poly_order<1)
-		{ShowMessage("Warning: polynomial order set to 0, but its minimum value is 1 - I will set it to 1");
+		{ShowMessage("Warning: invalid polynomial order set to 0, but its minimum value is 1 - I will set it to 1");
 		 poly_order=1;// min of 1   [ without this get divide by zero error when compiled for w64 ! {before _controlfp() added to csvgraph.cpp} ]
 		 Polyorder->Text="1"; // actuall set it in the gui
 		}
@@ -1483,15 +1494,20 @@ try{
    if(FilterType->ItemIndex>0)
 		FString=FilterType->Items->Strings[FilterType->ItemIndex]; // get name of filter user has specified directly from Listbox "FilterType"
    else FString="" ; // "" means no filtering
-   bool is_filter=strstr(FString.c_str(),"Filter")!= NULL;  // true if "filter" appears in the text
+   bool is_filter=strstr(FString.c_str(),"Filter")!= NULL ;  // true if "filter" appears in the text
+   bool is_splineF=strstr(FString.c_str(),"Smoothing spline Filter")!= NULL ; // Spline smoothing
    bool is_fft=strstr(FString.c_str(),"FFT")!= NULL;  // true if "FFT" appears in the text
    bool is_order=strstr(FString.c_str(),"order:")!= NULL
 				 || strstr(FString.c_str(),"Savitzky Golay smoothing")!= NULL
 				 || strstr(FString.c_str(),"Derivative (dy/dx)")!= NULL
 				 || strstr(FString.c_str(),"2nd derivative (d2y/d2x)")!= NULL
 				 ;// true if "order:" appears in string (ie order must be set by user)
-   if(is_filter &&  median_ahead_t<=0)
-		{ShowMessage("Request to filter ignored as filter time constant has not been set");
+   if(is_filter &&  median_ahead_t<=0 && !is_splineF)
+		{ShowMessage("Request to filter ignored as filter time constant is invalid (it must be >0)");
+		 FString="";
+		}
+   else if(is_splineF && ( median_ahead_t<0  ))
+		{ShowMessage("Request to use smoothing spline filter ignored as filter time constant not in range 0..\n 0=no filtering, >=x-span=max filtering (straight line), try e.g. 0.1");
 		 FString="";
 		}
    else if(is_order)
@@ -1606,8 +1622,12 @@ try{
          return;
 		}
   // get x offset from gui to a local variable as a double.
+  #if 1
+  if(getdouble(Edit_Xoffset->Text.c_str(), &x_offset) )
+		x_offset=0; // set offset to zero if value invalid
+  #else
   x_offset=atof(AnsiOf(Edit_Xoffset->Text.c_str()));
-
+  #endif
   // ycol can either by an unsigned integer number or an expression  OR a comma seperated list of numbers
   char *ys;
   char *start_s;
@@ -2300,12 +2320,22 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 		 if(firstxvalue)
 				{firstxvalue=false;
 				 previousxvalue=xval;
+				 last_actual_x_value=xval;
 				 previousyvalue=yval;
 				}
 		   else
-				{if(xval<previousxvalue)
-						{ // x value is NOT monotonically increasing
+				{float prev_last_actual_x_value=last_actual_x_value;
+				 last_actual_x_value=xval;  // remember actual last x value
+				 if((float)xval<=(float)previousxvalue && (float)xval>=(float)prev_last_actual_x_value)
+					{// try and fix up (starts with two x values being equal, but fixup could make this worse for a while)
+					 // eg 1 2 2 2 3 -> 1 2 3 4 5
+					 xval=nextafterf(previousxvalue,FLT_MAX); // keep incrementing value we wil use for x-axis
+					 // rprintf("Fixup x value: xval was %.9g fixed up to %.9g, previousxvalue=%.9g prev_last_actual_x_value=%.9g\n",last_actual_x_value,xval,previousxvalue,prev_last_actual_x_value);
+					}
+				 else if((float)xval<=(float)previousxvalue)
+						{ // x value is NOT monotonically increasing  (could be =, but we leave that case for sorting as well as in general we cannot fix that here)
 						 xmonotonic=false;
+                         // rprintf("xval(=%.15g)<previousxvalue(=%.15g)\n", xval,previousxvalue);
 						}
 				 else   {// x value is monotonically increasing
 
@@ -2321,12 +2351,12 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 								 pScientificGraph->fnAddDataPoint((float)(previousxvalue+x_offset),previousyvalue,iGraph); // ignore out of ram as that will be trapped below
 								}
 #endif
-						 previousxvalue=xval;
-						 previousyvalue=yval;
 						}
+				 previousxvalue=xval;
+				 previousyvalue=yval;
 				}
 		 // rprintf("before addDatapoint: xval=%g x_offset=%g yval=%g iGraph=%d\n",xval,x_offset,yval,iGraph);
-		 if(!pScientificGraph->fnAddDataPoint((float)(xval+x_offset),yval,iGraph))
+		 if(!pScientificGraph->fnAddDataPoint(x_offset==0?xval:(float)(xval+x_offset),yval,iGraph))
 				{// out of RAM
 				 ShowMessage("Error: not enough memory to load all specified columns");
 				 fclose(fin);
@@ -2373,6 +2403,26 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 		 strncat(cap_str,temp_str,sizeof(cap_str)-1-strlen(cap_str));
 		 ShowMessage(cap_str);
 		}
+#if 1 /* check x values are monotonic if we think they are  */
+  if(xmonotonic)
+	  {float *xptr,*yptr;
+	   size_t nos_points;
+	   bool sorted=true;
+	   //   size_t fnGetxyarr(float **x_arr,float **y_arr,int iGraphNumberF = 0); // allow access to x and y arrays, returns nos points
+	   nos_points=pScientificGraph->fnGetxyarr(&xptr,&yptr,iGraph);
+	   for(size_t i=1;i<nos_points;++i)
+			{if(xptr[i]<=xptr[i-1])
+				{sorted=false;
+				 rprintf("checking if x values sorted: they are not at x[%zu]=%.9g and x[%zu]=%.9g\n",i,xptr[i],i,xptr[i-1]);
+				 break;    // we have failed - no need to test any more
+				}
+			}
+	   if(!sorted)
+		{// rprintf("Error adding data xmonotic is true but sorted is false!");
+		 xmonotonic=false; // we need to sort them!
+		}
+	  }
+#endif
   if(!xmonotonic)
 		{StatusText->Caption="X Values need sorting";
 		 Application->ProcessMessages(); /* allow windows to update (but not go idle) */
@@ -2409,14 +2459,14 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
                          pScientificGraph->fnMedian_filt_time(median_ahead_t,iGraph,filter_callback);
                         }
                 break;
-         case 2:
-                // median1 filter defined in terms of time (this is a bit slower than doing based on samples, but makes more sense when the sampling rate varies
+		 case 2:
+				// median1 filter defined in terms of time (this is a bit slower than doing based on samples, but makes more sense when the sampling rate varies
 
-                if(median_ahead_t>0.0)
+				if(median_ahead_t>0.0)
 						{
 						 StatusText->Caption=FString;
 						 pScientificGraph->fnMedian_filt_time1(median_ahead_t,iGraph,filter_callback);
-                        }
+						}
 				break;
 		case 3:
 				// Savitzky_Golay_smoothing
@@ -2424,6 +2474,34 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 				pScientificGraph->Savitzky_Golay_smoothing((unsigned int)poly_order,iGraph);    // Savitzky Golay smoothing of specfied order (1,2,4 are very efficient)
 				break;
 		case 4:
+				// smoothing spline filter filter defined in terms of "t/c" (a number 0..)
+				// tc is "warped" to lambda , where lamdba=1 => no filtering (t/c=0)
+				// lambda=0 when t/c = the x span
+				// exp_constant  provides "scaling" between time constant and lambda, 30 seems to be a reasonable number
+				{
+				 double lambda,m,c,exp_constant=30.0,lpow,e;
+				 float *xptr,*yptr;
+				 size_t nos_points;
+				 //   size_t fnGetxyarr(float **x_arr,float **y_arr,int iGraphNumberF = 0); // allow access to x and y arrays, returns nos points
+				 nos_points=pScientificGraph->fnGetxyarr(&xptr,&yptr,iGraph);
+				 if(nos_points<2 || median_ahead_t<0) break;
+				 e=exp(-median_ahead_t*exp_constant/(xptr[nos_points-1]-xptr[0]));
+				 lpow=exp(exp_constant);  // used as part of scaling
+				 if(lpow<=1.0 || !isfinite(lpow) ) m=0; // avoid divide by zero or m going negative
+				 else
+				   m=lpow/(lpow-1);
+				 c=1.0-m;
+				 lambda=m*e+c;
+#if 0    /* if 1 then print some info useful for debugging */
+				 rprintf("smoothing spline: median_ahead_t=%g, e=%g,lpow=%g,m=%g,c=%g\n",median_ahead_t, e,lpow,m,c );
+				 rprintf("smoothing spline: t/c=%g x=%g to %g => range is %g lambda=%g\n",median_ahead_t,xptr[0],xptr[nos_points-1],
+						(xptr[nos_points-1]-xptr[0]),lambda);
+#endif
+				 StatusText->Caption=FString;
+				 pScientificGraph->Spline_smoothing(lambda,iGraph);
+				}
+				break;
+		case 5:
 				// linear filter  with user specified time constant and order. No filtering is done if order=0
 				if(median_ahead_t>0.0 && poly_order>0)
 						{
@@ -2434,13 +2512,13 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						 	poly_order,median_ahead_t,sqrt(pow(2.0,1.0/(double)poly_order)-1.0)/(2.0*3.14159265358979*median_ahead_t));
                         }
 				break;
-		case 5:
+		case 6:
 
 				// lin regression y=mx
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg_origin(iGraph,filter_callback);
 				break;
-		case 6:
+		case 7:
 #if 0
 				{
 				 // test code uses general linear least squares fitting , false arguments means y values are not changed
@@ -2473,100 +2551,100 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(LinLin,iGraph,filter_callback);
 				break;
-		case 7:
+		case 8:
 				// lin regression y=mx+c  via GMR
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(LinLin_GMR,iGraph,filter_callback);
 				break;
-		case 8:
+		case 9:
 				// minimal max abs error: y=mx+c
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg_abs(false,iGraph,filter_callback);
 				break;
-		case 9:
+		case 10:
 				// minimal max abs relative error: y=mx+c
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg_abs(true,iGraph,filter_callback);
 				break;
-		case 10:
+		case 11:
 				// log regression
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(LogLin,iGraph,filter_callback);
 				break;
-		case 11:
+		case 12:
 				// exponentail regression
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(LinLog,iGraph,filter_callback);
 				break;
-		case 12:
+		case 13:
 				// powerregression
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(LogLog,iGraph,filter_callback);
 				break;
-		case 13:
+		case 14:
 				// recip regression
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(RecipLin,iGraph,filter_callback);
 				break;
-		case 14:
+		case 15:
 				// lin-recip regression
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(LinRecip,iGraph,filter_callback);
 				break;
-		case 15:
+		case 16:
 				// hyperbolic regression
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(RecipRecip,iGraph,filter_callback);
 				break;
-		case 16:
+		case 17:
 				// sqrt regression y=m*sqrt(x)+c
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(SqrtLin,iGraph,filter_callback);
 				break;
-		case 17:
+		case 18:
 				// nlog2(n) regression y=m*x*log2(x)+c
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(Nlog2nLin,iGraph,filter_callback);
 				break;
-		case 18:
+		case 19:
 				// y=a*x+b*sqrt(x)+c  (least squares fit)
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg_3(iGraph,filter_callback);
 				break;
 
-		case 19:
+		case 20:
 				// y=a+b*sqrt(x)+c*x+d*x^1.5
 				StatusText->Caption=FString;
 				gen_lin_reg(reg_sqrt,4,true,iGraph);
 				break;
-		case 20:
+		case 21:
 				// y=(a+bx)/(1+cx)  (least squares fit)
 				StatusText->Caption=FString;
 				pScientificGraph->fnrat_3(iGraph,filter_callback);
 				break;
-		case 21:
+		case 22:
 				// N=5=> y=(a0+a1*x+a2*x^2)/(1+b1*x+b2*x^2)
 				StatusText->Caption=FString;
 				gen_lin_reg(reg_rat,5,true,iGraph);
 				break;
-		case 22: //  general purpose polynomial fit   (least squares using orthogonal polynomials)
+		case 23: //  general purpose polynomial fit   (least squares using orthogonal polynomials)
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnPolyreg((unsigned int)poly_order,iGraph,filter_callback))
 						{StatusText->Caption="Polynomial fit failed";
 						 ShowMessage("Warning: Polynomial fit failed - adding original trace to graph");
 						}
 				break;
-		case 23:
+		case 24:
 				// general purpose polynomial fit in sqrt(x) with user defined order
 				StatusText->Caption=FString;
 				gen_lin_reg(reg_sqrt,poly_order+1,true,iGraph);
 				break;
-		case 24:
+		case 25:
 				// rational fit (poly1/poly2)  with user defined order
 				StatusText->Caption=FString;
 				gen_lin_reg(reg_rat,poly_order+1,true,iGraph);
 				break;
-		case 25:
+		case 26:
 				// derivative
 				StatusText->Caption=FString;
 #if 1
@@ -2575,17 +2653,17 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 				deriv_trace(iGraph); // this was used till csvgraph 3v8
 #endif
 				break;
-		case 26:
+		case 27:
 				// 2nd derivative
 				StatusText->Caption=FString;
 				pScientificGraph->deriv2_filter((unsigned int)poly_order,iGraph);    // used fom 3v9 - uses Savitzky Golay filtered derivative of specfied order (1,2,4 are very efficient)
 				break;
-		case 27:
+		case 28:
 				// integral
 				StatusText->Caption=FString;
 				integral_trace(iGraph);
 				break;
-		case 28: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+		case 29: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 				// fft return ||
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnFFT(false,false,iGraph,filter_callback))
@@ -2593,7 +2671,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						 ShowMessage("Warning: FFT failed - adding original trace to graph");
 						}
 				break;
-		case 29: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+		case 30: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 				// fft return dBV
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnFFT(true,false,iGraph,filter_callback))
@@ -2601,7 +2679,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						 ShowMessage("Warning: FFT failed - adding original trace to graph");
 						}
 				break;
-		case 30: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+		case 31: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 				// fft with Hanning window, return ||
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnFFT(false,true,iGraph,filter_callback))
@@ -2609,7 +2687,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						 ShowMessage("Warning: FFT failed - adding original trace to graph");
 						}
 				break;
-		case 31: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+		case 32: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 				// fft with Hanning window return dBV
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnFFT(true,true,iGraph,filter_callback))
@@ -3252,9 +3330,17 @@ void __fastcall TPlotWindow::Edit_XoffsetChange(TObject *Sender)
   if(++xchange_running!=0) return; // normally xchange_running would start at -1 so ++ makes it 0 , if code is already running just return here
 
   do{
-      double new_Xoffset=atof(AnsiOf(Edit_Xoffset->Text.c_str())); // now get X offset
+#if 1
+	  double new_Xoffset;
+	  if(!getdouble(Edit_Xoffset->Text.c_str(),&new_Xoffset) )
+		{rprintf("X offset is not a valid number - no change in offset");
+		 new_Xoffset=last_Xoffset; // don't change if number invalid
+		}
+#else
+	  double new_Xoffset=atof(AnsiOf(Edit_Xoffset->Text.c_str())); // now get X offset
+#endif
       bool changed;
-      changed=pScientificGraph->fnChangeXoffset( new_Xoffset-last_Xoffset); // change ofset if possible
+	  changed=pScientificGraph->fnChangeXoffset( new_Xoffset-last_Xoffset); // change ofset if possible
       if(changed)
         {
 #if 0      /* its normally better not to rescale as user may have zoomed in on a feature to see the impact of changing the offset */

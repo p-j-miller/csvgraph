@@ -166,7 +166,7 @@ public:
   void deriv_filter(unsigned int diff_order,int iGraphNumberF); // smoothed derivative
   void deriv2_filter(unsigned int diff_order,int iGraphNumberF); // smoothed 2nd derivative
   void Savitzky_Golay_smoothing(unsigned int s_order,int iGraphNumberF); // Savitzky Golay smoothing
-
+  void Spline_smoothing(double tc,int iGraphNumberF); // Smoothing spline smoothing
   void sortx( int iGraphNumberF); // sort ordered on x values
   int fnAddGraph(size_t max_points) ;  // create new line for graph with at most max_points
 

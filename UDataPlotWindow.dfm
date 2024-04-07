@@ -4293,8 +4293,8 @@ object PlotWindow: TPlotWindow
   OnMouseWheelUp = FormMouseWheelUp
   OnResize = FormResize
   DesignSize = (
-    1294
-    983)
+    1290
+    982)
   TextHeight = 15
   object Panel1: TPanel
     Left = 0
@@ -4614,7 +4614,7 @@ object PlotWindow: TPlotWindow
     end
   end
   object Panel2: TScrollBox
-    Left = 1046
+    Left = 1058
     Top = 0
     Width = 298
     Height = 978
@@ -4631,7 +4631,7 @@ object PlotWindow: TPlotWindow
     TabOrder = 1
     OnEndDock = Panel2EndDock
     OnResize = Panel2Resize
-    ExplicitLeft = 1042
+    ExplicitLeft = 1054
     DesignSize = (
       294
       974)
@@ -4857,6 +4857,7 @@ object PlotWindow: TPlotWindow
         'Either select from treeview below or enter an integer column num' +
         'ber'
       Anchors = [akTop, akRight]
+      NumbersOnly = True
       ParentShowHint = False
       ShowHint = True
       TabOrder = 6
@@ -5003,7 +5004,6 @@ object PlotWindow: TPlotWindow
       ParentShowHint = False
       ShowHint = True
       TabOrder = 4
-      Text = '0'
     end
     object FilterType: TListBox
       Left = 0
@@ -5020,6 +5020,7 @@ object PlotWindow: TPlotWindow
         'Recursive Median Filter'
         'Standard Median Filter'
         'Savitzky Golay smoothing'
+        'Smoothing spline Filter'
         'Linear Filter order:'
         'Lin.regression: y=mx'
         'Lin. regression: y=mx+c'
