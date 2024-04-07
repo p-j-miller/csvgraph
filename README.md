@@ -117,6 +117,7 @@ If an expression evaluates to nan the line is skipped so this can be a powerful 
 Added "variables" x and line to expressions. x is current x value, and line is current line number.
 Updated expression handler so nan==nan and nan!=nan work as expected in expressions.
 
+3v10 6/4/2024  Smoothing spline filter added.
 
 
 # Installation
