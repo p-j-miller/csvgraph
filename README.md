@@ -119,6 +119,15 @@ Updated expression handler so nan==nan and nan!=nan work as expected in expressi
 
 3v10 6/4/2024  Smoothing spline filter added.
 
+4v0 3/7/2024
+	Csvgraph now works with Unicode text (uft-8) so any characters can be used. That means that a csv file that is uft-8 encoded will be correctly read, and its BOM (Byte Order Mark) if present correctly processed. Column headings, the main titles and axis titles can all include utf8 characters. Utf-8 is backwards compatible with 7-bit ASCII so “conventional” csv files should be processed exactly as before. When saving a csv file, you have the option to specify that the file is created with a BOM. Filenames and the paths to files may also contain Unicode characters (utf-8).  Note that saving a CSV file with recent versions of Excel creates a utf-8 format csv file with a BOM, and a BOM is required for Excel to recognise the csv file if you try and open it.
+Other changes:
+ •	Screen images can be saved as BMP, jpg, png, gif, tiff and wdg format. 
+ •	? operator can be used freely in expressions e.g. ($1==0?0:1) is now accepted as a valid expression (previously it would only work with the brackets removed)
+ •	for regression in polynomials of sqrt(x), points with negative x are now ignored.
+ •	Allowed X as well as x in expressions (useful as cut and paste of equations [ e.g. from a curve fit] may use X)
+
+
 
 # Installation
 Cvsgraph is a portable program which does not need installation.
