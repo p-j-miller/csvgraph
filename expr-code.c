@@ -1,7 +1,7 @@
 //---------------------------------------------------------------------------
 /* expression handling code and other generally useful code for Builder C++ */
 /*----------------------------------------------------------------------------
- * Copyright (c) 2012, 2013,2022 Peter Miller
+ * Copyright (c) 2012, 2013,2022, 2024 Peter Miller
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -100,9 +100,11 @@ version 4.0 23-8-13   - changed so that does not need access to Form1 in this co
 version 4.1 7-3-2021  - added void leastsquares_rat3(float *y,float *x,int start, int end, double *a, double *b, double *c)
 version 4.2 27/3/2020 - added Allow_dollar_T option to allow variables of form $T1 to appresr in expressions
 version 5.0 31/7/2022 - added wchar_t versions of some functions to make porting to builder 10 simpler
-version 5.1 11/9/2022 - merged csvgraph and cpmmon-files versions as had diverged.
+version 5.1 11/9/2022 - merged csvgraph and common-files versions as had diverged.
 version 6.0 14/9/2022 - split out pure C code - rprintf.cpp and getfloat.cpp made seperate files.
 version 7.0 25/2/2024 - NAN added  as constant, comparison (== and !=) made to work as expected (ie NAN=NAN=true)
+version 7.1 30/4/2024 - called expr0 (rather than expr1()) after "(" (either in expressions or function calls). means ? operator works in these situations..
+
 */
 
 #include "expr-code.h"
@@ -794,7 +796,7 @@ static void fact(void) /* recognises constants, variables, (predefined) function
                         }
                  ++e; /* skip over ( , then get a list of comma seperated arguments */
                  while(nosargs-- >0)
-                        {expr1(); /* get an expression */
+                        {expr0(); /* get an expression */
                          if(!flag) return; /* error */
                          if(nosargs>0)
                                 {/* more arguments to come, need a comma now */
@@ -848,7 +850,7 @@ static void fact(void) /* recognises constants, variables, (predefined) function
  else if(*e=='(')
         { /* bracketed expression */
          ++e;
-         expr1();
+         expr0();
          if(!flag) return;
          while(isspace(*e))++e; /* skip whitespace */
          if(*e==')')
@@ -3033,7 +3035,7 @@ bool sexpr3(void)
         {
          sexpr_cp++; /* skip ( */
          while(isspace(*sexpr_cp)) ++sexpr_cp; /* skip whitespace */
-         v=sexpr1();
+		 v=sexpr1();
          if(!sflag) return false;
          while(isspace(*sexpr_cp)) ++sexpr_cp; /* skip whitespace */
          if(*sexpr_cp!=')')

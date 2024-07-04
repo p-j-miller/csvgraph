@@ -4,7 +4,7 @@
 //  Loosely based on an original public domain version by  Frank Heinrich, mail@frank-heinrich.de
 //
 // Originally created using Borland Builder c++ V5
-// This version compiled with Embarcadero® C++Builder 10.2
+// This version compiled with Embarcadero® C++Builder 11.3
 // It should be easy to move to a more recent version of C++Builder, but equally it would not be very hard to revert to earlier versions if necessary.
 // This is compiled for (and this is the only version that has been tested) Windows 32 bits.
 // It runs on Windows 10 64 bits. In theory it should run on windows versions from Vista onwards and 32bit versions of Windows but this is untested.
@@ -135,6 +135,24 @@
 //                  smoothing splines filter option added
 //                  sorting of x values revised so equal x values are changed to ones slightly higher (1 bit) [previoulsy equal x values were allowed].
 //                  if input x values are increasing or equal, then now fix up to make always increasing without needing to sort
+// 3v11 30/4/2024   ($1==0?0:1) was not considered a valid expression (called expr1() on brackets inside of expr0 ) - the same was ture for function arguments.
+//                  for regression in polynomials of sqrt(x) , points with negative x are now ignored.
+//                  allowed X as well as x in expressions ( useful as cut and paste of equations may use X )
+//                  basic utf-8 encoded file handling for csv headers - still need to fix rprintf at ~ line 3200
+//                  11e - added more robust check for utf8 encoded headers
+//                  11f - everything now works in utf-8
+//                      Had to set font for RichEdit to Arial !!
+//                  11g - csv saves column headers now in uft-8 format
+//                  11h - utf-8 BOM is ignored if present at the start of a csv file
+//                  11i - prompt user if they want uft-8 BOM at start of saved CSV file (only if headers are not plain 7 bit ASCII)
+//                  11j - wide string conversion functions all now null terminate output strings. Also removed unused code around utf-8 handling
+//                  11k - minor tweak for make compiler as 32 bits as well as 64 bit.
+//                      - more major changes to support unicode filenames , loading works for 32 & 64 bits, save does NOT!
+//                  11L - save now works , however images only save as .bmp whatever extension I actually set!
+//                  11m - can now save jpg, png and gif images as well as bmp
+//                  11n - added tiff and wdp file save
+//                  11o - csvgraph/manual path can now be unicode - removed AnsiOf() & UnicodeOf() as not needed anymore. Most _WIN64 #if's also removed as no longer required.
+//        >> renamed 4v0 for release
 //
 // TO DO:
 //
@@ -144,7 +162,7 @@
 //
 //---------------------------------------------------------------------------
 /*----------------------------------------------------------------------------
- * Copyright (c) 2019,2020,2021,2022 Peter Miller
+ * Copyright (c) 2019,2020,2021,2022,2023,2024 Peter Miller
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -172,6 +190,9 @@
 #include <math.h>
 #include <time.h>
 #include <stdio.h>
+#include <jpeg.hpp>      // for jpg image save
+#include <pngimage.hpp>  // for png image save
+#include <GIFimg.hpp> // for gif image save
 #include <Clipbrd.hpp>
 #pragma hdrstop
 #include "UScientificGraph.h"
@@ -213,9 +234,9 @@
 extern TForm1 *Form1;
 extern const char * Prog_Name;
 #ifdef _WIN64
-const char * Prog_Name="CSVgraph (Github) 3v10 (64 bit)";   // needs to be global as used in about box as well.
+const char * Prog_Name="CSVgraph (Github) 4v0 (64 bit)";   // needs to be global as used in about box as well.
 #else
-const char * Prog_Name="CSVgraph (Github) 3v10 (32 bit)";   // needs to be global as used in about box as well.
+const char * Prog_Name="CSVgraph (Github) 4v0 (32 bit)";   // needs to be global as used in about box as well.
 #endif
 #if 1 /* if 1 then use fast_strtof() rather than atof() for floating point conversion. Note in this application this is only slightly faster (1-5%) */
 extern "C" float fast_strtof(const char *s,char **endptr); // if endptr != NULL returns 1st character thats not in the number
@@ -233,20 +254,104 @@ extern "C" float fast_strtof(const char *s,char **endptr); // if endptr != NULL 
 /* next 2 function used to support conversion to unicode vcl see https://blogs.embarcadero.com/migrating-legacy-c-builder-apps-to-c-builder-10-seattle/
 */
 #define STR_CONV_BUF_SIZE 2000 // the largest string you may have to convert. depends on your project
-#ifdef _WIN64
-static wchar_t* __fastcall UnicodeOf(const char* c)
+
+static wchar_t* __fastcall Utf8_to_w(const char* c)     // convert utf encoded string to wide chars - new function
 {
 	static wchar_t w[STR_CONV_BUF_SIZE];
 	memset(w,0,sizeof(w));
-	MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, c, (int)strlen(c), w, STR_CONV_BUF_SIZE);
+	MultiByteToWideChar(CP_UTF8, 0, c, -1, w, STR_CONV_BUF_SIZE-1);  // utf-8 (this is a windows function )   size-1 to make sure output is always NULL terminated
 	return(w);
 }
-#endif
-static char* __fastcall AnsiOf(wchar_t* w)
+// the reverse function would use WideCharToMultiByte() - see  https://stackoverflow.com/questions/69740993/wrong-handle-while-setting-text-to-richedit-control
+
+// Below from  https://stackoverflow.com/questions/1031645/how-to-detect-utf-8-in-plain-c
+// modified Peter Miller 29-5-2024
+// returns true for pure ascii string or valid utf8 string
+static bool is_valid_utf8(const char * string);
+
+static bool is_valid_utf8(const char * string)
+{
+	if(!string)
+		return 0;
+	const unsigned char * bytes = (const unsigned char *)string;   // in case char is signed
+	while(*bytes)
+	{
+		if( (// ASCII - only allow values that may reasonably be in a utf8 string
+				bytes[0] == 0x09 ||
+				bytes[0] == 0x0A ||
+				bytes[0] == 0x0D ||
+				(0x20 <= bytes[0] && bytes[0] <= 0x7E)
+			)
+		) {
+			bytes ++;
+			continue;
+		  }
+
+		if( (// non-overlong 2-byte
+				(0xC2 <= bytes[0] && bytes[0] <= 0xDF) &&
+				(0x80 <= bytes[1] && bytes[1] <= 0xBF)
+			)
+		) {
+			bytes += 2;
+			continue;
+		  }
+
+		if( (// excluding overlongs
+				bytes[0] == 0xE0 &&
+				(0xA0 <= bytes[1] && bytes[1] <= 0xBF) &&
+				(0x80 <= bytes[2] && bytes[2] <= 0xBF)
+			) ||
+			(// straight 3-byte
+				((0xE1 <= bytes[0] && bytes[0] <= 0xEC) ||
+					bytes[0] == 0xEE ||
+					bytes[0] == 0xEF) &&
+				(0x80 <= bytes[1] && bytes[1] <= 0xBF) &&
+                (0x80 <= bytes[2] && bytes[2] <= 0xBF)
+			) ||
+			(// excluding surrogates
+                bytes[0] == 0xED &&
+                (0x80 <= bytes[1] && bytes[1] <= 0x9F) &&
+				(0x80 <= bytes[2] && bytes[2] <= 0xBF)
+			)
+		) {
+            bytes += 3;
+			continue;
+		  }
+
+        if( (// planes 1-3
+				bytes[0] == 0xF0 &&
+                (0x90 <= bytes[1] && bytes[1] <= 0xBF) &&
+				(0x80 <= bytes[2] && bytes[2] <= 0xBF) &&
+                (0x80 <= bytes[3] && bytes[3] <= 0xBF)
+			) ||
+            (// planes 4-15
+                (0xF1 <= bytes[0] && bytes[0] <= 0xF3) &&
+				(0x80 <= bytes[1] && bytes[1] <= 0xBF) &&
+				(0x80 <= bytes[2] && bytes[2] <= 0xBF) &&
+                (0x80 <= bytes[3] && bytes[3] <= 0xBF)
+            ) ||
+			(// plane 16
+				bytes[0] == 0xF4 &&
+				(0x80 <= bytes[1] && bytes[1] <= 0x8F) &&
+                (0x80 <= bytes[2] && bytes[2] <= 0xBF) &&
+				(0x80 <= bytes[3] && bytes[3] <= 0xBF)
+            )
+		) {
+            bytes += 4;
+			continue;
+		  }
+
+		return false;
+	}
+
+	return true;
+}
+
+static char* __fastcall Utf8Of(wchar_t* w)       /* convert to utf-8 encoding */
 {
 	static char c[STR_CONV_BUF_SIZE];
 	memset(c, 0, sizeof(c));
-	WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS, w, (int)wcslen(w), c, STR_CONV_BUF_SIZE, NULL, NULL);
+	WideCharToMultiByte(CP_UTF8, 0, w, -1, c, STR_CONV_BUF_SIZE-1, NULL, NULL);       /* size-1 ensure result is null terminated */
 	return(c);
 }
 
@@ -269,7 +374,6 @@ static char **col_ptrs=NULL,**hdr_col_ptrs=NULL; // pointers to strings for each
 static char *col_names=NULL; // copy of input line, used to keep column heading strings
 static unsigned int MAX_COLS=0;
 static AnsiString filename;
-static AnsiString save_filename;
 const static char *default_x_label="Horizontal axis title";
 const static char *default_y_label="Vertical axis title";
 
@@ -380,15 +484,11 @@ char *getsaveCSVfilename()    // for saving files : displays getfilename dialog 
 #if 1
    if( numFiles==1)
 		{// just 1 file given - deal with it
-#ifdef _WIN64
+		 //DragQueryFile(hDrop, 0, buff, sizeof(buff));
 		 wchar_t wbuff[sizeof(buff)];
-		 DragQueryFile(hDrop, 0, wbuff, sizeof(wbuff));
-		 char *tbuff=AnsiOf(wbuff);
-		 strncpy(buff,tbuff,sizeof(buff)); // need to tke a copy as AnsiOf uses a static buffer and it may be called again...
-#else
-		 DragQueryFile(hDrop, 0, buff, sizeof(buff));
-#endif
-
+		 DragQueryFileW(hDrop, 0, wbuff, sizeof(wbuff));
+		 char *tbuff=Utf8Of(wbuff);
+		 strncpy(buff,tbuff,sizeof(buff)); // need to tke a copy as Utf8Of uses a static buffer and it may be called again...
          // process the file in 'buff'
          proces_open_filename(buff); // process file
         }
@@ -1477,10 +1577,10 @@ try{
    if(!getfloatge0(Edit_median_len->Text.c_str(),&median_ahead_t))
 		median_ahead_t=-1;// set to -1 on error so its easy to trap below
 #else
-   median_ahead_t=atof(AnsiOf(Edit_median_len->Text.c_str()));
+   median_ahead_t=atof(Utf8Of(Edit_median_len->Text.c_str()));
 #endif
    // poly_order=_wtoi(Polyorder->Text.c_str());  // polynomial order for poly fit
-   poly_order=(int)atof(AnsiOf(Polyorder->Text.c_str()));  // polynomial order for poly fit
+   poly_order=(int)atof(Utf8Of(Polyorder->Text.c_str()));  // polynomial order for poly fit
    extern int my_initialisation;
    // rprintf("my_initialisation=%d (should be 12345)\n",my_initialisation);    // used to check _tMinMain() ran OK
 #if 1
@@ -1547,7 +1647,8 @@ try{
 				}
 		}
 #endif
-   fin=fopen(filename.c_str(),"rb");
+   //fin=fopen(filename.c_str(),"rb");
+   fin=_wfopen(Utf8_to_w(filename.c_str()),L"rb");
    if(fin==NULL)
 		{ShowMessage("Error: cannot open file"+filename);
 		 addtraceactive=false;// finished
@@ -1579,7 +1680,7 @@ try{
   /* need to scan headers again , as need to have valid pointers in col_ptrs in case ycol is an expression */
   parsecsv(csv_line,col_ptrs, MAX_COLS);
   //xcol must be an unsigned integer number or $number  (unless x source is "linenumber")
-  char *s=strdup(AnsiOf(Edit_xcol->Text.c_str())),*xs,*ns; // must take a copy of string as if we just use pointer supplied below strange things happen !
+  char *s=strdup(Utf8Of(Edit_xcol->Text.c_str())),*xs,*ns; // must take a copy of string as if we just use pointer supplied below strange things happen !
   if(s==NULL)
         {
          ShowMessage("Error (No RAM): invalid xcol ["+Edit_xcol->Text+"] (valid range 1.."+AnsiString(MAX_COLS)+")");
@@ -1626,7 +1727,7 @@ try{
   if(getdouble(Edit_Xoffset->Text.c_str(), &x_offset) )
 		x_offset=0; // set offset to zero if value invalid
   #else
-  x_offset=atof(AnsiOf(Edit_Xoffset->Text.c_str()));
+  x_offset=atof(Utf8Of(Edit_Xoffset->Text.c_str()));
   #endif
   // ycol can either by an unsigned integer number or an expression  OR a comma seperated list of numbers
   char *ys;
@@ -1634,9 +1735,9 @@ try{
   char *se=NULL;// expression (if there is one)
   bool isnumber;
   char *date_time_fmt=NULL;
-  date_time_fmt=strdup(AnsiOf(Date_time_fmt->Text.c_str()));  // only do this once
+  date_time_fmt=strdup(Utf8Of(Date_time_fmt->Text.c_str()));  // only do this once
   if(Xcol_type->ItemIndex==6) rprintf("Date/time format is: %s\n",date_time_fmt);
-  s=strdup(AnsiOf(Edit_ycol->Text.c_str()));
+  s=strdup(Utf8Of(Edit_ycol->Text.c_str()));
   if(s==NULL||date_time_fmt==NULL)
         {
          ShowMessage("Error (No RAM): invalid ycol ["+Edit_ycol->Text+"] (valid range 1.."+AnsiString(MAX_COLS)+")");
@@ -1726,14 +1827,14 @@ try{
 									 xhrd++;  // skip leading "
 									 if(xhrd[0] && xhrd[strlen(xhrd)-1]=='"')  xhrd[strlen(xhrd)-1]=0; // remove final "  if its present
 									}
-								 pScientificGraph->XLabel=xhrd;
-								 Edit_x->Text=xhrd;
+								 pScientificGraph->XLabel=Utf8_to_w(xhrd);
+								 Edit_x->Text=Utf8_to_w(xhrd);
 								 free(orig_xhdr);
 								}
 							 else
 								{// copy failed - use orig label
-								 pScientificGraph->XLabel=hdr_col_ptrs[xcol-1];
-								 Edit_x->Text=hdr_col_ptrs[xcol-1];
+								 pScientificGraph->XLabel=Utf8_to_w(hdr_col_ptrs[xcol-1]);
+								 Edit_x->Text=Utf8_to_w(hdr_col_ptrs[xcol-1]);
 								}
 							}
 						break;
@@ -1781,6 +1882,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 		  ys=start_s+(sp-se); // also need to move ys forward to next item
 		  rprintf("Found an expression for y:%s (remaining string is \"%s\")\n",se,ys);
 		  install("x"); // adds variable, will be set to current x value
+		  install("X"); // add capital X as well (same meaning as X) - useful as cut and paste of equations may use X
 		  install("line"); // adds variable,  will be set to current line number
 		  to_rpn(se); // compile expression to rpn
 		  if(last_expression_ok())
@@ -1978,7 +2080,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
   else
 		{ rprintf("Adding trace of %s (col %d)\n vs %s (col %d)\n",hdr_col_ptrs[ycol-1],ycol,hdr_col_ptrs[xcol-1],xcol);
 		  if(FString=="")
-			  snprintf(cap_str,sizeof(cap_str),"%s ",hdr_col_ptrs[ycol-1]);
+			  snprintf(cap_str,sizeof(cap_str),"%s",hdr_col_ptrs[ycol-1]); // deleted space after %s PJM 3/6/2024
 		  else
 			{
 			 if(is_filter) snprintf(cap_str,sizeof(cap_str),"%s (%s, t/c=%g)",hdr_col_ptrs[ycol-1],FString.c_str(), median_ahead_t);
@@ -1996,7 +2098,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
   // note there is only 1 y axis, so assume user does something sensible when displaying multiple graphs
   if(Edit_y->Text==default_y_label && iGraph==0)
 	{// if y axis title has not been set, and this is the 1st trace added, set it automatically here
-	 Edit_y->Text=hdr_col_ptrs[ycol-1];
+	 Edit_y->Text=Utf8_to_w(hdr_col_ptrs[ycol-1]);
 	}
 #endif
 
@@ -2263,6 +2365,9 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 				 pnlist px=lookup("x");
 				 pnlist pline=lookup("line");
 				 if(px!=NULL)
+					px->value=xval;// current x value
+				 px=lookup("X");  // also allow cap X
+                 if(px!=NULL)
 					px->value=xval;// current x value
 				 if(pline!=NULL)
 					pline->value=(double)lines_in_file;
@@ -2863,7 +2968,7 @@ static void set_ListboxXY(void) // highlight default columns in ListBoxX/Y (if v
   for(i=0;i<nos_cols_in_file;++i)
 	   Form1->pPlotWindow->ListBoxY->Selected[i]=false;
 
-  char *s=AnsiOf(Form1->pPlotWindow->Edit_ycol->Text.c_str());
+  char *s=Utf8Of(Form1->pPlotWindow->Edit_ycol->Text.c_str());
   // first check that string contains just whitespace, integers and comma's  (as we cannot do highlighting for anything more complex)
   while(*s)
 	{while(isspace(*s)) ++s;// skip leading whitespace
@@ -2873,7 +2978,7 @@ static void set_ListboxXY(void) // highlight default columns in ListBoxX/Y (if v
 	 else if(*s) return;// else if not end of the string we have found something more complex, do not do highlighting
 	}
   // now parse string in Edit_ycol which is a list of comma seperated numbers to extract column numbers
-  s=AnsiOf(Form1->pPlotWindow->Edit_ycol->Text.c_str());
+  s=Utf8Of(Form1->pPlotWindow->Edit_ycol->Text.c_str());
   while(*s)
 	{if(isspace(*s)) ++s;// skip leading whitespace
 	 if(isdigit(*s))
@@ -2915,11 +3020,7 @@ static size_t count_lines(char *cfilename, double filesize)
 	HANDLE                hTemplateFile
 	);
 	*/
-#ifdef _WIN64
-	hFile = CreateFile(UnicodeOf(cfilename),               // file to open
-#else
-	hFile = CreateFile(cfilename,               // file to open
-#endif
+ 	hFile = CreateFileW(Utf8_to_w(cfilename),               // file to open
 					   GENERIC_READ,          // open for reading
 					   FILE_SHARE_READ | FILE_SHARE_WRITE ,       // share for reading & writing (needed to be able to open a file that excel already has open)
 					   NULL,                  // default security
@@ -2942,7 +3043,7 @@ static size_t count_lines(char *cfilename, double filesize)
 			buffer,
 			size, NULL );
 		 rprintf("CreateFile returned %p INVALID_HANDLE_VALUE=%p\n",(void *)hFile,(void *)INVALID_HANDLE_VALUE);
-		 rprintf("CreateFile(%s): cannot open file\n: %s\n",cfilename,AnsiOf(buffer));
+		 rprintf("CreateFile(%s): cannot open file\n: %s\n",cfilename,Utf8Of(buffer));
 		 free(buf);
 		 return 0; // cannot open file
 		}
@@ -3021,9 +3122,10 @@ void proces_open_filename(char *fn) // open filename - just to peek at header ro
 		}
   filename=fn;
   basename=filename.SubString(filename.LastDelimiter("\\:")+1,128); // window will add scroll bars automaticaly if name is too long
-  fin=fopen(filename.c_str(),"rb");
+  // fin=fopen(filename.c_str(),"rb");
+  fin=_wfopen(Utf8_to_w(filename.c_str()),L"rb");
   if(fin==NULL)
-        {ShowMessage("Error: cannot open file "+filename);
+		{ShowMessage(String("Error: cannot open file ")+Utf8_to_w(filename.c_str()));
          Form1->pPlotWindow->StatusText->Caption="No filename set";
          Form1->pPlotWindow->StaticText_filename->Text="Not set";
 		 rprintf("Cannot open filename <%s>\n",filename.c_str());
@@ -3151,11 +3253,19 @@ void proces_open_filename(char *fn) // open filename - just to peek at header ro
                 }
         }
   MAX_COLS=j;
-  nos_cols_in_file=parsecsv(col_names,hdr_col_ptrs, MAX_COLS);// 1st line = headers
+  {unsigned char *p=(unsigned char *)col_names;
+   // check for UTF-8 BOM : EF BB BF
+   if(p[0]==0xef && p[1]==0xbb && p[2]==0xbf)
+	{p+=3;
+	 rprintf("UTF-8 BOM found\n");
+	}
+   nos_cols_in_file=parsecsv((char *)p,hdr_col_ptrs, MAX_COLS);// 1st line = headers
+  }
   parsecsv(csv_line,col_ptrs,MAX_COLS); // 2nd line (real data)
    {// update list boxes with names of columns found, use { so we can declare local variables
 	// add in horizontal scroll bar only if its required
 	int max_str_len_pixels=0,str_len_pixels;
+	bool is_utf8=true;
 	TLabel* label = new TLabel(Form1); // dynamic TLabel, just used so we can get the length of strings
 	label->AutoSize = true;
 	label->Font=Form1->pPlotWindow->ListBoxX->Font;
@@ -3163,8 +3273,13 @@ void proces_open_filename(char *fn) // open filename - just to peek at header ro
 	// label->Font->Size = size; // your font size
 	Form1->pPlotWindow->ListBoxX->Items->Clear();
 	Form1->pPlotWindow->ListBoxY->Items->Clear();
+	// before we do anything else lets see if all headers are correctly utf8 encoded
+	for(j=0;j<nos_cols_in_file && is_utf8;++j)
+		{if(is_utf8) is_utf8=is_valid_utf8(hdr_col_ptrs[j]); // check if header string is a correctly encoded utf8 string (could also be pure 7bit ascii - but thats the same thing)
+		}
+    if(is_utf8) rprintf("All column headers are valid utf8 strings\n");
 	for(j=0;j<nos_cols_in_file;++j)
-		{ // example column name from REPS is /'Data'/'Date/Time', dlete leading data and single quotes
+		{ // example column name from REPS is /'Data'/'Date/Time', delete leading data and single quotes
 		 if(strncmp(hdr_col_ptrs[j],"/'Data'/'",strlen("/'Data'/'"))==0)
 				{hdr_col_ptrs[j]+=strlen("/'Data'/'");  // get rid of leading portion
 
@@ -3182,21 +3297,34 @@ void proces_open_filename(char *fn) // open filename - just to peek at header ro
 		 rprintf("Col %-3d : %s  =%s,...\n",j+1,hdr_col_ptrs[j],col_ptrs[j]);// print col number, name of column from header line and value from 2nd line
 #if 1
 		 /* add text as column number:text from header . This helps if column headers are not very descriptive [or missing] */
-
-
-
 		 snprintf(str_buf,sizeof(str_buf)-1,"%d: %s",j+1,hdr_col_ptrs[j]);
-		 label->Caption =str_buf;
+		 if(is_utf8)
+			{label->Caption =Utf8_to_w(str_buf);
+			 Form1->pPlotWindow->ListBoxX->Items->Add(Utf8_to_w(str_buf));
+			 Form1->pPlotWindow->ListBoxY->Items->Add(Utf8_to_w(str_buf));
+			}
+		 else
+			{// original code
+			 label->Caption =str_buf;
+			 Form1->pPlotWindow->ListBoxX->Items->Add(str_buf);
+			 Form1->pPlotWindow->ListBoxY->Items->Add(str_buf);
+			}
 		 str_len_pixels=label->Width+5; // gets width of string in pixels . The extra "+5" gives a little space at the end so the whole character can be seen
 		 if(str_len_pixels>max_str_len_pixels) max_str_len_pixels=str_len_pixels;
-		 Form1->pPlotWindow->ListBoxX->Items->Add(str_buf);
-		 Form1->pPlotWindow->ListBoxY->Items->Add(str_buf);
 #else
-		 label->Caption =hdr_col_ptrs[j];
+		 if(is_uft8)
+			{label->Caption =Utf8_to_w(hdr_col_ptrs[j]);
+			 Form1->pPlotWindow->ListBoxX->Items->Add(Utf8_to_w(hdr_col_ptrs[j]));
+			 Form1->pPlotWindow->ListBoxY->Items->Add(Utf8_to_w(hdr_col_ptrs[j]));
+			}
+		 else
+			{ // original code
+			 label->Caption =hdr_col_ptrs[j];
+			 Form1->pPlotWindow->ListBoxX->Items->Add(hdr_col_ptrs[j]);
+			 Form1->pPlotWindow->ListBoxY->Items->Add(hdr_col_ptrs[j]);
+			}
 		 str_len_pixels=label->Width;
 		 if(str_len_pixels>max_str_len_pixels) max_str_len_pixels=str_len_pixels;
-		 Form1->pPlotWindow->ListBoxX->Items->Add(hdr_col_ptrs[j]);
-		 Form1->pPlotWindow->ListBoxY->Items->Add(hdr_col_ptrs[j]);
 #endif
 		}
 	if(max_str_len_pixels>Form1->pPlotWindow->ListBoxX->Width)
@@ -3231,7 +3359,7 @@ void proces_open_filename(char *fn) // open filename - just to peek at header ro
   rprintf(" File has %zu lines (file read in %g secs)\n",nos_lines_in_file,(double)(clock()-begin_t)/CLK_TCK);
   snprintf(str_buf,sizeof(str_buf),"Ready : %zu lines found in file",nos_lines_in_file);
   Form1->pPlotWindow->StatusText->Caption=str_buf;
-  Form1->pPlotWindow->StaticText_filename->Text=basename;
+  Form1->pPlotWindow->StaticText_filename->Text=Utf8_to_w(basename.c_str());
   addtraceactive=false; // tell other tasks we have finished
 }
 
@@ -3264,7 +3392,7 @@ void __fastcall TPlotWindow::Button_Filename1Click(TObject *Sender)
   // ForceCurrentDirectory=True;// make current directory default for file
   if(FileOpenDialogCSV->Execute())
         {
-          filename = FileOpenDialogCSV->FileName;
+          filename = Utf8Of(FileOpenDialogCSV->FileName.c_str());
         }
   else
         {filename="";
@@ -3337,7 +3465,7 @@ void __fastcall TPlotWindow::Edit_XoffsetChange(TObject *Sender)
 		 new_Xoffset=last_Xoffset; // don't change if number invalid
 		}
 #else
-	  double new_Xoffset=atof(AnsiOf(Edit_Xoffset->Text.c_str())); // now get X offset
+	  double new_Xoffset=atof(Utf8Of(Edit_Xoffset->Text.c_str())); // now get X offset
 #endif
       bool changed;
 	  changed=pScientificGraph->fnChangeXoffset( new_Xoffset-last_Xoffset); // change ofset if possible
@@ -3407,6 +3535,8 @@ void __fastcall TPlotWindow::ButtonSave1Click(TObject *Sender)
 		}
 	}
   if(addtraceactive) return; // currently busy so return to allow csvgraph to continue what it was doing
+  // WideString save_filename;
+  UnicodeString save_filename;
 #ifndef UseVCLdialogs
  save_filename=getsaveBMPfilename();// use new file selector
  if(save_filename!="")
@@ -3424,13 +3554,79 @@ void __fastcall TPlotWindow::ButtonSave1Click(TObject *Sender)
 		 Image1->Picture->SaveToFile(save_filename); //save image to file .bmp works
 		}
 #else
- // new vista dialog, file extensions have to get set correctly in form editor
+ // new vista dialog, file extensions have to get set correctly in form editor , and must match options in code below
  // FileSaveDialog1->DefaultExtension = GraphicExtension(__classid(Graphics::TBitmap));   // is only .bmp (at least in builder 5)
  // FileSaveDialog1->FileTypes = GraphicFileMask(__classid(Graphics::TBitmap));          // is only .bmp (at least in builder 5)
 
  if(FileSaveDialog1->Execute()) // get a filename     was SavePictureDialog1->Execute()
 		{save_filename=FileSaveDialog1->FileName;
-		 Image1->Picture->SaveToFile(save_filename); //save image to file .bmp works
+		 // get file extension
+		 int extn_start=save_filename.LastDelimiter(".");
+		 if(extn_start>=1)
+			{// extension found
+			 extn_start++; // skip "."
+			 UnicodeString extn= save_filename.SubString(extn_start,save_filename.Length()+1-extn_start)  ;
+			 extn=extn.LowerCase();// force to lower case
+			 // rprintf("extension is %s\n",Utf8Of(extn.c_str()));
+			 // note "emf" ( TMetafile) does not work it cannot be assigned from a bitmap
+#if 1
+			// see https://docwiki.embarcadero.com/Libraries/Sydney/en/Vcl.Graphics.TWICImage.ImageFormat
+			// and https://learn.microsoft.com/en-us/windows/win32/wic/native-wic-codecs
+			 std::auto_ptr<TWICImage> image(new TWICImage());
+			 image->Assign(Image1->Picture->Bitmap);
+			 if(extn=="bmp")
+				{image->ImageFormat=wifBmp;
+				}
+			 else if(extn=="jpg" || extn=="jpeg")
+				{image->ImageFormat=wifJpeg;
+				}
+			 else if(extn=="png" )
+				{image->ImageFormat=wifPng;
+				}
+			 else if(extn=="gif" )
+				{image->ImageFormat=wifGif;
+				}
+			 else if(extn=="wdp" )
+				{image->ImageFormat=wifWMPhoto;
+				}
+			 else if(extn=="tiff" )
+				{image->ImageFormat=wifTiff;
+				}
+			 else image->ImageFormat=wifPng;  // default
+			 image->SaveToFile(save_filename);  // actually do the save
+#else
+			 if(extn=="bmp")
+				{ // .bmp - easy ...
+				 Image1->Picture->SaveToFile(save_filename); //save image to file .bmp works
+				}
+			 else if(extn=="jpg" || extn=="jpeg")
+				{// jpg is a bit harder
+				 std::auto_ptr<TJPEGImage> image(new TJPEGImage());
+				 image->Assign(Image1->Picture->Bitmap);
+				 image->SaveToFile(save_filename);
+				}
+			 else if(extn=="png" )
+				{// png is also a bit harder
+				 std::auto_ptr<TPngImage> image(new TPngImage());
+				 image->Assign(Image1->Picture->Bitmap);
+				 image->SaveToFile(save_filename);
+				}
+			 else if(extn=="gif" )
+				{// gif is also a bit harder
+				 std::auto_ptr<TGIFImage> image(new TGIFImage());
+				 image->Assign(Image1->Picture->Bitmap);
+				 image->SaveToFile(save_filename);
+				}
+			 else
+				{// unnkown file extension
+				 ShowMessage(save_filename + L" has an unknown graphics file extension - cannot save it!");
+				}
+#endif
+			}
+		 else
+			{// assume .bmp
+			 Image1->Picture->SaveToFile(save_filename); //save image to file .bmp works
+			}
 		}
 #endif
 #endif
@@ -3441,7 +3637,10 @@ void __fastcallTForm1::Save1Click(TObject *Sender)
 
 { P_UNUSED(Sender);
   if (!CurrentFile.IsEmpty())
-    Image->Picture->SaveToFile(CurrentFile);   // save if already named 
+	{// get file extension
+
+	 Image->Picture->SaveToFile(CurrentFile);   // save if already named
+	}
 else SaveAs1Click(Sender);                     // otherwise get a name
 }
 
@@ -3450,7 +3649,7 @@ void __fastcallTForm1::Saveas1Click(TObject *Sender)
 { P_UNUSED(Sender);
   if (SaveDialog1->Execute())              // get a file name
   {
-    CurrentFile = SaveDialog1->FileName;  // save user-specified name
+	CurrentFile = SaveDialog1->FileName;  // save user-specified name
     Save1Click(Sender);                   // then save normally
   }
 }
@@ -3476,19 +3675,21 @@ void __fastcall TPlotWindow::SaveDataAs1Click(TObject *Sender)
 	}
   if(addtraceactive) return; // currently busy so return to allow csvgraph to continue what it was doing
   addtraceactive=true; // active during save
+  AnsiString save_filename;
 #ifndef UseVCLdialogs
  save_filename=getsaveCSVfilename();// use windows file selector
  if(save_filename!="")
 		{
-		 if(pScientificGraph->SaveCSV(save_filename.c_str(),AnsiOf(Edit_x->Text.c_str()),-MAXDOUBLE,MAXDOUBLE))   // use x axis title as name of 1st column in csv file
+		 if(pScientificGraph->SaveCSV(save_filename.c_str(),Utf8Of(Edit_x->Text.c_str()),-MAXDOUBLE,MAXDOUBLE))   // use x axis title as name of 1st column in csv file
 				{ShowMessage("CSV save completed OK");
 				}
 		}
 #else
   // use VCL "vista" fileselector
   if(FileSaveDialogCSV->Execute()) // get a filename     was SavePictureDialog1->Execute()
-		{save_filename=FileSaveDialogCSV->FileName;
-		 if(pScientificGraph->SaveCSV(save_filename.c_str(),AnsiOf(Edit_x->Text.c_str()),-MAXDOUBLE,MAXDOUBLE))   // use x axis title as name of 1st column in csv file
+		{// save_filename=FileSaveDialogCSV->FileName;
+		 save_filename = Utf8Of(FileSaveDialogCSV->FileName.c_str());
+		 if(pScientificGraph->SaveCSV(save_filename.c_str(),Utf8Of(Edit_x->Text.c_str()),-MAXDOUBLE,MAXDOUBLE))   // use x axis title as name of 1st column in csv file
 				{ShowMessage("CSV save completed OK");
 				}
 		}
@@ -3792,22 +3993,20 @@ void __fastcall TPlotWindow::Action1Execute(TObject *Sender)
 {   // Help manual
   P_UNUSED(Sender);
 #if 1
+  UTF8String argv0=ParamStr(0);  // needed for builder 10.4 */
+  char *progname=(char *)malloc(strlen(argv0.c_str())+1); /* +1 for null  */
+  strcpy(progname,argv0.c_str());
+#else
   AnsiString argv0=ParamStr(0);  // needed for builder 10.4 */
   char *progname=(char *)malloc(strlen(argv0.c_str())+1); /* +1 for null - will be shorter than this as remove a bit from argv[0] */
   strcpy(progname,argv0.c_str());
-#else
-  char *progname=strdup(_argv[0]);  // argv[0] is the filename & path to the csvgraph executable  , assume csvgraph.pdf is in the same directory
 #endif
   size_t L=strlen(progname);
   progname[L-3]='p';// change extension from .exe to .pdf as thats the manual
   progname[L-2]='d';
   progname[L-1]='f';
   rprintf("Manual is at %s\n",progname);
-#ifdef _WIN64
-  ShellExecute(NULL,NULL, UnicodeOf(progname), NULL, NULL, SW_SHOW); // assume .pdf extension is associated with a suitable reader application
-#else
-  ShellExecute(NULL,NULL,progname, NULL, NULL, SW_SHOW); // assume .pdf extension is associated with a suitable reader application
-#endif
+  ShellExecuteW(NULL,NULL, Utf8_to_w(progname), NULL, NULL, SW_SHOW); // assume .pdf extension is associated with a suitable reader application
   free(progname);
 }
 //---------------------------------------------------------------------------
@@ -3838,19 +4037,21 @@ void __fastcall TPlotWindow::Save2Click(TObject *Sender)
  if(addtraceactive) return; // currently busy so return to allow csvgraph to continue what it was doing
  addtraceactive=true;
  rprintf("Save X range on screen (%g to %g) as CSV\n",xmin,xmax);
+ AnsiString save_filename;
 #ifndef UseVCLdialogs
  save_filename=getsaveCSVfilename();// use windows file selector
  if(save_filename!="")
 		{
-		 if(pScientificGraph->SaveCSV(save_filename.c_str(),AnsiOf(Edit_x->Text.c_str()),xmin,xmax))   // use x axis title as name of 1st column in csv file
+		 if(pScientificGraph->SaveCSV(save_filename.c_str(),Utf8Of(Edit_x->Text.c_str()),xmin,xmax))   // use x axis title as name of 1st column in csv file
 				{ShowMessage("CSV save of X range on screen completed OK");
 				}
 		}
 #else
   // use VCL "vista" fileselector
   if(FileSaveDialogCSV->Execute()) // get a filename     was SavePictureDialog1->Execute()
-		{save_filename=FileSaveDialogCSV->FileName;
-		 if(pScientificGraph->SaveCSV(save_filename.c_str(),AnsiOf(Edit_x->Text.c_str()),xmin,xmax))   // use x axis title as name of 1st column in csv file
+		{//save_filename=FileSaveDialogCSV->FileName;
+         save_filename = Utf8Of(FileSaveDialogCSV->FileName.c_str());
+		 if(pScientificGraph->SaveCSV(save_filename.c_str(),Utf8Of(Edit_x->Text.c_str()),xmin,xmax))   // use x axis title as name of 1st column in csv file
 				{ShowMessage("CSV save of X range on screen completed OK");
 				}
 		}

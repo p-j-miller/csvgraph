@@ -51,11 +51,11 @@ extern volatile bool addtraceactive; // set to true when add trace active to avo
 */
 #define STR_CONV_BUF_SIZE 2000 // the largest string you may have to convert. depends on your project
 
-static char* __fastcall AnsiOf(wchar_t* w)
+static char* __fastcall Utf8Of(wchar_t* w)       /* convert to utf-8 encoding */
 {
 	static char c[STR_CONV_BUF_SIZE];
 	memset(c, 0, sizeof(c));
-	WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS, w, (int)wcslen(w), c, STR_CONV_BUF_SIZE, nullptr, nullptr);
+	WideCharToMultiByte(CP_UTF8, 0, w, -1, c, STR_CONV_BUF_SIZE-1, nullptr, nullptr);       /* size-1 ensure result is null terminated */
 	return(c);
 }
 
@@ -78,7 +78,7 @@ int WINAPI _tWinMain(HINSTANCE, HINSTANCE, LPTSTR, int)
 		Application->CreateForm(__classid(TAboutBox), &AboutBox);
 		if(szArglist != nullptr && nArgs==2)  // one argument, assume its a filename and load this file
 				  {
-				   proces_open_filename( AnsiOf(szArglist[1])); // open filename supplied on command line - just to peek at header row
+				   proces_open_filename( Utf8Of(szArglist[1])); // open filename supplied on command line - just to peek at header row
 				  }
 		 Application->Run();
 		}

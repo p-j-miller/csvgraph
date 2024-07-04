@@ -1,6 +1,6 @@
 object PlotWindow: TPlotWindow
-  Left = 152
-  Top = 22
+  Left = 592
+  Top = 21
   Width = 1306
   Height = 1041
   HorzScrollBar.Smooth = True
@@ -4280,7 +4280,7 @@ object PlotWindow: TPlotWindow
     0000000000000000000000000000000000000000000000000000}
   Menu = MainMenu1
   ParentBiDiMode = False
-  Position = poScreenCenter
+  Position = poDesigned
   Visible = True
   OnClose = FormClose
   OnCreate = FormCreate
@@ -4614,7 +4614,7 @@ object PlotWindow: TPlotWindow
     end
   end
   object Panel2: TScrollBox
-    Left = 1058
+    Left = 1090
     Top = 0
     Width = 298
     Height = 978
@@ -4631,7 +4631,7 @@ object PlotWindow: TPlotWindow
     TabOrder = 1
     OnEndDock = Panel2EndDock
     OnResize = Panel2Resize
-    ExplicitLeft = 1054
+    ExplicitLeft = 1086
     DesignSize = (
       294
       974)
@@ -5798,9 +5798,8 @@ object PlotWindow: TPlotWindow
     Top = 88
   end
   object SavePictureDialog1: TSavePictureDialog
-    DefaultExt = 'bmp'
-    Filter = 'Bitmaps (*.bmp)|*.bmp'
     Options = [ofOverwritePrompt, ofHideReadOnly, ofEnableSizing]
+    Title = 'Save Screen Image'
     Left = 192
     Top = 200
   end
@@ -5828,7 +5827,7 @@ object PlotWindow: TPlotWindow
     Top = 176
   end
   object FileSaveDialog1: TFileSaveDialog
-    DefaultExtension = 'bmp'
+    DefaultExtension = 'png'
     FavoriteLinks = <>
     FileTypes = <
       item
@@ -5854,7 +5853,16 @@ object PlotWindow: TPlotWindow
       item
         DisplayName = 'png'
         FileMask = '*.png'
+      end
+      item
+        DisplayName = 'tiff'
+        FileMask = '*.tiff'
+      end
+      item
+        DisplayName = 'JPEG XR'
+        FileMask = '*.wdp'
       end>
+    FileTypeIndex = 6
     Options = [fdoOverWritePrompt, fdoPathMustExist]
     Title = 'Save Plot as an Image'
     Left = 152

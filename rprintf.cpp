@@ -1,7 +1,8 @@
-//---------------------------------------------------------------------------
+﻿//---------------------------------------------------------------------------
 #include <vcl.h>
 #pragma hdrstop
 /* rprintf.cpp formatted printing to the screen via a richedit control and other generally useful code for Builder C++ */
+/* Note that this version supports utf-8 encoded text as long as the TRichEdit box has a suitable font (Arial works OK). */
 /*----------------------------------------------------------------------------
  * Copyright (c) 2012, 2013,2022 Peter Miller
  *
@@ -25,8 +26,6 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  *--------------------------------------------------------------------------*/
 
-// #include <vcl.h> /* for AnsiString etc - MUST come at start of file, followed by a #pragma hdrstop  */
-// #define USE_SPINEDIT  /* define to support spinedits in load/save code */
 
 #include <Forms.hpp>
 #include <ComCtrls.hpp>
@@ -62,14 +61,21 @@ void _SetCursorToEnd(TRichEdit *Results); /* generic function to scrolls Results
 */
 #define STR_CONV_BUF_SIZE 2000 // the largest string you may have to convert. depends on your project
 
-static char* __fastcall AnsiOf(wchar_t* w)
+static char* __fastcall Utf8Of(wchar_t* w)       /* convert to utf-8 encoding */
 {
 	static char c[STR_CONV_BUF_SIZE];
 	memset(c, 0, sizeof(c));
-	WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS, w, (int)wcslen(w), c, STR_CONV_BUF_SIZE, NULL, NULL);
+	WideCharToMultiByte(CP_UTF8, 0, w, -1, c, STR_CONV_BUF_SIZE-1, NULL, NULL);       /* size-1 ensure result is null terminated */
 	return(c);
 }
 
+static wchar_t* __fastcall Utf8_to_w(const char* c)     // convert utf encoded string to wide chars - new function
+{
+	static wchar_t w[STR_CONV_BUF_SIZE];
+	memset(w,0,sizeof(w));
+	MultiByteToWideChar(CP_UTF8, 0, c, /*(int)strlen(c)*/ -1, w, STR_CONV_BUF_SIZE-1);  // utf-8 (this is a windows function )   , -1 for input length means process to (including) null
+	return(w);
+}
 
 /* below for rprint */
 static int rline=0; /* last line printed to - used to allow partial lines to be added */
@@ -182,42 +188,44 @@ void _SetCursorToEnd(TRichEdit *Results) /* scrolls Results RichEdit viewpoint t
 
 void _rprintf(TRichEdit *Results,const char *fmt, va_list arglist) ;
 
+ /* This version fully supports utf-8 encoded strings */
 void _rprintf(TRichEdit *Results,const char *fmt, va_list arglist)    /* like printf but output to Results memobox \n's work as you would expect */
-                                /* this should be the only way to write to memobox (apart from rcls() to clear )*/
-                                /* this version uses p.vprintf and AnsiStrings only so no limits to buffer size */
-                                /* note because it takes a va_list argument it cannot be called from "user code" directly - it needs a "wrapper" like rprintf in the header file */
+								/* this should be the only way to write to memobox (apart from rcls() to clear )*/
+								/* this version uses p.vprintf and AnsiStrings only so no limits to buffer size */
+								/* note because it takes a va_list argument it cannot be called from "user code" directly - it needs a "wrapper" like rprintf in the header file */
 {
    int i=1,j;   // i=start of current line, j is index looking for newline characters
    AnsiString p;    // for result of printf
    p.vprintf( fmt, arglist);  /* puts result into string p */
    // newline (and colour) handling
    for(j=1;j<=p.Length();++j) /* indexing of strings starts from 1 ! */
-    {if(p[j]=='\n' || j==p.Length() )
-        {// newline, or reached end of string (so print what we have)
-         if(!lastlinehadCR)
-            {AnsiString t;
-             if(p[j]=='\n')
-                t = Results->Lines->Strings[rline]+p.SubString(i,j-i); /* old line + new without \n*/
-             else
-                t = Results->Lines->Strings[rline]+p.SubString(i,j+1-i); /* old line + all of new (as no \n)*/
-             Results->Lines->Delete(rline);  /* delete old */
-             colour_text(Results); /* set text to current colours */
-             rline=Results->Lines->Add(t);  /* replace with new */
-            }
-         else
-            {colour_text(Results); /* set text to current colours */
-             if(p[j]=='\n')
-                 rline=Results->Lines->Add(p.SubString(i,j-i));   /* display this line of result (without \n) */
-             else
-                rline=Results->Lines->Add(p.SubString(i,j+1-i));   /* display this line of result (with whole string as no \n) */
-            }
-         lastlinehadCR=(p[j]=='\n'); /* note if CR at end of line */
-         i=j+1;  /* character after \n */
-        }
-    }
+	{if(p[j]=='\n' || j==p.Length() )
+		{// newline, or reached end of string (so print what we have)
+		 if(!lastlinehadCR)
+			{WideString t;
+			 if(p[j]=='\n')
+				t = Results->Lines->Strings[rline]+Utf8_to_w((p.SubString(i,j-i)).c_str()); /* old line + new without \n*/
+			 else
+				t = Results->Lines->Strings[rline]+Utf8_to_w((p.SubString(i,j+1-i)).c_str()); /* old line + all of new (as no \n)*/
+			 Results->Lines->Delete(rline);  /* delete old */
+			 colour_text(Results); /* set text to current colours */
+			 rline=Results->Lines->Add(t);  /* replace with new */
+			}
+		 else
+			{colour_text(Results); /* set text to current colours */
+			 if(p[j]=='\n')
+				 rline=Results->Lines->Add(Utf8_to_w((p.SubString(i,j-i)).c_str()));   /* display this line of result (without \n) */
+			 else
+				rline=Results->Lines->Add(Utf8_to_w((p.SubString(i,j+1-i)).c_str()));   /* display this line of result (with whole string as no \n) */
+			}
+		 lastlinehadCR=(p[j]=='\n'); /* note if CR at end of line */
+		 i=j+1;  /* character after \n */
+		}
+	}
    Application->ProcessMessages(); /* allow windows to update (but not go idle) */
    return;
 }
+
 
 /* functions to validate numeric input */
 char * validate_num(char *text, float min, float max, float *d,bool *ok, char *onerror)
@@ -269,6 +277,6 @@ TColor cvalidate_num(char *text, float min, float max, float *d,bool *ok)
 }
 
 TColor cvalidate_num(wchar_t *text, float min, float max, float *d,bool *ok) // like above for wchar_t *
-{ return cvalidate_num(AnsiOf(text),min, max, d,ok);
+{ return cvalidate_num(Utf8Of(text),min, max, d,ok);
 }
 

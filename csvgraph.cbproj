@@ -7,8 +7,9 @@
         <MainSource>csvgraph.cpp</MainSource>
         <Base>True</Base>
         <Config Condition="'$(Config)'==''">Release</Config>
-        <Platform Condition="'$(Platform)'==''">Win64</Platform>
+        <Platform Condition="'$(Platform)'==''">Win32</Platform>
         <TargetedPlatforms>3</TargetedPlatforms>
+        <CC_Suffix Condition="'$(CC_Suffix)'==''">c</CC_Suffix>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Config)'=='Base' or '$(Base)'!=''">
         <Base>true</Base>
@@ -162,7 +163,7 @@
         <LinkPackageStatics>rtl.lib;vcl.lib;bcbsmp.lib;vclx.lib;vclimg.lib;VclSmp.lib</LinkPackageStatics>
         <VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>
         <VerInfo_Locale>1033</VerInfo_Locale>
-        <VerInfo_Keys>CompanyName=Peter Miller;FileDescription=$(MSBuildProjectName);FileVersion=3.6.0.8;InternalName=csvgraph;LegalCopyright=Peter Miller 2023;LegalTrademarks=;OriginalFilename=;ProgramID=com.embarcadero.$(MSBuildProjectName);ProductName=$(MSBuildProjectName);ProductVersion=3.6.0.0;Comments=</VerInfo_Keys>
+        <VerInfo_Keys>CompanyName=Peter Miller;FileDescription=$(MSBuildProjectName);FileVersion=3.6.0.20;InternalName=csvgraph;LegalCopyright=Peter Miller 2023;LegalTrademarks=;OriginalFilename=;ProgramID=com.embarcadero.$(MSBuildProjectName);ProductName=$(MSBuildProjectName);ProductVersion=3.6.0.0;Comments=</VerInfo_Keys>
         <BCC_AllWarnings>true</BCC_AllWarnings>
         <BCC_SelectedWarnings>false</BCC_SelectedWarnings>
         <BCC_UserSuppliedOptions>-Wno-c++98-compat -Wno-double-promotion -Wno-old-style-cast -Wno-float-equal -Wno-date-time -Wno-exit-time-destructors -Wno-global-constructors -Wno-padded -Wno-missing-noreturn  -Wno-c++98-compat-pedantic</BCC_UserSuppliedOptions>
@@ -178,7 +179,7 @@
         <VerInfo_MinorVer>6</VerInfo_MinorVer>
         <VerInfo_AutoIncVersion>true</VerInfo_AutoIncVersion>
         <AppDPIAwarenessMode>gdiScaling</AppDPIAwarenessMode>
-        <VerInfo_Build>8</VerInfo_Build>
+        <VerInfo_Build>20</VerInfo_Build>
     </PropertyGroup>
     <ItemGroup>
         <CppCompile Include="..\Common-files\atof.c">
@@ -207,6 +208,12 @@
         </CppCompile>
         <CppCompile Include="..\Common-files\rprintf.cpp">
             <BuildOrder>12</BuildOrder>
+        </CppCompile>
+        <None Include="..\Common-files\smoothing_spline.h">
+            <BuildOrder>21</BuildOrder>
+        </None>
+        <CppCompile Include="..\Common-files\smoothing_splinev2.c">
+            <BuildOrder>22</BuildOrder>
         </CppCompile>
         <CppCompile Include="..\Common-files\smooth_diff.c">
             <BuildOrder>20</BuildOrder>

@@ -124,7 +124,7 @@ public:
   double dOutY;
   double dShiftFactor;
 
-  AnsiString YLabel1,YLabel2,XLabel;  //Labels
+  WideString YLabel1,YLabel2,XLabel;  //Labels was  AnsiString
 
   //Constructor, Destructor  , resize bitmap
   TScientificGraph(int iBitmapWidthK, int iBitmapHeightK);

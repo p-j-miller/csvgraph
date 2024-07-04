@@ -70,6 +70,98 @@
 // I'm sorry for the next 2 lines, but otherwise I get a lot of warnings "zero as null pointer constant"
 #undef NULL
 #define NULL (nullptr)
+#define STR_CONV_BUF_SIZE 2000 // the largest string you may have to convert. depends on your project
+static wchar_t* __fastcall Utf8_to_w(const char* c)     // convert utf encoded string to wide chars - new function
+{
+	static wchar_t w[STR_CONV_BUF_SIZE];
+	memset(w,0,sizeof(w));
+	MultiByteToWideChar(CP_UTF8, 0, c, -1, w, STR_CONV_BUF_SIZE-1);  // utf-8 (this is a windows function )
+	return(w);
+}
+
+// Below from  https://stackoverflow.com/questions/1031645/how-to-detect-utf-8-in-plain-c
+// modified Peter Miller 29-5-2024
+// returns true when not a pure ascii string , but is a valid utf8 string
+static bool is_utf8(const char * string);
+
+static bool is_utf8(const char * string)
+{bool not_ascii=false;
+	if(!string)
+		return 0;
+	const unsigned char * bytes = (const unsigned char *)string;   // in case char is signed
+	while(*bytes)
+	{
+		if( (// ASCII - only allow values that may reasonably be in a utf8 string
+				bytes[0] == 0x09 ||
+				bytes[0] == 0x0A ||
+				bytes[0] == 0x0D ||
+				(0x20 <= bytes[0] && bytes[0] <= 0x7E)
+			)
+		) {
+			bytes ++;
+			continue;
+		  }
+
+		if( (// non-overlong 2-byte
+				(0xC2 <= bytes[0] && bytes[0] <= 0xDF) &&
+				(0x80 <= bytes[1] && bytes[1] <= 0xBF)
+			)
+		) { not_ascii=true;
+			bytes += 2;
+			continue;
+		  }
+
+		if( (// excluding overlongs
+				bytes[0] == 0xE0 &&
+				(0xA0 <= bytes[1] && bytes[1] <= 0xBF) &&
+				(0x80 <= bytes[2] && bytes[2] <= 0xBF)
+			) ||
+			(// straight 3-byte
+				((0xE1 <= bytes[0] && bytes[0] <= 0xEC) ||
+					bytes[0] == 0xEE ||
+					bytes[0] == 0xEF) &&
+				(0x80 <= bytes[1] && bytes[1] <= 0xBF) &&
+                (0x80 <= bytes[2] && bytes[2] <= 0xBF)
+			) ||
+			(// excluding surrogates
+                bytes[0] == 0xED &&
+                (0x80 <= bytes[1] && bytes[1] <= 0x9F) &&
+				(0x80 <= bytes[2] && bytes[2] <= 0xBF)
+			)
+		) { not_ascii=true;
+            bytes += 3;
+			continue;
+		  }
+
+        if( (// planes 1-3
+				bytes[0] == 0xF0 &&
+                (0x90 <= bytes[1] && bytes[1] <= 0xBF) &&
+				(0x80 <= bytes[2] && bytes[2] <= 0xBF) &&
+                (0x80 <= bytes[3] && bytes[3] <= 0xBF)
+			) ||
+            (// planes 4-15
+                (0xF1 <= bytes[0] && bytes[0] <= 0xF3) &&
+				(0x80 <= bytes[1] && bytes[1] <= 0xBF) &&
+				(0x80 <= bytes[2] && bytes[2] <= 0xBF) &&
+                (0x80 <= bytes[3] && bytes[3] <= 0xBF)
+            ) ||
+			(// plane 16
+				bytes[0] == 0xF4 &&
+				(0x80 <= bytes[1] && bytes[1] <= 0x8F) &&
+                (0x80 <= bytes[2] && bytes[2] <= 0xBF) &&
+				(0x80 <= bytes[3] && bytes[3] <= 0xBF)
+            )
+		) { not_ascii=true;
+            bytes += 4;
+			continue;
+		  }
+
+		return false;   // not a valid utf-8 string
+	}
+
+	return not_ascii;  // is valid utf8 string, but only return true if not ascii
+}
+
 
 extern TForm1 *Form1;
 
@@ -647,7 +739,7 @@ void TScientificGraph::fnPaint()
 		pBitmap->Canvas->Font->Color=pAGraph->ColLine;
 	  }
 	  pBitmap->Canvas->Font->Size=iTextSize;                //paint caption
-	  pBitmap->Canvas->TextOut(pPoint->x,pPoint->y,pAGraph->Caption);
+	  pBitmap->Canvas->TextOut(pPoint->x,pPoint->y,Utf8_to_w(pAGraph->Caption));
 	  *pPoint=*pPoint2;
 	  if ((pAGraph->iSizeDataPoint>pBitmap->Canvas->TextHeight("0"))&&
 		 (((pAGraph->ucStyle) & 1) == 1))
@@ -934,7 +1026,7 @@ fnpaint_end:  // tidy up then return if we get here via a goto.
 	  *pPoint2=*pPoint;
 #if 1 /* LEGEND_CLEAR_BACKGROUND */
 	  {
-		i=pBitmap->Canvas->TextHeight(pAGraph->Caption);
+		i=pBitmap->Canvas->TextHeight(Utf8_to_w(pAGraph->Caption.c_str()));
 		i/=2;
 		pPoint->y+=i;
 		//pPoint->x+=pBitmap->Canvas->TextWidth("22");
@@ -945,7 +1037,7 @@ fnpaint_end:  // tidy up then return if we get here via a goto.
 		LayoutRect.Top=(pPoint->y)-(i);
 		LayoutRect.Bottom=(pPoint->y)+(i);
 		LayoutRect.Right+=pBitmap->Canvas->TextWidth("4444");
-		LayoutRect.Right+=pBitmap->Canvas->TextWidth(pAGraph->Caption);
+		LayoutRect.Right+=pBitmap->Canvas->TextWidth(Utf8_to_w(pAGraph->Caption.c_str()));
 		pBitmap->Canvas->Brush->Color = ColBackGround;
 		pBitmap->Canvas->FillRect(LayoutRect);
 		*pPoint=*pPoint2;// restore back ready for code below
@@ -953,7 +1045,7 @@ fnpaint_end:  // tidy up then return if we get here via a goto.
 #endif
 	  if (((pAGraph->ucStyle) & 1) == 1)                      //paint data point
 	  {                                                       //for legend
-		i=pBitmap->Canvas->TextHeight(pAGraph->Caption);
+		i=pBitmap->Canvas->TextHeight(Utf8_to_w(pAGraph->Caption.c_str()));
 		i/=2;
 		pPoint->y+=i;
 		pPoint->x+=pBitmap->Canvas->TextWidth("22");
@@ -980,7 +1072,7 @@ fnpaint_end:  // tidy up then return if we get here via a goto.
 	  }
 	  if (((pAGraph->ucStyle) & 4) == 4)                     //paint short line
 	  {                                                      //for legend
-		i=pBitmap->Canvas->TextHeight(pAGraph->Caption);
+		i=pBitmap->Canvas->TextHeight(Utf8_to_w(pAGraph->Caption.c_str()));
 		i/=2;
 		pPoint->y+=i;
 		pBitmap->Canvas->PenPos=*pPoint;
@@ -994,7 +1086,7 @@ fnpaint_end:  // tidy up then return if we get here via a goto.
 		pBitmap->Canvas->Font->Color=pAGraph->ColLine;
 	  }
 	  pBitmap->Canvas->Font->Size=iTextSize;                //paint caption
-	  pBitmap->Canvas->TextOut(pPoint->x,pPoint->y,pAGraph->Caption);
+	  pBitmap->Canvas->TextOut(pPoint->x,pPoint->y,Utf8_to_w(pAGraph->Caption.c_str()));
 	  *pPoint=*pPoint2;
 	  if ((pAGraph->iSizeDataPoint>pBitmap->Canvas->TextHeight("0"))&&
 		 (((pAGraph->ucStyle) & 1) == 1))
@@ -1015,13 +1107,13 @@ fnpaint_end:  // tidy up then return if we get here via a goto.
                *dCaptionStartY+sScaleY.dMin
                );
   if(pBitmap->Canvas->TextExtent(YLabel1).cx>
-            pBitmap->Canvas->TextExtent(YLabel2).cx)
+			pBitmap->Canvas->TextExtent(YLabel2).cx)
   {
-    ASize=pBitmap->Canvas->TextExtent(YLabel1);
+	ASize=pBitmap->Canvas->TextExtent(YLabel1);
   }
   else
   {
-    ASize=pBitmap->Canvas->TextExtent(YLabel2);
+	ASize=pBitmap->Canvas->TextExtent(YLabel2);
   }
   pBitmap->Canvas->Font->Color=ColText;
   pBitmap->Canvas->Font->Size=aTextSize;
@@ -1030,6 +1122,32 @@ fnpaint_end:  // tidy up then return if we get here via a goto.
   // PMi rotate text for y axis so it fits better into available space
 #define ROT_TXT
 #ifdef ROT_TXT
+#if 1   /* new (much simpler) way to rotate via VCL */
+  pBitmap->Canvas->Font->Orientation=900; // 90 deg rotation
+#if 0
+  // now print axis label - as space is not a big now issue just combine 2 labels into 1
+  pBitmap->Canvas->TextOutA(pPoint->x-iTextOffset*2
+	   -pBitmap->Canvas->TextWidth("-0.00000000000000"),pPoint->y,YLabel1+" "+YLabel2);
+#else
+  // now print axis labels
+  int off_len_LY1=pBitmap->Canvas->TextWidth(YLabel1);
+  int off_len_LY2=pBitmap->Canvas->TextWidth(YLabel2);
+  if(YLabel2=="")
+		{ // only 1 label to print, put it nearest to the axis , // +off_len_LY?/2 centres Ylabel
+		 pBitmap->Canvas->TextOut(pPoint->x-iTextOffset*2
+				-off2,pPoint->y+off_len_LY1/2,YLabel1);
+		}
+  else
+		{// 2 ledgends to print , have to space them out
+		 pBitmap->Canvas->TextOut(pPoint->x-iTextOffset*2
+				-off1,pPoint->y+off_len_LY1/2,YLabel1);
+		 pBitmap->Canvas->TextOut(pPoint->x-iTextOffset*2
+				-off2,pPoint->y+off_len_LY2/2,YLabel2);
+		}
+#endif
+  // restore original values back
+  pBitmap->Canvas->Font->Orientation=0;
+#else /* orig code */
   // the following code is based on http://www.bcbjournal.org/articles/vol2/9801/Rotated_fonts.htm?PHPSESSID=caec6429be51c2338b088838c96fe7ff
   static LOGFONT lf;   // DOES need to be static
   GetObject(pBitmap->Canvas->Font->Handle,sizeof(LOGFONT), &lf);
@@ -1046,23 +1164,23 @@ fnpaint_end:  // tidy up then return if we get here via a goto.
 #if 0
   // now print axis label - as space is not a big now issue just combine 2 labels into 1
   pBitmap->Canvas->TextOutA(pPoint->x-iTextOffset*2
-       -pBitmap->Canvas->TextWidth("-0.00000000000000"),pPoint->y,YLabel1+" "+YLabel2);
+	   -pBitmap->Canvas->TextWidth("-0.00000000000000"),pPoint->y,YLabel1+" "+YLabel2);
 #else
-  // now print axis labels  
-  int off_len_LY1=pBitmap->Canvas->TextWidth(YLabel1);
-  int off_len_LY2=pBitmap->Canvas->TextWidth(YLabel2);
+  // now print axis labels
+  int off_len_LY1=pBitmap->Canvas->TextWidth(Utf8_to_w(YLabel1.c_str()));
+  int off_len_LY2=pBitmap->Canvas->TextWidth(Utf8_to_w(YLabel2.c_str()));
   if(YLabel2=="")
-        { // only 1 label to print, put it nearest to the axis , // +off_len_LY?/2 centres Ylabel
+		{ // only 1 label to print, put it nearest to the axis , // +off_len_LY?/2 centres Ylabel
 		 pBitmap->Canvas->TextOut(pPoint->x-iTextOffset*2
-                -off2,pPoint->y+off_len_LY1/2,YLabel1);
-        }
+				-off2,pPoint->y+off_len_LY1/2,Utf8_to_w(YLabel1.c_str()));
+		}
   else
-        {// 2 ledgends to print , have to space them out
+		{// 2 ledgends to print , have to space them out
 		 pBitmap->Canvas->TextOut(pPoint->x-iTextOffset*2
-                -off1,pPoint->y+off_len_LY1/2,YLabel1);
-         pBitmap->Canvas->TextOut(pPoint->x-iTextOffset*2
-                -off2,pPoint->y+off_len_LY2/2,YLabel2);
-        }
+				-off1,pPoint->y+off_len_LY1/2,Utf8_to_w(YLabel1.c_str()));
+		 pBitmap->Canvas->TextOut(pPoint->x-iTextOffset*2
+				-off2,pPoint->y+off_len_LY2/2,Utf8_to_w(YLabel2.c_str()));
+		}
 #endif
   // restore original values back
   lf.lfEscapement = 0; // rotation in deg*10
@@ -1070,17 +1188,18 @@ fnpaint_end:  // tidy up then return if we get here via a goto.
   lf.lfOutPrecision = OUT_DEFAULT_PRECIS;  // restore to original value
   // Create new font with zero rotation ; assign to Canvas Font's Handle.
   pBitmap->Canvas->Font->Handle = CreateFontIndirect(&lf);
+#endif
 #else
   // original code
   pBitmap->Canvas->TextOutA(pPoint->x-ASize.cx-iTextOffset*2
-       -pBitmap->Canvas->TextWidth("-0.0000000"),pPoint->y,YLabel1);
+	   -pBitmap->Canvas->TextWidth("-0.0000000"),pPoint->y,Utf8_to_w(YLabel1.c_str()));
   pBitmap->Canvas->TextOutA(pPoint->x-ASize.cx-iTextOffset*2
-       -pBitmap->Canvas->TextWidth("-0.0000000"),pPoint->y+ASize.cy,YLabel2);
+	   -pBitmap->Canvas->TextWidth("-0.0000000"),pPoint->y+ASize.cy,Utf8_to_w(YLabel2.c_str()));
 #endif
   fnKoord2Point(pPoint,(sScaleX.dMax
-                -sScaleX.dMin)*dCaptionStartX
-                +sScaleX.dMin,
-                sScaleY.dMin);
+				-sScaleX.dMin)*dCaptionStartX
+				+sScaleX.dMin,
+				sScaleY.dMin);
   ASize=pBitmap->Canvas->TextExtent(XLabel);
   pBitmap->Canvas->Font->Color=ColText;
   int off_len_LX=pBitmap->Canvas->TextWidth(XLabel);
@@ -3355,6 +3474,8 @@ void TScientificGraph::fnCheckScales()
         }
 }
 
+
+
 bool TScientificGraph::SaveCSV(char *filename,char *x_axis_name, double xmin, double xmax)
 {          // save data into specified csv filename - only save xvalues in defined range
  size_t j=0;
@@ -3386,13 +3507,31 @@ bool TScientificGraph::SaveCSV(char *filename,char *x_axis_name, double xmin, do
 		}
    }
  //  open file for writing
- fp=fopen(filename,"wt");
+ //fp=fopen(filename,"wt");
+ fp=_wfopen(Utf8_to_w(filename),L"wt");
  if(fp==NULL)
 		{snprintf(cstr,sizeof(cstr)-1,"Error on CSV save: cannot create file %s",filename);    // sizeof -1 as last character set to null above
-		 ShowMessage(cstr);
+		 ShowMessage(Utf8_to_w(cstr));
 		 return false;
 		}
  setvbuf(fp,NULL,_IOFBF,128*1024); // set a reasonably large output buffer, and full buffering
+ #if 1 /* utf-8 handling */
+ int BOM_needed=IDNO; // default to not needing utf-8 BOM
+ // look to see if any headers need utf-8  (rather than just 7 bit ascii chars)
+ if(is_utf8(x_axis_name)) BOM_needed=IDYES;
+ for (int i=0; i<iNumberOfGraphs; i++)              //for all graphs
+	{aGraph=(SGraph*) pHistory->Items[i];
+	 if(is_utf8(aGraph->Caption.c_str())) BOM_needed=IDYES;
+	}
+ if( BOM_needed==IDYES)
+	{BOM_needed=Application->MessageBox(L"Create UTF8-BOM csv file [needed for Excel]?\n\"No\" will result in a standard ANSI/UTF-8 file)", L"CSV File type", MB_YESNO);
+	}
+ // rprintf("UTF8-BOM request returned %0x: YES=%x NO=%x\n",BOM_needed,IDYES,IDNO);
+ if(BOM_needed==IDYES)
+	{fprintf(fp,"\xEF\xBB\xBF"); // print "magic" uft-8 BOM at start of file so other software can recognise the filetype [ csvgraph will understand this when loading the file ]
+	 rprintf("UTF8-BOM written to file \"%s\"\n",filename);
+	}
+ #endif
  // now write header line for csv file with names for each column
  fprintf(fp,"\"%s\"",x_axis_name);
  for (int i=0; i<iNumberOfGraphs; i++)              //for all graphs
@@ -3438,6 +3577,7 @@ bool TScientificGraph::SaveCSV(char *filename,char *x_axis_name, double xmin, do
  fclose(fp);
  snprintf(cstr,sizeof(cstr),"csv save: finished in %.1f secs",(clock()-start_t)/(double)CLOCKS_PER_SEC);
  Form1->pPlotWindow->StatusText->Caption=cstr;
+ rprintf("File \"%s\" - %s\n",filename,cstr);
  Application->ProcessMessages(); /* allow windows to update (but not go idle) */
  return true; // good exit
 }

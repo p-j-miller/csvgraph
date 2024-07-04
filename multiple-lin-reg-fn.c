@@ -8,10 +8,11 @@
    Warning - all arrays are indexed from 1 (not from 0) !!!!
 
   This version uses long doubles for maximum accuracy.
+  13/5/2024: for regression in polynomials of sqrt(x) , points with negative x are now ignored.
 
 */
 /*----------------------------------------------------------------------------
- * Copyright (c) 2014,2022 Peter Miller
+ * Copyright (c) 2014,2022, 2024 Peter Miller
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -37,7 +38,7 @@
 #include <values.h> /* MAXFLOAT etc */
 #include <float.h>  /* FLT_EPSILON, DBL_EPSILON etc */
 #include <stdlib.h> /* for max() */
-
+#include <stdbool.h>
 #include "multiple-lin-reg-fn.h"
 
 // #define TEST_FUNCTIONS /* if defined add in some test functions */
@@ -138,8 +139,9 @@ static void Dispersion_Matrix (float *x_arr,float *y_arr,enum reg_types rt, int 
 		 S[i][j]=0;
 		}
 	}
+ size_t k1=0;// count of values used - we may skip some values (negative sqrt) so k1 may not equal k+1
  for(size_t k = 0 ;k< SampleSize;++k)
-	{size_t k1=k+1;
+	{k1++;
 	 if(filter_callback!=NULL && (k & 0x3ffff)==0 )
 		(*filter_callback)(k,SampleSize+1); // update on progress
 	 // calculate Z[i]'s for required function [ these are hardcoded for speed ]
@@ -159,7 +161,12 @@ static void Dispersion_Matrix (float *x_arr,float *y_arr,enum reg_types rt, int 
 			}
 		}
 	 else if(rt==reg_sqrt)
-		{long double x=sqrtl((long double)x_arr[k]);
+		{if(x_arr[k]<0)
+			{// avoid sqrt of negative number
+			 k1--; // we incremented this earlier assuming this value would be used, so back it up as we will skip this value
+             continue; // next k
+			}
+		 long double x=sqrtl((long double)x_arr[k]);
 		 long double r=x;
 		 for(int i = 1; i<= N;++i)
 			{

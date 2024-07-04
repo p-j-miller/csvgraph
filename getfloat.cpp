@@ -36,11 +36,11 @@
 */
 #define STR_CONV_BUF_SIZE 2000 // the largest string you may have to convert. depends on your project
 
-static char* __fastcall AnsiOf(wchar_t* w)
+static char* __fastcall Utf8Of(wchar_t* w)       /* convert to utf-8 encoding */
 {
 	static char c[STR_CONV_BUF_SIZE];
 	memset(c, 0, sizeof(c));
-	WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS, w, (int)wcslen(w), c, STR_CONV_BUF_SIZE, (nullptr),(nullptr));
+	WideCharToMultiByte(CP_UTF8, 0, w, -1, c, STR_CONV_BUF_SIZE-1, nullptr, nullptr);       /* size-1 ensure result is null terminated */
 	return(c);
 }
 
@@ -65,7 +65,7 @@ static char* __fastcall AnsiOf(wchar_t* w)
 }
 
 bool getdouble(wchar_t *s, double *d)
-{return getdouble(AnsiOf(s),d);
+{return getdouble(Utf8Of(s),d);
 }
 
  bool getfloat(char *s, float *d)
@@ -130,13 +130,13 @@ bool getfloatge0(char *s, float *d)
 
 // functions like above that take wchar_t *
 bool getfloat(wchar_t *s, float *d)
-{return getfloat(AnsiOf(s),d);
+{return getfloat(Utf8Of(s),d);
 }
 bool getfloatgt0(wchar_t *s, float *d)
-{ return getfloatgt0(AnsiOf(s),d);
+{ return getfloatgt0(Utf8Of(s),d);
 }
 bool getfloatge0(wchar_t *s, float *d)
-{ return getfloatge0(AnsiOf(s),d);
+{ return getfloatge0(Utf8Of(s),d);
 }
 
 // now duplicate all these with double return type (C++ allows the reuse of the same function names)
@@ -204,13 +204,13 @@ bool getfloatge0(char *s, double *d)
 
 // functions like above that take wchar_t *
 bool getfloat(wchar_t *s, double*d)
-{return getfloat(AnsiOf(s),d);
+{return getfloat(Utf8Of(s),d);
 }
 bool getfloatgt0(wchar_t *s, double *d)
-{ return getfloatgt0(AnsiOf(s),d);
+{ return getfloatgt0(Utf8Of(s),d);
 }
 bool getfloatge0(wchar_t *s, double *d)
-{ return getfloatge0(AnsiOf(s),d);
+{ return getfloatge0(Utf8Of(s),d);
 }
 
 // now repeat for int's
@@ -276,11 +276,11 @@ bool getintge0(char *s, int *d)
 
 // functions like above that take wchar_t *
 bool getint(wchar_t *s, int*d)
-{return getint(AnsiOf(s),d);
+{return getint(Utf8Of(s),d);
 }
 bool getintgt0(wchar_t *s, int *d)
-{ return getintgt0(AnsiOf(s),d);
+{ return getintgt0(Utf8Of(s),d);
 }
 bool getintge0(wchar_t *s, int *d)
-{ return getintge0(AnsiOf(s),d);
+{ return getintge0(Utf8Of(s),d);
 }
