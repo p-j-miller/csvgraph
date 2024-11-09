@@ -151,6 +151,8 @@ public:
   float fnAddDataPoint_nextx(int iGraphNumberF);    // returns next x value for this graph assuming its the same as the previous graph
   float fnAddDataPoint_thisy(int iGraphNumber);    // returns next y value of iGraphNumber (locn from current graph number)  used to do $T1
   bool fnChangeXoffset(double dX); // change all X values by adding dX to the most recently added graph if at least 2 graphs defined
+  void fnKalman_filter(double median_ahead_t, int iGraphNumberF, void (*callback)(size_t cnt,size_t maxcnt)); // apply single variable Kalamn filter with noise variance of median_ahead_t to graph in place
+  void fnCentral_moving_average_filter(double median_ahead_t, int iGraphNumberF, void (*callback)(size_t cnt,size_t maxcnt)) ; // central moving average
   void fnMedian_filt(unsigned int median_ahead, int iGraphNumberF = 0); // apply median filter to graph in place , lookahead defined in samples
   void fnMedian_filt_time1(double median_ahead_t, int iGraphNumberF, void (*callback)(size_t cnt,size_t maxcnt)); // new algorithm apply median filter to graph in place  , lookahead defined in time
   void fnMedian_filt_time(double median_ahead_t, int iGraphNumberF, void (*callback)(size_t cnt,size_t maxcnt)); // apply median filter to graph in place  , lookahead defined in time
@@ -163,6 +165,7 @@ public:
   bool fnPolyreg(unsigned int order,int iGraphNumberF, void (*callback)(size_t cnt,size_t maxcnt)); // fit polynomial of specified order regression to graph in place
   bool fnFFT(bool dBV_result,bool Hanning,int iGraphNumberF, void (*callback)(size_t cnt,size_t maxcnt)); // apply FFT to data. returns true if OK, false if failed.
   void compress_y(int iGraphNumberF); // compress by deleting points with equal y values except for 1st and last in a row
+  void fix_dupx(int iGraphNumberF); // "fix" equal x values
   void deriv_filter(unsigned int diff_order,int iGraphNumberF); // smoothed derivative
   void deriv2_filter(unsigned int diff_order,int iGraphNumberF); // smoothed 2nd derivative
   void Savitzky_Golay_smoothing(unsigned int s_order,int iGraphNumberF); // Savitzky Golay smoothing

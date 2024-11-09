@@ -4,10 +4,9 @@
 //  Loosely based on an original public domain version by  Frank Heinrich, mail@frank-heinrich.de
 //
 // Originally created using Borland Builder c++ V5
-// This version compiled with Embarcadero® C++Builder 11.3
+// This version compiled with Embarcadero® C++Builder 12.1
 // It should be easy to move to a more recent version of C++Builder, but equally it would not be very hard to revert to earlier versions if necessary.
-// This is compiled for (and this is the only version that has been tested) Windows 32 bits.
-// It runs on Windows 10 64 bits. In theory it should run on windows versions from Vista onwards and 32bit versions of Windows but this is untested.
+//
 //
 // Version Date   : changes from previous version
 // 1v0 1/1/2021  : 1st version released on github (was 16v6).
@@ -153,6 +152,19 @@
 //                  11n - added tiff and wdp file save
 //                  11o - csvgraph/manual path can now be unicode - removed AnsiOf() & UnicodeOf() as not needed anymore. Most _WIN64 #if's also removed as no longer required.
 //        >> renamed 4v0 for release
+// 4v1  24/9/2024   1st version using C++ Builder 12.1
+//                   1b - for x values allowed >= for "monotonic". Previoulsy required > which caused issues when we run out of resolution in a float (e.g. file csvfunbig.csv)
+//                   1c - better "fixup" for equal x values
+//                   1d - min abs/rel error fit improved (some calculations were done in double but should have been in float)
+//                      - GMR line fit could generate a line with the wrong slope! - fixed
+//                   1e - let user select if equal x values are optimised or not. Only ask once if multiple traces added in a block.
+//                   1f - central moving average & cumulative average filters added
+//                   1g - central moving average filter - full (efficient) code in place
+//                   1h - start of new median filter code
+//                   1i - new median code fully working. Uses time to swap from exact to approximate algorithms.
+//                   1j - new median code optimised, and errors of approximate algorithms bounded
+//                   1k - cumulate average changed to Kalman filter as that's more useful.
+//                   1L - improved Kalman filter implementation
 //
 // TO DO:
 //
@@ -234,9 +246,9 @@
 extern TForm1 *Form1;
 extern const char * Prog_Name;
 #ifdef _WIN64
-const char * Prog_Name="CSVgraph (Github) 4v0 (64 bit)";   // needs to be global as used in about box as well.
+const char * Prog_Name="CSVgraph (Github) 4v1 (64 bit)";   // needs to be global as used in about box as well.
 #else
-const char * Prog_Name="CSVgraph (Github) 4v0 (32 bit)";   // needs to be global as used in about box as well.
+const char * Prog_Name="CSVgraph (Github) 4v1 (32 bit)";   // needs to be global as used in about box as well.
 #endif
 #if 1 /* if 1 then use fast_strtof() rather than atof() for floating point conversion. Note in this application this is only slightly faster (1-5%) */
 extern "C" float fast_strtof(const char *s,char **endptr); // if endptr != NULL returns 1st character thats not in the number
@@ -1532,6 +1544,7 @@ void __fastcall TPlotWindow::Button_add_trace1Click(TObject *Sender)
   bool compress;
   bool showsortmessage=true; // only show "sort message" once per press of the "add traces" button
   bool showerrmessage=true; // ditto for message to warn users of errors in format of csv file
+  int dupXmessage=0; // only ask if user wants to optimise duplicate X values once
   float previousxvalue=0,previousyvalue=0,last_actual_x_value=0;
   double median_ahead_t; // >0 for median filtering to be used
   int poly_order=2;
@@ -2195,7 +2208,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 				}
 
 		 // get x value
-		 if(allvalidxvals && nos_traces_added>1 && xmonotonic && !compress )  // This optimisation disabled if lines with invalid xvals found (and skipped)
+		 if(allvalidxvals && nos_traces_added>1 && xmonotonic && !compress && dupXmessage!=IDNO )  // This optimisation disabled if lines with invalid xvals found (and skipped)
 			{xval=(float)((double)(pScientificGraph->fnAddDataPoint_nextx(iGraph))-x_offset); // same value as previous graph loaded  as this is faster than decoding it again , x_offset will be added later but is already in previous trace so must subtract here
 			 if(!firstxvalue && xval<previousxvalue)
 				{if(++nos_errs<=MAX_ERRS)
@@ -2429,20 +2442,14 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 				 previousyvalue=yval;
 				}
 		   else
-				{float prev_last_actual_x_value=last_actual_x_value;
+				{
 				 last_actual_x_value=xval;  // remember actual last x value
-				 if((float)xval<=(float)previousxvalue && (float)xval>=(float)prev_last_actual_x_value)
-					{// try and fix up (starts with two x values being equal, but fixup could make this worse for a while)
-					 // eg 1 2 2 2 3 -> 1 2 3 4 5
-					 xval=nextafterf(previousxvalue,FLT_MAX); // keep incrementing value we wil use for x-axis
-					 // rprintf("Fixup x value: xval was %.9g fixed up to %.9g, previousxvalue=%.9g prev_last_actual_x_value=%.9g\n",last_actual_x_value,xval,previousxvalue,prev_last_actual_x_value);
-					}
-				 else if((float)xval<=(float)previousxvalue)
-						{ // x value is NOT monotonically increasing  (could be =, but we leave that case for sorting as well as in general we cannot fix that here)
+				 if((float)xval<(float)previousxvalue)
+						{ // x value is NOT monotonically increasing  (equal values are OK)
 						 xmonotonic=false;
                          // rprintf("xval(=%.15g)<previousxvalue(=%.15g)\n", xval,previousxvalue);
 						}
-				 else   {// x value is monotonically increasing
+				 else   {// x value is monotonically increasing  (or =)
 
 #if 1   /* this way of compressing only works if x values are monotonically increasing, we only know this correctly on the 2nd trace added onwards when we can trust xmonotonic */
 		/* There is a general solution for compression in function compress_y() but that requires reading all data into an array and then compressing it (and then freeing extra memory) so peak RAM is lower by doing it here if we can */
@@ -2509,6 +2516,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 		 ShowMessage(cap_str);
 		}
 #if 1 /* check x values are monotonic if we think they are  */
+  bool found_eq_xvals=false;
   if(xmonotonic)
 	  {float *xptr,*yptr;
 	   size_t nos_points;
@@ -2516,11 +2524,13 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 	   //   size_t fnGetxyarr(float **x_arr,float **y_arr,int iGraphNumberF = 0); // allow access to x and y arrays, returns nos points
 	   nos_points=pScientificGraph->fnGetxyarr(&xptr,&yptr,iGraph);
 	   for(size_t i=1;i<nos_points;++i)
-			{if(xptr[i]<=xptr[i-1])
+			{if(xptr[i]<xptr[i-1])
 				{sorted=false;
 				 rprintf("checking if x values sorted: they are not at x[%zu]=%.9g and x[%zu]=%.9g\n",i,xptr[i],i,xptr[i-1]);
 				 break;    // we have failed - no need to test any more
 				}
+			  if(xptr[i]==xptr[i-1])
+				 found_eq_xvals=true;
 			}
 	   if(!sorted)
 		{// rprintf("Error adding data xmonotic is true but sorted is false!");
@@ -2541,15 +2551,38 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 		 pScientificGraph->sortx(iGraph); // sort on x values
 		 StatusText->Caption="X values sorted";
 		 Application->ProcessMessages(); /* allow windows to update (but not go idle) */
+		 /* now see if there are any equal values */
+		 float *xptr,*yptr;
+		 size_t nos_points;
+		 //   size_t fnGetxyarr(float **x_arr,float **y_arr,int iGraphNumberF = 0); // allow access to x and y arrays, returns nos points
+		 nos_points=pScientificGraph->fnGetxyarr(&xptr,&yptr,iGraph);
+		 for(size_t i=1;i<nos_points;++i)
+			{
+			  if(xptr[i]==xptr[i-1])
+				 {found_eq_xvals=true;
+				  break;
+				 }
+			}
 		}
+#if 1
+	if(found_eq_xvals)
+		{
+		 if(dupXmessage==0)   // IDYES!=0 and IDNO!=0, so we only ask user once for every set of traces added
+			dupXmessage=Application->MessageBox(L"Are duplicate X values expected?\n Duplicates were found, but this may be due to\n csvgraphs 7 significant digit resolution", L"Optimise duplicate X values", MB_YESNO);
+		 if(dupXmessage==IDNO)
+			pScientificGraph->fix_dupx(iGraph); // "fix" any duplicate xvalues
+		}
+#endif
 #if 1    /* general purpose compression - works well but does require all data for the trace is read into ram , then excess is returned so peak ram is high */
    if(compress && !(nos_traces_added>1 && xmonotonic) ) // && ! bit traps cases that can be done when reading the trace data in (above)
-		{StatusText->Caption="Compressing...";
-         Application->ProcessMessages(); /* allow windows to update (but not go idle) */
-         pScientificGraph->compress_y(iGraph); // compress by deleting points with equal y values except for 1st and last in a row
-         StatusText->Caption="Compression completed";
-         Application->ProcessMessages(); /* allow windows to update (but not go idle) */
-        }
+		{
+		 StatusText->Caption="Compressing...";
+		 Application->ProcessMessages(); /* allow windows to update (but not go idle) */
+		 pScientificGraph->compress_y(iGraph); // compress by deleting points with equal y values except for 1st and last in a row
+		 StatusText->Caption="Compression completed";
+		 Application->ProcessMessages(); /* allow windows to update (but not go idle) */
+
+		}
 #endif
   // now implement filter on data just read in if user requires this
   switch(FilterType->ItemIndex)
@@ -2617,13 +2650,28 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						 	poly_order,median_ahead_t,sqrt(pow(2.0,1.0/(double)poly_order)-1.0)/(2.0*3.14159265358979*median_ahead_t));
                         }
 				break;
-		case 6:
+		case 6: // Central moving average filter
+				if(median_ahead_t>0.0)
+						{rprintf("Central moving average filter applied over current X value +/- %g\n",median_ahead_t);
+						 StatusText->Caption=FString;
+						 pScientificGraph->fnCentral_moving_average_filter(median_ahead_t,iGraph,filter_callback);
+						}
+				break;
+		case 7: // Kalman filter
+				if(median_ahead_t>0.0)
+						{rprintf("Trace set to Kalman filter of input Y values with measurement noise standard deviation of %g\n",median_ahead_t);
+						 StatusText->Caption=FString;
+						 pScientificGraph->fnKalman_filter(median_ahead_t,iGraph,filter_callback);
+						}
+				break;
+
+		case 8:
 
 				// lin regression y=mx
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg_origin(iGraph,filter_callback);
 				break;
-		case 7:
+		case 9:
 #if 0
 				{
 				 // test code uses general linear least squares fitting , false arguments means y values are not changed
@@ -2656,100 +2704,100 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(LinLin,iGraph,filter_callback);
 				break;
-		case 8:
+		case 10:
 				// lin regression y=mx+c  via GMR
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(LinLin_GMR,iGraph,filter_callback);
 				break;
-		case 9:
+		case 11:
 				// minimal max abs error: y=mx+c
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg_abs(false,iGraph,filter_callback);
 				break;
-		case 10:
+		case 12:
 				// minimal max abs relative error: y=mx+c
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg_abs(true,iGraph,filter_callback);
 				break;
-		case 11:
+		case 13:
 				// log regression
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(LogLin,iGraph,filter_callback);
 				break;
-		case 12:
+		case 14:
 				// exponentail regression
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(LinLog,iGraph,filter_callback);
 				break;
-		case 13:
+		case 15:
 				// powerregression
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(LogLog,iGraph,filter_callback);
 				break;
-		case 14:
+		case 16:
 				// recip regression
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(RecipLin,iGraph,filter_callback);
 				break;
-		case 15:
+		case 17:
 				// lin-recip regression
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(LinRecip,iGraph,filter_callback);
 				break;
-		case 16:
+		case 18:
 				// hyperbolic regression
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(RecipRecip,iGraph,filter_callback);
 				break;
-		case 17:
+		case 19:
 				// sqrt regression y=m*sqrt(x)+c
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(SqrtLin,iGraph,filter_callback);
 				break;
-		case 18:
+		case 20:
 				// nlog2(n) regression y=m*x*log2(x)+c
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg(Nlog2nLin,iGraph,filter_callback);
 				break;
-		case 19:
+		case 21:
 				// y=a*x+b*sqrt(x)+c  (least squares fit)
 				StatusText->Caption=FString;
 				pScientificGraph->fnLinreg_3(iGraph,filter_callback);
 				break;
 
-		case 20:
+		case 22:
 				// y=a+b*sqrt(x)+c*x+d*x^1.5
 				StatusText->Caption=FString;
 				gen_lin_reg(reg_sqrt,4,true,iGraph);
 				break;
-		case 21:
+		case 23:
 				// y=(a+bx)/(1+cx)  (least squares fit)
 				StatusText->Caption=FString;
 				pScientificGraph->fnrat_3(iGraph,filter_callback);
 				break;
-		case 22:
+		case 24:
 				// N=5=> y=(a0+a1*x+a2*x^2)/(1+b1*x+b2*x^2)
 				StatusText->Caption=FString;
 				gen_lin_reg(reg_rat,5,true,iGraph);
 				break;
-		case 23: //  general purpose polynomial fit   (least squares using orthogonal polynomials)
+		case 25: //  general purpose polynomial fit   (least squares using orthogonal polynomials)
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnPolyreg((unsigned int)poly_order,iGraph,filter_callback))
 						{StatusText->Caption="Polynomial fit failed";
 						 ShowMessage("Warning: Polynomial fit failed - adding original trace to graph");
 						}
 				break;
-		case 24:
+		case 26:
 				// general purpose polynomial fit in sqrt(x) with user defined order
 				StatusText->Caption=FString;
 				gen_lin_reg(reg_sqrt,poly_order+1,true,iGraph);
 				break;
-		case 25:
+		case 27:
 				// rational fit (poly1/poly2)  with user defined order
 				StatusText->Caption=FString;
 				gen_lin_reg(reg_rat,poly_order+1,true,iGraph);
 				break;
-		case 26:
+		case 28:
 				// derivative
 				StatusText->Caption=FString;
 #if 1
@@ -2758,17 +2806,17 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 				deriv_trace(iGraph); // this was used till csvgraph 3v8
 #endif
 				break;
-		case 27:
+		case 29:
 				// 2nd derivative
 				StatusText->Caption=FString;
 				pScientificGraph->deriv2_filter((unsigned int)poly_order,iGraph);    // used fom 3v9 - uses Savitzky Golay filtered derivative of specfied order (1,2,4 are very efficient)
 				break;
-		case 28:
+		case 30:
 				// integral
 				StatusText->Caption=FString;
 				integral_trace(iGraph);
 				break;
-		case 29: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+		case 31: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 				// fft return ||
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnFFT(false,false,iGraph,filter_callback))
@@ -2776,7 +2824,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						 ShowMessage("Warning: FFT failed - adding original trace to graph");
 						}
 				break;
-		case 30: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+		case 32: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 				// fft return dBV
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnFFT(true,false,iGraph,filter_callback))
@@ -2784,7 +2832,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						 ShowMessage("Warning: FFT failed - adding original trace to graph");
 						}
 				break;
-		case 31: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+		case 33: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 				// fft with Hanning window, return ||
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnFFT(false,true,iGraph,filter_callback))
@@ -2792,7 +2840,7 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						 ShowMessage("Warning: FFT failed - adding original trace to graph");
 						}
 				break;
-		case 32: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
+		case 34: // bool TScientificGraph::fnFFT(bool dBV_result,bool hanning,int iGraphNumberF, void (*callback)(unsigned int cnt,unsigned int maxcnt))
 				// fft with Hanning window return dBV
 				StatusText->Caption=FString;
 				if(!pScientificGraph->fnFFT(true,true,iGraph,filter_callback))
@@ -3187,7 +3235,7 @@ void proces_open_filename(char *fn) // open filename - just to peek at header ro
   if(col_names!=NULL) free(col_names);
   col_names=strdup(csv_line); // copy input line as we want to save column header strings
   if(col_names==NULL)
-        {ShowMessage("Error no RAM): cannot read headers from file "+filename);
+		{ShowMessage("Error (no RAM): cannot read headers from file "+filename);
          fclose(fin);
          filename="";
          Form1->pPlotWindow->StatusText->Caption="No filename set";

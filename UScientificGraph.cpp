@@ -1357,10 +1357,261 @@ void TScientificGraph::fnMedian_filt(unsigned int median_ahead, int iGraphNumber
         }
 }
 
+void TScientificGraph::fnKalman_filter(double median_ahead_t, int iGraphNumberF, void (*callback)(size_t cnt,size_t maxcnt)) // apply single variable Kalamn filter with noise variance of median_ahead_t to graph in place
+{// see e.g. "Tracking and Kalman Filtering made easy" by Eli Brookner. or https://wirelesspi.com/the-easiest-tutorial-on-kalman-filter/
+ time_t lastT=clock(); // used to keep callbacks at uniform time intervals;
+ SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
+ size_t iCount=pAGraph->nos_vals;
+ double kalman_gain,current_estimate, estimated_var;
+
+ // initialisation
+ const double measurement_var= median_ahead_t;  /* measurement noise  */
+ const double process_var= FLT_EPSILON;  /* process noise  - this also helps mathmatical stability as it stops estimated_var becoming zero */
+ current_estimate=pAGraph->y_vals[0]; // initial value (not changed)
+ estimated_var=1.0; // initial guess
+ // for every data point apply Kalman filter
+ for (size_t i=0; i<iCount; i++)  // for all items in list
+	{
+	 if(callback!=NULL && (i & 0x3ff)==0 && (clock()-lastT)>= CLOCKS_PER_SEC)
+			{lastT=clock();   // update on progress every second (approximately - use i & 0xff to keep average overhead of time() check very low
+			 (*callback)(i,iCount); // give user an update on progress
+			}
+	 kalman_gain = estimated_var / (estimated_var + measurement_var);  // equation 7 from https://wirelesspi.com/the-easiest-tutorial-on-kalman-filter/
+	 current_estimate += kalman_gain * (pAGraph->y_vals[i] - current_estimate); // equation 5 from https://wirelesspi.com/the-easiest-tutorial-on-kalman-filter/
+	 estimated_var = (1.0 - kalman_gain) * estimated_var +process_var;   // equation 8 in  https://wirelesspi.com/the-easiest-tutorial-on-kalman-filter/
+	 pAGraph->y_vals[i]=(float)current_estimate; // put back filtered value
+	}
+}
+
+
+void TScientificGraph::fnCentral_moving_average_filter(double median_ahead_t, int iGraphNumberF, void (*callback)(size_t cnt,size_t maxcnt))
+{  // central moving average - take average of values +/- median_ahead_t either side of current x value
+ // callback() is called periodically to let caller know progress. This is done based on time (once/sec).
+ time_t lastT;
+ SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
+ size_t maxi=pAGraph->nos_vals ;
+ float *yp=pAGraph->y_vals;
+ float *xp=pAGraph->x_vals;// we know this is already sorted into ascending order
+ double avy;
+ if(median_ahead_t<=0 || maxi<3) // need at least 3 points for initial median and need a positive value for the look ahead time
+	return;
+ if( (xp[maxi-1]-xp[0])<=median_ahead_t )
+	{// range is very large - just take (exact) average and set all values to this
+	 avy=yp[0];
+	 for(size_t i=1;i<maxi;++i)
+		 avy+=(yp[i]-avy)/(double)(i+1);   // calculate average of all y values
+	 rprintf("Central moving average: Exact average=%g: all y values set to this\n",avy);
+	 for(size_t i=0;i<maxi;++i)
+		yp[i]=(float)avy;
+	 return;
+	}
+ lastT=clock(); // used to keep callbacks at uniform time intervals
+ // need to calculate central moving averages here
+ // note we cannot work out of the of values that need to go into each average and calculate averages 1 by 1 as that would corrupt y values that are later needed
+ // so we need to allocate an array for new values
+ rprintf("Central moving average filter: taking average of x+/-%g\n",median_ahead_t);
+ float *newy=(float *)malloc(maxi*sizeof(float));
+ if(newy==NULL)
+	{rprintf("Central moving average filter: Not enough ram\n");
+	 return;
+	}
+ size_t istart=0,iend=0; // start and end of region +/- median_ahead_t from current x value
+ double sum=yp[0];
+ for (size_t i=0; i<maxi; i++)  // for all remaining items in list
+	{
+	 if(callback!=NULL && (i & 0x3ff)==0 && (clock()-lastT)>= CLOCKS_PER_SEC)
+			{lastT=clock();   // update on progress every second (approximately - use i & 0xff to keep average overhead of time() check very low
+			 (*callback)(i,maxi); // give user an update on progress
+			}
+	 // update istart , this is always <= i as x values are in increasing order so doesn't need any special checks
+	 while(xp[istart]<xp[i]-median_ahead_t)
+		{sum -=yp[istart];    // we need to keep track of the sum
+		 ++istart;
+		}
+	 // update iend, here we do need to make sure we don't go beyond the end of the array
+	 while(iend<maxi-1 &&  xp[iend]< xp[i]+median_ahead_t)
+		{++iend;
+		 sum +=yp[iend];    // we need to keep track of the sum
+
+		}
+	 // now calculate average of values in range
+	 avy=sum/(1+iend-istart);
+	 // rprintf(" CMA i=%zu [x=%g]: istart=%zu [x=%g] iend=%zu [x=%g] gives sum=%g avg=%g\n",i, xp[i],istart,xp[istart],iend,xp[iend],sum,avy);
+	 newy[i]=(float)avy; // current moving average
+	}
+ free(yp);
+ pAGraph->y_vals=newy;// put in new y values
+ return; // all done
+}
+
+#if 1
+ /* another attempt at median filtering - based on central moving average filter above */
+ /* Uses 3 possible methods:
+  1 - exact median
+  2 - median obtained by taking 25 samples (used when when 1 takes more than 10 secs and <= 183 values in a sample)
+  3 - median estimated by central moving mean (used if we have spend more than 20 secs or > 10 secs with >183 values in a sample)
+
+  All methods have a known accuracy.
+  3 is also very fast, so is used where the other methods are taking too long
+  For a straight line with no noise all 3 methods give almost the same result (1 and 2 give identical results).
+ */
+
+/*
+* From:
+* Fast median search: an ANSI C implementation
+* Nicolas Devillard - ndevilla AT free DOT fr
+* July 1998
+*
+* The following routines have been built from knowledge gathered
+* around the Web. I am not aware of any copyright problem with
+* them, so use it as you want.
+* N. Devillard - 1998
+* The functions below have been edited by Peter Miller 9/2021 to fit in with the rest of the code here.
+*/
+#define cswap(i,j) {elem_type_sort2 _t;_t=(i);i=(j);j=_t;} // example call cswap(r[i], r[minIndex]); WARNING - side effects could be an issue here ! eg cswap(r[i++],r[b])
+#define Zv(a,b) { if ((a)>(b)) cswap((a),(b)); }
+
+ /* fast median for an array with 25 values in it
+	values are rearranged to move the median to the middle (but are not sorted).
+ */
+static elem_type_sort2 opt_med25(elem_type_sort2 * p)
+{
+Zv(p[0], p[1]) ; Zv(p[3], p[4]) ; Zv(p[2], p[4]) ;
+Zv(p[2], p[3]) ; Zv(p[6], p[7]) ; Zv(p[5], p[7]) ;
+Zv(p[5], p[6]) ; Zv(p[9], p[10]) ; Zv(p[8], p[10]) ;
+Zv(p[8], p[9]) ; Zv(p[12], p[13]) ; Zv(p[11], p[13]) ;
+Zv(p[11], p[12]) ; Zv(p[15], p[16]) ; Zv(p[14], p[16]) ;
+Zv(p[14], p[15]) ; Zv(p[18], p[19]) ; Zv(p[17], p[19]) ;
+Zv(p[17], p[18]) ; Zv(p[21], p[22]) ; Zv(p[20], p[22]) ;
+Zv(p[20], p[21]) ; Zv(p[23], p[24]) ; Zv(p[2], p[5]) ;
+Zv(p[3], p[6]) ; Zv(p[0], p[6]) ; Zv(p[0], p[3]) ;
+Zv(p[4], p[7]) ; Zv(p[1], p[7]) ; Zv(p[1], p[4]) ;
+Zv(p[11], p[14]) ; Zv(p[8], p[14]) ; Zv(p[8], p[11]) ;
+Zv(p[12], p[15]) ; Zv(p[9], p[15]) ; Zv(p[9], p[12]) ;
+Zv(p[13], p[16]) ; Zv(p[10], p[16]) ; Zv(p[10], p[13]) ;
+Zv(p[20], p[23]) ; Zv(p[17], p[23]) ; Zv(p[17], p[20]) ;
+Zv(p[21], p[24]) ; Zv(p[18], p[24]) ; Zv(p[18], p[21]) ;
+Zv(p[19], p[22]) ; Zv(p[8], p[17]) ; Zv(p[9], p[18]) ;
+Zv(p[0], p[18]) ; Zv(p[0], p[9]) ; Zv(p[10], p[19]) ;
+Zv(p[1], p[19]) ; Zv(p[1], p[10]) ; Zv(p[11], p[20]) ;
+Zv(p[2], p[20]) ; Zv(p[2], p[11]) ; Zv(p[12], p[21]) ;
+Zv(p[3], p[21]) ; Zv(p[3], p[12]) ; Zv(p[13], p[22]) ;
+Zv(p[4], p[22]) ; Zv(p[4], p[13]) ; Zv(p[14], p[23]) ;
+Zv(p[5], p[23]) ; Zv(p[5], p[14]) ; Zv(p[15], p[24]) ;
+Zv(p[6], p[24]) ; Zv(p[6], p[15]) ; Zv(p[7], p[16]) ;
+Zv(p[7], p[19]) ; Zv(p[13], p[21]) ; Zv(p[15], p[23]) ;
+Zv(p[7], p[13]) ; Zv(p[7], p[15]) ; Zv(p[1], p[9]) ;
+Zv(p[3], p[11]) ; Zv(p[5], p[17]) ; Zv(p[11], p[17]) ;
+Zv(p[9], p[17]) ; Zv(p[4], p[10]) ; Zv(p[6], p[12]) ;
+Zv(p[7], p[14]) ; Zv(p[4], p[6]) ; Zv(p[4], p[7]) ;
+Zv(p[12], p[14]) ; Zv(p[10], p[14]) ; Zv(p[6], p[7]) ;
+Zv(p[10], p[12]) ; Zv(p[6], p[10]) ; Zv(p[6], p[17]) ;
+Zv(p[12], p[17]) ; Zv(p[7], p[17]) ; Zv(p[7], p[10]) ;
+Zv(p[12], p[18]) ; Zv(p[7], p[12]) ; Zv(p[10], p[18]) ;
+Zv(p[12], p[20]) ; Zv(p[10], p[20]) ; Zv(p[10], p[12]) ;
+return (p[12]);
+}
+
+#define MED1MAX_EXACT 10000 /* max number of data points within each lookahead for which exact algorithm takes a reasonable time [ this is only used to update time used ] */
+#define MED1MAX_T 10 /* time in secs after which we swap to inexact calculations for median */
+ void TScientificGraph::fnMedian_filt_time1(double median_ahead_t, int iGraphNumberF, void (*callback)(size_t cnt,size_t maxcnt)) // apply median filter to graph in place  , lookahead defined in time
+{  // central median filter - take median of values +/- median_ahead_t either side of current x value
+ // callback() is called periodically to let caller know progress. This is done based on time (once/sec).
+ time_t lastT,startT,nowT;
+ SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
+ size_t maxi=pAGraph->nos_vals ;
+ float *yp=pAGraph->y_vals;
+ float *xp=pAGraph->x_vals;// we know this is already sorted into ascending order
+ double avy,medy;
+ int used_approx=0; // incremented if approximate median calculation used
+ if(median_ahead_t<=0 || maxi<3) // need at least 3 points for initial median and need a positive value for the look ahead time
+	return;
+ if( (xp[maxi-1]-xp[0])<=median_ahead_t )
+	{// range is very large - just take (exact) median and set all values to this
+	 medy=yaMedian(pAGraph->y_vals,maxi);  // this changes the order of y_vals[] but thats not an issue here as we overwrite them all below with medy
+	 rprintf("Median: Exact median=%g: all y values set to this\n",medy);
+	 for(size_t i=0;i<maxi;++i)
+		yp[i]=(float)medy;
+	 return;
+	}
+ startT=nowT=lastT=clock(); // used to keep callbacks at uniform time intervals
+ // need to calculate central moving averages here
+ // note we cannot work out of the of values that need to go into each average and calculate averages 1 by 1 as that would corrupt y values that are later needed
+ // so we need to allocate an array for new values
+ rprintf("Central moving median filter: taking median of x+/-%g\n",median_ahead_t);
+ float *newy=(float *)malloc(maxi*sizeof(float));
+ if(newy==NULL)
+	{rprintf("Central moving median filter: Not enough ram - Median filtering is not possible\n");
+	 return;
+	}
+ size_t istart=0,iend=0; // start and end of region +/- median_ahead_t from current x value
+ double sum=yp[0];
+ for (size_t i=0; i<maxi; i++)  // for all x values
+	{
+	 if(((i & 0x3ff)==0 || iend-istart > MED1MAX_EXACT) && (clock()-lastT)>= CLOCKS_PER_SEC)
+			{nowT=lastT=clock();   // update on progress every second (approximately - use i & 0x3ff to keep average overhead of time() check very low
+			 if(callback!=NULL) (*callback)(i,maxi); // give user an update on progress
+			}
+	 // update istart , this is always <= i as x values are in increasing order so doesn't need any special checks
+	 while(xp[istart]<xp[i]-median_ahead_t)
+		{sum -=yp[istart];    // we need to keep track of the sum
+		 ++istart;
+		}
+	 // update iend, here we do need to make sure we don't go beyond the end of the array
+	 while(iend<maxi-1 &&  xp[iend]< xp[i]+median_ahead_t)
+		{++iend;
+		 sum +=yp[iend];    // we need to keep track of the sum
+		}
+	 if(nowT-startT <  CLOCKS_PER_SEC*MED1MAX_T)
+		{ // calculate exact median until we exceed time limit
+		 medy=ya_median(yp+istart,1+iend-istart); // calculate required median - this median function does not change the values in yp
+		}
+	 else
+		{// use approximation
+		 // 1st calculate average of values in range
+		 avy=sum/(1+iend-istart);
+		 // rprintf(" CMA i=%zu [x=%g]: istart=%zu [x=%g] iend=%zu [x=%g] gives sum=%g avg=%g\n",i, xp[i],istart,xp[istart],iend,xp[iend],sum,avy);
+		 medy=avy; //  We know the average is between min & max values
+		 if(nowT-startT <  2*CLOCKS_PER_SEC*MED1MAX_T && 1+iend-istart <=183 )
+			{// for a smallish number of elements and execution times between MED1MAX_T & 2*MED1MAX_T , ie for next MED1MAX_T secs use a sampling median - sample 25 values
+			 // a sample of 25 gives a 50% probability that estimated median is in range 0.75*medy to 1.25*medy with 183 samples.
+			 // (1/a^2)*ln(1/p)*ln(n) = 25 from   https://stackoverflow.com/questions/638030/how-to-calculate-or-approximate-the-median-of-a-list-without-storing-the-list
+			 // where median is between (1+a)*estimate and (1-a)*estimate with probablility (1-p)  for 25 samples from n values.
+			 //
+			 float ma[25]; // indices 0..24
+			 for(size_t j=0;j<25;++j)
+				{ma[j]=yp[istart+(j*(iend-istart)+12)/24];  // loop setup to evently sample including 1st and last elements. +12 gives "rounding" from integer divide
+				}
+			 medy=opt_med25(ma);  // exact median of a sample of 25 values .
+			 used_approx|=1;  // note some values used this approximation
+			}
+		 else
+			{// we have run out of time - just use the current moving average as we already have that
+			 // The average is known to be within 1 standard deviation of the median - see Lemma 1 of "Fast Computation of the Median by Successive Binning", Ryan J. Tibshirani, October 2008.
+			 used_approx|=2; // used central moving average for some values (and potentially approx median for others [ e.g. the end as the number of values left decreases])
+			}
+		}
+	 newy[i]=(float)medy;
+	}
+ free(yp);
+ pAGraph->y_vals=newy;// put in new y values
+ switch(used_approx)
+	{
+	 case 0: rprintf("  median filter finished in %.3f secs - used exact median for all points\n",(clock()-startT)/(double)CLOCKS_PER_SEC);
+			 break;
+	 case 1: rprintf("  median filter finished in %.3f secs - used estimated median for some points\n",(clock()-startT)/(double)CLOCKS_PER_SEC);
+			 break;
+	 case 2: rprintf("  median filter finished in %.3f secs - used central moving average for some points\n",(clock()-startT)/(double)CLOCKS_PER_SEC);
+			 break;
+	 default: rprintf("  median filter finished in %.3f secs - used estimated median for some points and central moving average for others\n",(clock()-startT)/(double)CLOCKS_PER_SEC);
+			 break;
+	}
+ return; // all done
+}
 
 
 
-#if 1 /* new version of the median 1 filter for 2v6 - this uses "binning" to give a defined accuracy for the median */
+#elif 1 /* new version of the median 1 filter for 2v6 - this uses "binning" to give a defined accuracy for the median */
 /* This implements an standard median filter.
    It will use an exact algorithm if the run-time will not be too large, otherwise it uses an approximation based on a histogram (binning) approach.
    The binning approcah is designed to look indentical to the exact approach when viewed at the default scaling (not zoomed in).
@@ -2162,7 +2413,7 @@ void TScientificGraph::fnLinreg(enum LinregType type, int iGraphNumberF, void (*
 				Anal. Chem. 2020, 92, 10863-10871.
 			  */
 			 m=sqrt((meany*meany-meany2)/(meanx*meanx-meanx2));
-			 if(meanxy<0) m= -m;
+			 if(rm<0) m= -m;
 			}
 		 c=meany-m*meanx; /* y=mx+c so c=y-mx */
 		 rt=(meanxy-meanx*meany);
@@ -2717,6 +2968,130 @@ void TScientificGraph::compress_y(int iGraphNumberF) // compress by deleting poi
  pAGraph->size_vals_arrays =j;// new size of arrays
 }
 
+void TScientificGraph::fix_dupx(int iGraphNumberF) // if we have duplicate x values because we ran out of resolution try and "fixup" by replacing then with average
+{ // makes just 1 pass over the array of points, with 2 pointers i (to the item being tested) and j (j<=i) where items will be moved to (current end of compressed list)
+ // at end items >=j need to be deleted (that is done at the end of this function)
+ double lasty,lastx,x,y,miny,maxy,sumy;
+ SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
+ size_t iCount=pAGraph->nos_vals ;
+ size_t i,j;
+ size_t count_same=0,start_i=0;
+ bool skipx=false; // set to true while we are skipping equal x values
+ if(iCount<2) return; // not enough data in graph to process
+ y=lasty=miny=maxy=sumy=pAGraph->y_vals[0];
+ x=lastx=pAGraph->x_vals[0];
+ for (i=j=1; i<iCount; i++)  // for all items in list except 1st, i is where we read from, j is where we write to
+		{
+		 y=pAGraph->y_vals[i];
+		 x=pAGraph->x_vals[i];
+		 if(x==lastx)
+                {// in block of repeats
+				 if(!skipx)
+					{lasty=miny=maxy=sumy=pAGraph->y_vals[i-1];   // 1st point in set of equal x values
+					 lastx=x;
+					 count_same=1;
+					 start_i=i-1;// start of "run"
+					 skipx=true;
+					}
+				 // update stats for "run"
+				 if(y<miny) miny=y;
+				 if(y>maxy) maxy=y;
+				 sumy+=y;
+				 count_same++;
+				 if(i!=iCount-1) continue; // keep going till we find the end of the block (or the end of the array)
+                }
+		 if(skipx)
+				{// we have skipped some values, but x has now changed, so must now decide what to do
+				 if(start_i==0 && i<iCount-1)
+					{// at very start of file but there are some more points after AND file looks like steadily increasinmg or decreasing
+					 if(maxy<=y /* increasing*/ || miny>=y /* decreasing */)
+						{
+						 pAGraph->y_vals[j]=(float)(sumy/(double)count_same);// use average y
+						 pAGraph->x_vals[j]=(float)lastx;
+						 ++j;
+						}
+					 else
+						{// add in 2 points - miny, maxy
+						 pAGraph->y_vals[j]=(float)(miny);
+						 pAGraph->x_vals[j]=(float)lastx;
+						 ++j;
+						 pAGraph->y_vals[j]=(float)(maxy);
+						 pAGraph->x_vals[j]=(float)lastx;
+						 ++j;
+						}
+					}
+				 else if(start_i>0 && i<iCount-1)
+					{// in the middle of the file, not at the very start of file but there are some more points after
+					 double ybefore_run= pAGraph->y_vals[start_i-1];
+					 if((maxy<=y && miny>=ybefore_run) || (maxy<=ybefore_run && miny>=y ))
+						{  // increasing or decreasing
+						 pAGraph->y_vals[j]=(float)(sumy/(double)count_same);// use average y
+						 pAGraph->x_vals[j]=(float)lastx;
+						 ++j;
+						}
+					 else
+						{// add in 2 points - miny, maxy
+						 pAGraph->y_vals[j]=(float)(miny);
+						 pAGraph->x_vals[j]=(float)lastx;
+						 ++j;
+						 pAGraph->y_vals[j]=(float)(maxy);
+						 pAGraph->x_vals[j]=(float)lastx;
+						 ++j;
+						}
+					}
+				 else if(start_i>0 && i==iCount-1)
+					{// at the end of the file,some points before
+					 double ybefore_run= pAGraph->y_vals[start_i-1] ;
+					 if(miny>=ybefore_run /* increasing*/ || maxy<=ybefore_run /* decreasing */)
+						{
+						 pAGraph->y_vals[j]=(float)(sumy/(double)count_same);// use average y
+						 pAGraph->x_vals[j]=(float)lastx;
+						 ++j;
+						}
+					 else
+						{// add in 2 points - miny, maxy
+						 pAGraph->y_vals[j]=(float)(miny);
+						 pAGraph->x_vals[j]=(float)lastx;
+						 ++j;
+						 pAGraph->y_vals[j]=(float)(maxy);
+						 pAGraph->x_vals[j]=(float)lastx;
+						 ++j;
+						}
+					}
+				 else
+					{// some other case .. add in 2 points - miny, maxy
+					 pAGraph->y_vals[j]=(float)(miny);
+					 pAGraph->x_vals[j]=(float)lastx;
+					 ++j;
+					 pAGraph->y_vals[j]=(float)(maxy);
+					 pAGraph->x_vals[j]=(float)lastx;
+					 ++j;
+					}
+				 if(i!=iCount-1)skipx=false;   // don't clear flag at the end as we have already processed the last point
+				}
+		 else
+			{// no values skipped
+			 pAGraph->y_vals[j]=(float)lasty;// y value is different, copy point over
+			 pAGraph->x_vals[j]=(float)lastx;
+			 ++j;
+			}
+         lasty=y;
+         lastx=x;
+		}
+ if(!skipx)
+	{// need to add in final point  if we were not still in a constant run when the end was reached
+	 pAGraph->y_vals[j]=(float)y;
+	 pAGraph->x_vals[j]=(float)x;
+	 ++j;
+	}
+ // now delete values not used    [ have used array elements from 0 to j-1 ]
+ rprintf(" Optimising duplicate x values: %u point(s) removed from trace\n %u points were read from file, optimised size=%u which is %2.1f%% of the original size\n",iCount-j,iCount,j,100.0*(double)j/(double)iCount);
+ pAGraph->nos_vals=j;// resize array that holds points  (frees up memory space in that as well)
+ pAGraph->x_vals=(float *)realloc(pAGraph->x_vals,sizeof(float)*j);  // resize arrays
+ pAGraph->y_vals=(float *)realloc(pAGraph->y_vals,sizeof(float)*j);
+ pAGraph->size_vals_arrays =j;// new size of arrays
+}
+
 
 void TScientificGraph::sortx( int iGraphNumberF) // sort ordered on x values  (makes x values increasing)
 {
@@ -2730,46 +3105,18 @@ void TScientificGraph::sortx( int iGraphNumberF) // sort ordered on x values  (m
  yasort2(xa,ya,iCount);
  rprintf(" sort (yasort2()) completed in %g secs\n",(clock()-start_t)/(double)CLOCKS_PER_SEC);
 
- /* check array actually is sorted correctly, also fixes repeated values (so code is always required) */
+
+ /* check array actually is sorted correctly */
+ /* Note we cannot avoid having x values that are equal, as we might have ran out of resolution by using flaots - see e.g. csvfunbig.csv */
  int errs=0;
-
  for(size_t i=0;i<iCount-1;++i)
-	 { // sort will bring identical x values together, increase slightly to make different (this may make later values > so fix those to..)
-	  if(xa[i]>=xa[i+1])
-		{//rprintf("  sort: values equal at x[%zu]=%.9g x[%zu]=%.9g\n",i,(double)pAGraph->x_vals[i],i+1,(double)pAGraph->x_vals[i+1]);
-		 xa[i+1]=nextafterf(xa[i],FLT_MAX); // increase slightly to make different
-		 //rprintf("   adjusted to x[%zu]=%.9g\n",i+1,pAGraph->x_vals[i+1]);
-		 ++errs;// number of corrections
+	{ // check result is monotonically increasing (no duplicates)
+	 if(xa[i]>xa[i+1])
+		{//rprintf("  sort: x values not increasing at x[%zu]=%.9g x[%zu]=%.9g\n",i,(double)(xa[i]),i+1,(double)(xa[i+1]));
+		 errs++;
 		}
-	 }
- if(errs>0)
-	{ // recheck after corrections above
-	  rprintf("  sort: warning %d x values out of order after 1st sort due to duplicate values, checking corrections\n",errs);
-	  errs=0;  // ready to try again
-	  for(size_t i=0;i<iCount-1;++i)
-		 { // check result is monotonically increasing (no duplicates)
-		  if(xa[i]>=xa[i+1])
-			{rprintf("  sort: x values not increasing at x[%zu]=%.9g x[%zu]=%.9g\n",i,(double)(xa[i]),i+1,(double)(xa[i+1]));
-			 errs++;
-			}
-		 }
-	  if(errs==0) rprintf("  sort: x values are now monotonically increasing\n");
 	}
- if(errs>0)    // this should never happen as code above should have fixed up any equal values while keeping the x values sorted
-	{rprintf("  sort: warning %d x values out of order after 1st sort due to duplicate values - repeating sort\n",errs);
-	 yasort2(xa,ya,iCount);
-	 rprintf(" sort (yasort2()) completed total time for both sorts was %g secs\n",(clock()-start_t)/(double)CLOCKS_PER_SEC);
 
-	 errs=0;  // ready to try again
-
-	 for(size_t i=0;i<iCount-1;++i)
-		 { // check result is monotonically increasing (no duplicates)
-		  if(xa[i]>=xa[i+1])
-			{//rprintf("  sort: x values not increasing at x[%zu]=%.9g x[%zu]=%.9g\n",i,(double)(xa[i]),i+1,(double)(xa[i+1]));
-			 errs++;
-			}
-		 }
-	}
  if(errs>0)
 	{rprintf(" sort: error %d x values out of order\n",errs);
 	 ShowMessage("Error: sorting x values failed!\n");
