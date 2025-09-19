@@ -25,9 +25,11 @@
  *--------------------------------------------------------------------------*/
 
 #include <vcl.h>
-#pragma hdrstop
+// #pragma hdrstop
 #include <tchar.h>
 //---------------------------------------------------------------------------
+#include <Vcl.Styles.hpp>
+#include <Vcl.Themes.hpp>
 USEFORM("About.cpp", AboutBox);
 USEFORM("UScalesWindow.cpp", ScalesWindow);
 USEFORM("Unit1.cpp", Form1);
@@ -42,6 +44,10 @@ USEFORM("About.cpp", AboutBox)
 #include "rprintf.h"
 #include "expr-code.h"
 #include <float.h>
+#include <windows.h>
+#ifdef _UCRT
+ #pragma fenv_access (on)
+#endif
 
 #if 1  /* my version that picks up command line */
 extern volatile int xchange_running; // avoid running multiple instances of Edit_XoffsetChange() in parallel, but still do correct number of updates , set to -1 initially
@@ -63,7 +69,11 @@ void proces_open_filename(char *fn); // open filename - just to peek at header r
 int WINAPI _tWinMain(HINSTANCE, HINSTANCE, LPTSTR, int)
 {LPWSTR *szArglist;
  int nArgs;
+ #ifdef _UCRT
+ _controlfp( _MCW_EM,_MCW_EM );  // disable (bits set) all floating point exceptions see https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/control87-controlfp-control87-2?view=msvc-170
+ #else
  _controlfp( MCW_EM,MCW_EM );  // disable (bits set) all floating point exceptions see https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/control87-controlfp-control87-2?view=msvc-170
+ #endif
  // command line handling  based on the example at https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-commandlinetoargvw
  // It is therefore windows specific, but should be portable to other compilers
  szArglist = CommandLineToArgvW(GetCommandLineW(), &nArgs);

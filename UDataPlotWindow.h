@@ -168,8 +168,6 @@ __published:	// IDE-managed Components
         void __fastcall FormMouseWheelUp(TObject *Sender,
           TShiftState Shift, TPoint &MousePos, bool &Handled);
         void __fastcall FormResize(TObject *Sender);
-	void __fastcall Panel2EndDock(TObject *Sender, TObject *Target, int X, int Y);
-	void __fastcall Panel2Resize(TObject *Sender);
 	void __fastcall visible1Click(TObject *Sender);
 	void __fastcall BitBtn_set_colourClick(TObject *Sender);
 	void __fastcall Edit_xcolChange(TObject *Sender);
@@ -181,6 +179,11 @@ __published:	// IDE-managed Components
 	void __fastcall SpinEdit_FontsizeKeyPress(TObject *Sender, System::WideChar &Key);
 	void __fastcall FormGetSiteInfo(TObject *Sender, TControl *DockClient, TRect &InfluenceRect,
           TPoint &MousePos, bool &CanDock);
+	void __fastcall FormBeforeMonitorDpiChanged(TObject *Sender, int OldDPI, int NewDPI);
+
+
+
+
 
 private:	 // User declarations
         int iShape1X,iShape1Y;

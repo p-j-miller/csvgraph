@@ -7,7 +7,7 @@
 // 6/2/2021 for 2v0 major change to use float *x_vals,*y_vals rather than SDataPoints in a TLIST.
 //
 /*----------------------------------------------------------------------------
- * Copyright (c) 2019,2022 Peter Miller
+ * Copyright (c) 2019,2022,2025 Peter Miller
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -34,7 +34,7 @@
 #include <vcl.h>
 #include <math.h>
 #include <stdio.h>
-#include <values.h>
+//#include <values.h>
 #include <time.h>
 #pragma hdrstop
 
@@ -56,16 +56,14 @@
 #include "smooth_diff.h"
 #include "smoothing_spline.h"
 
-// #define USE_double_to_str_exp /* define to use double_to_str_exp() for y axis with max 12 chars, if not defined use gcvt() */
 
-#ifdef USE_double_to_str_exp
- #include "float_to_str.h"
-#endif
 //---------------------------------------------------------------------------
 
 #pragma package(smart_init)
 //#define P_UNUSED(x) (void)x; /* a way to avoid warning unused parameter messages from the compiler */
 #define DOUBLE float /* define as double to go back to original, but as points are stored as floats we can use floats in several places */
+
+extern float font_size_mult_ppi; // scaling factor for font sizes to correct for screen ppi
 
 // I'm sorry for the next 2 lines, but otherwise I get a lot of warnings "zero as null pointer constant"
 #undef NULL
@@ -521,6 +519,8 @@ void TScientificGraph::fnPaint()
    }
   // now actually draw axes for real
   lasttick[0]=0; // zero length string to start so 1st label always printed
+  int endXoflastlabel=0;
+  const int minlabelgap=5;
   if(fMinGrid<fMaxGrid && iCount<=1 && i<15) // if at most one point skipped and 14 plotted
   {i=0;
    iCount=0;
@@ -531,16 +531,31 @@ void TScientificGraph::fnPaint()
     fnPaintTickX(dADoub,1);                              //paint ticks
     snprintf(szAString,sizeof(szAString),tickformat,dADoub);  //tick labels .8g is the largest that will fit with full grid
     if(strncmp(szAString,lasttick,sizeof(szAString))!=0 || (fi+1.0>fMaxGrid && iCount<2))
-        {// new tick label different to previous one , or last one and only printed 1 previously
-         ++iCount;
-         AAnsiString=AnsiString(szAString);
-         fnKoord2Point(pPoint,dADoub,sScaleY.dMin);
-         ASize = pBitmap->Canvas->TextExtent(AAnsiString);
-         pBitmap->Canvas->Font->Color=ColText;
-         pBitmap->Canvas->Font->Size=iTextSize;
+		{// new tick label different to previous one , or last one and only printed 1 previously
+#if 1    /* new code - check there is actually space on the screen for the label */
+		 AAnsiString=AnsiString(szAString);
+		 fnKoord2Point(pPoint,dADoub,sScaleY.dMin);
+		 pBitmap->Canvas->Font->Color=ColText;
+		 pBitmap->Canvas->Font->Size=(int)(iTextSize*font_size_mult_ppi);
+		 ASize = pBitmap->Canvas->TextExtent(AAnsiString);
+		 if(pPoint->x-ASize.cx/2 > endXoflastlabel+minlabelgap*font_size_mult_ppi && ( Form1->pPlotWindow==NULL || pPoint->x+ASize.cx/2<Form1->pPlotWindow->Panel1->Width))
+			{// it will fit (will not overlap previous point or extend beyond the end of the display) - can display point
+			 ++iCount;
+			 pBitmap->Canvas->TextOut(pPoint->x-ASize.cx/2,pPoint->y+iTextOffset,AAnsiString);
+			 snprintf(lasttick,sizeof(szAString),"%s",szAString); // save this one as last printed , cannot use strncpy as that does not guarantee a null terminated string
+			 endXoflastlabel=pPoint->x+ASize.cx/2;
+			}
+#else
+		 ++iCount;
+		 AAnsiString=AnsiString(szAString);
+		 fnKoord2Point(pPoint,dADoub,sScaleY.dMin);
+		 pBitmap->Canvas->Font->Size=iTextSize*font_size_mult_ppi;
+		 ASize = pBitmap->Canvas->TextExtent(AAnsiString);
+		 pBitmap->Canvas->Font->Color=ColText;
 		 pBitmap->Canvas->TextOut(pPoint->x-ASize.cx/2,pPoint->y+iTextOffset,AAnsiString);
-         snprintf(lasttick,sizeof(szAString),"%s",szAString); // save this one as last printed , cannot use strncpy as that does not guarantee a null terminated string
-        }
+		 snprintf(lasttick,sizeof(szAString),"%s",szAString); // save this one as last printed , cannot use strncpy as that does not guarantee a null terminated string
+#endif
+		}
    }// end for
   }
   else
@@ -555,15 +570,30 @@ void TScientificGraph::fnPaint()
     fnPaintTickX(dADoub,1);                              //paint ticks
 	snprintf(szAString,sizeof(szAString),tickformat,dADoub);  //tick labels .8g is the largest that will fit with full grid
     if(strncmp(szAString,lasttick,sizeof(szAString))!=0 || (fi+2.0>fMaxGrid && iCount<2))
-        {// new tick label different to previous one , or last one and only printed 1 previously
-         ++iCount;
-         AAnsiString=AnsiString(szAString);
-         fnKoord2Point(pPoint,dADoub,sScaleY.dMin);
-         ASize = pBitmap->Canvas->TextExtent(AAnsiString);
-         pBitmap->Canvas->Font->Color=ColText;
-         pBitmap->Canvas->Font->Size=iTextSize;
+		{// new tick label different to previous one , or last one and only printed 1 previously
+#if 1    /* new code - check there is actually space on the screen for the label */
+		 AAnsiString=AnsiString(szAString);
+		 fnKoord2Point(pPoint,dADoub,sScaleY.dMin);
+		 pBitmap->Canvas->Font->Size=(int)(iTextSize*font_size_mult_ppi);
+		 ASize = pBitmap->Canvas->TextExtent(AAnsiString);
+		 pBitmap->Canvas->Font->Color=ColText;
+		 if(pPoint->x-ASize.cx/2 > endXoflastlabel+minlabelgap*font_size_mult_ppi && ( Form1->pPlotWindow==NULL || pPoint->x+ASize.cx/2<Form1->pPlotWindow->Panel1->Width))
+			{// it will fit (will not overlap previous point or extend beyond the end of the display) - can display point
+			 ++iCount;
+			 pBitmap->Canvas->TextOut(pPoint->x-ASize.cx/2,pPoint->y+iTextOffset,AAnsiString);
+			 snprintf(lasttick,sizeof(szAString),"%s",szAString); // save this one as last printed , cannot use strncpy as that does not guarantee a null terminated string
+			 endXoflastlabel=pPoint->x+ASize.cx/2;
+			}
+#else
+		 ++iCount;
+		 AAnsiString=AnsiString(szAString);
+		 fnKoord2Point(pPoint,dADoub,sScaleY.dMin);
+		 pBitmap->Canvas->Font->Size=iTextSize*font_size_mult_ppi;
+		 ASize = pBitmap->Canvas->TextExtent(AAnsiString);
+		 pBitmap->Canvas->Font->Color=ColText;
 		 pBitmap->Canvas->TextOut(pPoint->x-ASize.cx/2,pPoint->y+iTextOffset,AAnsiString);
-         snprintf(lasttick,sizeof(szAString),"%s",szAString); // save this one as last printed , cannot use strncpy as that does not guarantee a null terminated string
+		 snprintf(lasttick,sizeof(szAString),"%s",szAString); // save this one as last printed , cannot use strncpy as that does not guarantee a null terminated string
+#endif
 		}
    }// end for
   }
@@ -578,11 +608,11 @@ void TScientificGraph::fnPaint()
          fnPaintTickX(dADoub,1);                              //paint ticks
          snprintf(szAString,sizeof(szAString),"%.10g",dADoub);  //tick labels can add more resolution here as plenty of space
          AAnsiString=AnsiString(szAString);
-         fnKoord2Point(pPoint,dADoub,sScaleY.dMin);
+		 fnKoord2Point(pPoint,dADoub,sScaleY.dMin);
+		 pBitmap->Canvas->Font->Size=iTextSize*font_size_mult_ppi;
          ASize = pBitmap->Canvas->TextExtent(AAnsiString);
-         pBitmap->Canvas->Font->Color=ColText;
-         pBitmap->Canvas->Font->Size=iTextSize;
-         pBitmap->Canvas->TextOutA(pPoint->x-2*ASize.cx/3,pPoint->y+iTextOffset,AAnsiString);     // was -ASize/2
+		 pBitmap->Canvas->Font->Color=ColText;
+		 pBitmap->Canvas->TextOutA(pPoint->x-2*ASize.cx/3,pPoint->y+iTextOffset,AAnsiString);     // was -ASize/2
        }
     }
 #endif
@@ -602,25 +632,21 @@ void TScientificGraph::fnPaint()
 
     if (bGrids) fnPaintGridY(dADoub);                    //paint grids
     fnPaintTickY(dADoub,1);                              //paint ticks
-#ifdef USE_double_to_str_exp
-   /* void double_to_str_exp(double x, int sf,enum fpout_type out_type, int len, char *s) // sf = significant figures - max 19 */
-   {int sf=12; // have space for at most 12 chars
-    if(dADoub<0) sf--; // negative sign takes 1
-    do{// try until it fits in <= 12 chars
-       double_to_str_exp(dADoub,sf--,round_nearest | fmt_g,sizeof(szAString),szAString);
-      }
-    while(strlen(szAString)>12 && sf>1);   // && sf>1 traps infinite loop (just in case!)
-   }
-#else
-	// gcvt(dADoub,10, szAString); // max 12 characters so 10 digits plus sign, dp
-   {int sf=12; // have space for at most 12 chars
-	if(dADoub<0) sf--; // negative sign takes 1
-	do{// try until it fits in <= 12 chars
-	   gcvt(dADoub,sf--,szAString);
-	  }
-	while(strlen(szAString)>12 && sf>1);   // && sf>1 traps infinite loop (just in case!)
-   }
-#endif
+
+   /* use snprintf to convert floating point to a string.
+	  2^24=16,777,216 so at most 8 significant digits are needed for a float
+	  This gives +/- x.xxxxxxxE+/-xx i.e 14 characters max
+	  TPlotWindow::FormResize() sets left margin to allow for this
+   */
+   if(dADoub==round(dADoub) && dADoub> -100000000000 && dADoub< 1000000000000)
+		{// is an integer - print as such even if %.8g would swap to exponential format
+		 snprintf(szAString,sizeof(szAString),"%.0f",dADoub);
+		}
+   else
+		{// print as a float
+		 snprintf(szAString,sizeof(szAString),"%.8g",dADoub);
+		}
+
     if(strncmp(szAString,lasttick,sizeof(szAString))!=0 || (fi+1.0>fMaxGrid && iCount<2))
         { // new tick label different to previous one , or last one and only printed 1 previously
          ++iCount;
@@ -628,7 +654,7 @@ void TScientificGraph::fnPaint()
          fnKoord2Point(pPoint,sScaleX.dMin,dADoub);
          ASize = pBitmap->Canvas->TextExtent(AAnsiString);
          pBitmap->Canvas->Font->Color=ColText;
-         pBitmap->Canvas->Font->Size=iTextSize;
+		 pBitmap->Canvas->Font->Size=(int)(iTextSize*font_size_mult_ppi);
 		 pBitmap->Canvas->TextOut(pPoint->x-ASize.cx-iTextOffset,pPoint->y-ASize.cy/2,AAnsiString);
          snprintf(lasttick,sizeof(szAString),"%s",szAString); // save this one as last printed , cannot use strncpy as that does not guarantee a null terminated string
         }
@@ -642,29 +668,22 @@ void TScientificGraph::fnPaint()
          if (bGrids) fnPaintGridY(dADoub);                    //paint grids
          fnPaintTickY(dADoub,1);                              //paint ticks
         }
-#ifdef USE_double_to_str_exp
-   /* void double_to_str_exp(double x, int sf,enum fpout_type out_type, int len, char *s) // sf = significant figures - max 19 */
-   {int sf=12; // have space for at most 12 chars
-	if(dADoub<0) sf--; // negative sign takes 1
-	do{// try until it fits in <= 12 chars
-	   double_to_str_exp(dADoub,sf--,round_nearest | fmt_g,sizeof(szAString),szAString);
-	  }
-	while(strlen(szAString)>12 && sf>1);   // && sf>1 traps infinite loop (just in case!)
-   }
-#else
-   {int sf=12; // have space for at most 12 chars
-	if(dADoub<0) sf--; // negative sign takes 1
-	do{// try until it fits in <= 12 chars
-	   gcvt(dADoub,sf--,szAString);
-	  }
-	while(strlen(szAString)>12 && sf>1);   // && sf>1 traps infinite loop (just in case!)
-   }
-#endif
+
+   /* use snprintf to convert floating point to a string. 2^24=16,777,216 so at most 8 significant digits are needed for a float */
+   if(dADoub==round(dADoub) && dADoub> -100000000000 && dADoub< 1000000000000)
+		{// is an integer - print as such even if %.8g would swap to exponential format
+		 snprintf(szAString,sizeof(szAString),"%.0f",dADoub);
+		}
+   else
+		{// print as a float
+		 snprintf(szAString,sizeof(szAString),"%.8g",dADoub);
+		}
+
 	AAnsiString=AnsiString(szAString);
 	fnKoord2Point(pPoint,sScaleX.dMin,dADoub);
 	ASize = pBitmap->Canvas->TextExtent(AAnsiString);
 	pBitmap->Canvas->Font->Color=ColText;
-	pBitmap->Canvas->Font->Size=iTextSize;
+	pBitmap->Canvas->Font->Size=(int)(iTextSize*font_size_mult_ppi);
 	pBitmap->Canvas->TextOut(pPoint->x-ASize.cx-iTextOffset,pPoint->y-ASize.cy/2,AAnsiString);
    }
   //Zeroline
@@ -690,7 +709,7 @@ void TScientificGraph::fnPaint()
      -sScaleY.dMin)+sScaleY.dMin
 	 ;
   fnKoord2Point(pPoint,dX,dY);                                //calc. coordinat.
-  pBitmap->Canvas->Font->Size=iTextSize;
+  pBitmap->Canvas->Font->Size=iTextSize*font_size_mult_ppi;
   for (j=0; j<iNumberOfGraphs; j++)                           //all graphs
   {
     pAGraph = ((SGraph*) pHistory->Items[j]);
@@ -738,7 +757,7 @@ void TScientificGraph::fnPaint()
 		pPoint->x+=pBitmap->Canvas->TextWidth("1");
 		pBitmap->Canvas->Font->Color=pAGraph->ColLine;
 	  }
-	  pBitmap->Canvas->Font->Size=iTextSize;                //paint caption
+	  pBitmap->Canvas->Font->Size=iTextSize*font_size_mult_ppi;                //paint caption
 	  pBitmap->Canvas->TextOut(pPoint->x,pPoint->y,Utf8_to_w(pAGraph->Caption));
 	  *pPoint=*pPoint2;
 	  if ((pAGraph->iSizeDataPoint>pBitmap->Canvas->TextHeight("0"))&&
@@ -886,7 +905,7 @@ void TScientificGraph::fnPaint()
       bool last=False;
       DOUBLE ymax,ymin;
       double x_ymax,x_ymin; // used to capture features in skipped data (need to be double due to clipping)
-      DOUBLE lastx,lasty;
+	  DOUBLE lastx,lasty;
 	  iCount=pAGraph->nos_vals;
       pBitmap->Canvas->Pen->Width=pAGraph->iWidthLine;
       pBitmap->Canvas->Pen->Color=pAGraph->ColLine;
@@ -1017,7 +1036,7 @@ fnpaint_end:  // tidy up then return if we get here via a goto.
 	 -sScaleY.dMin)+sScaleY.dMin
 	 ;
   fnKoord2Point(pPoint,dX,dY);                                //calc. coordinat.
-  pBitmap->Canvas->Font->Size=iTextSize;
+  pBitmap->Canvas->Font->Size=(int)(iTextSize*font_size_mult_ppi);
   for (j=0; j<iNumberOfGraphs; j++)                           //all graphs
   {
 	pAGraph = ((SGraph*) pHistory->Items[j]);
@@ -1085,7 +1104,7 @@ fnpaint_end:  // tidy up then return if we get here via a goto.
 		pPoint->x+=pBitmap->Canvas->TextWidth("1");
 		pBitmap->Canvas->Font->Color=pAGraph->ColLine;
 	  }
-	  pBitmap->Canvas->Font->Size=iTextSize;                //paint caption
+	  pBitmap->Canvas->Font->Size=(int)(iTextSize*font_size_mult_ppi);                //paint caption
 	  pBitmap->Canvas->TextOut(pPoint->x,pPoint->y,Utf8_to_w(pAGraph->Caption.c_str()));
 	  *pPoint=*pPoint2;
 	  if ((pAGraph->iSizeDataPoint>pBitmap->Canvas->TextHeight("0"))&&
@@ -1098,9 +1117,8 @@ fnpaint_end:  // tidy up then return if we get here via a goto.
 #endif
 
   //axis caption
-
-  int off2=pBitmap->Canvas->TextWidth("-0.000000000000");  // needs to be done with Font Size = iTextSize
-  pBitmap->Canvas->Font->Size=aTextSize; // now swap to x/y axis ledgends font size
+  int Itextht=pBitmap->Canvas->TextHeight("0");  // height of numeric "tick" values
+  pBitmap->Canvas->Font->Size=(int)(aTextSize*font_size_mult_ppi); // now swap to x/y axis ledgends font size
   fnKoord2Point(pPoint,sScaleX.dMin,
                (sScaleY.dMax
                -sScaleY.dMin)
@@ -1116,79 +1134,31 @@ fnpaint_end:  // tidy up then return if we get here via a goto.
 	ASize=pBitmap->Canvas->TextExtent(YLabel2);
   }
   pBitmap->Canvas->Font->Color=ColText;
-  pBitmap->Canvas->Font->Size=aTextSize;
-
-  int off1=off2+pBitmap->Canvas->TextHeight("0"); // needs to be done with Font Size = aTextSize , as text is vertical here need to add Height of 2nd line
-  // PMi rotate text for y axis so it fits better into available space
+  pBitmap->Canvas->Font->Size=(int)(aTextSize*font_size_mult_ppi);
+  int Ltextht=pBitmap->Canvas->TextHeight("0");  // height of Legend text
+  // rotate text for y axis so it fits better into available space
 #define ROT_TXT
 #ifdef ROT_TXT
-#if 1   /* new (much simpler) way to rotate via VCL */
+  /* new (much simpler) way to rotate via VCL */
   pBitmap->Canvas->Font->Orientation=900; // 90 deg rotation
-#if 0
-  // now print axis label - as space is not a big now issue just combine 2 labels into 1
-  pBitmap->Canvas->TextOutA(pPoint->x-iTextOffset*2
-	   -pBitmap->Canvas->TextWidth("-0.00000000000000"),pPoint->y,YLabel1+" "+YLabel2);
-#else
+
   // now print axis labels
   int off_len_LY1=pBitmap->Canvas->TextWidth(YLabel1);
   int off_len_LY2=pBitmap->Canvas->TextWidth(YLabel2);
+
   if(YLabel2=="")
 		{ // only 1 label to print, put it nearest to the axis , // +off_len_LY?/2 centres Ylabel
-		 pBitmap->Canvas->TextOut(pPoint->x-iTextOffset*2
-				-off2,pPoint->y+off_len_LY1/2,YLabel1);
+		 pBitmap->Canvas->TextOut(0,pPoint->y+off_len_LY1/2,YLabel1);
 		}
   else
-		{// 2 ledgends to print , have to space them out
-		 pBitmap->Canvas->TextOut(pPoint->x-iTextOffset*2
-				-off1,pPoint->y+off_len_LY1/2,YLabel1);
-		 pBitmap->Canvas->TextOut(pPoint->x-iTextOffset*2
-				-off2,pPoint->y+off_len_LY2/2,YLabel2);
+		{// 2 labels to print , have to space them out
+		 pBitmap->Canvas->TextOut(0,pPoint->y+off_len_LY1/2,YLabel1);
+		 pBitmap->Canvas->TextOut(Ltextht,pPoint->y+off_len_LY2/2,YLabel2);
 		}
-#endif
+
   // restore original values back
   pBitmap->Canvas->Font->Orientation=0;
-#else /* orig code */
-  // the following code is based on http://www.bcbjournal.org/articles/vol2/9801/Rotated_fonts.htm?PHPSESSID=caec6429be51c2338b088838c96fe7ff
-  static LOGFONT lf;   // DOES need to be static
-  GetObject(pBitmap->Canvas->Font->Handle,sizeof(LOGFONT), &lf);
-  // Change escapement, orientation, output precision
-  lf.lfEscapement = 900; // rotation in deg*10
-  lf.lfOrientation = 900;
-  lf.lfOutPrecision = OUT_TT_ONLY_PRECIS;
-  // Create new font; assign to Canvas Font's Handle.
-  pBitmap->Canvas->Font->Handle = CreateFontIndirect(&lf);
-  // The following only works on NT!
-  SetGraphicsMode(pBitmap->Canvas->Handle, GM_ADVANCED);
-  // Set the brush style to clear.
-  pBitmap->Canvas->Brush->Style = bsClear;
-#if 0
-  // now print axis label - as space is not a big now issue just combine 2 labels into 1
-  pBitmap->Canvas->TextOutA(pPoint->x-iTextOffset*2
-	   -pBitmap->Canvas->TextWidth("-0.00000000000000"),pPoint->y,YLabel1+" "+YLabel2);
-#else
-  // now print axis labels
-  int off_len_LY1=pBitmap->Canvas->TextWidth(Utf8_to_w(YLabel1.c_str()));
-  int off_len_LY2=pBitmap->Canvas->TextWidth(Utf8_to_w(YLabel2.c_str()));
-  if(YLabel2=="")
-		{ // only 1 label to print, put it nearest to the axis , // +off_len_LY?/2 centres Ylabel
-		 pBitmap->Canvas->TextOut(pPoint->x-iTextOffset*2
-				-off2,pPoint->y+off_len_LY1/2,Utf8_to_w(YLabel1.c_str()));
-		}
-  else
-		{// 2 ledgends to print , have to space them out
-		 pBitmap->Canvas->TextOut(pPoint->x-iTextOffset*2
-				-off1,pPoint->y+off_len_LY1/2,Utf8_to_w(YLabel1.c_str()));
-		 pBitmap->Canvas->TextOut(pPoint->x-iTextOffset*2
-				-off2,pPoint->y+off_len_LY2/2,Utf8_to_w(YLabel2.c_str()));
-		}
-#endif
-  // restore original values back
-  lf.lfEscapement = 0; // rotation in deg*10
-  lf.lfOrientation = 0;
-  lf.lfOutPrecision = OUT_DEFAULT_PRECIS;  // restore to original value
-  // Create new font with zero rotation ; assign to Canvas Font's Handle.
-  pBitmap->Canvas->Font->Handle = CreateFontIndirect(&lf);
-#endif
+
 #else
   // original code
   pBitmap->Canvas->TextOutA(pPoint->x-ASize.cx-iTextOffset*2
@@ -1203,14 +1173,11 @@ fnpaint_end:  // tidy up then return if we get here via a goto.
   ASize=pBitmap->Canvas->TextExtent(XLabel);
   pBitmap->Canvas->Font->Color=ColText;
   int off_len_LX=pBitmap->Canvas->TextWidth(XLabel);
-#if 1  /* better position of x axis label over a wider ramge of font sizes */
-  // rprintf("Text height=%d\n",pBitmap->Canvas->TextHeight(XLabel));
-  pBitmap->Canvas->TextOut(pPoint->x-off_len_LX/2,pPoint->y+20+iTextOffset,XLabel);   // -off_len_LX/2 centres Xlabel
-#else
-  pBitmap->Canvas->TextOut(pPoint->x-off_len_LX/2,pPoint->y+ASize.cy+iTextOffset,XLabel);   // -off_len_LX/2 centres Xlabel
-#endif
+
+
+  pBitmap->Canvas->TextOut(pPoint->x-off_len_LX/2,pPoint->y+Itextht/*+Ltextht*/+iTextOffset,XLabel);   // -off_len_LX/2 centres Xlabel
+
   //borders
-  // pVertices = new TPoint[5];
   TPoint pVertices[5]; // avoid dynamic memory allocation overhead if we used new and delete
 
   pBitmap->Canvas->Pen->Color = ColAxis;
@@ -2773,14 +2740,13 @@ bool TScientificGraph::fnPolyreg(unsigned int order,int iGraphNumberF, void (*ca
  return true; // all done OK.
 }
 
-bool TScientificGraph::fnFFT(bool dBV_result,bool Hanning,int iGraphNumberF, void (*callback)(size_t cnt,size_t maxcnt)) // apply FFT to data. returns true if OK, false if failed.
+bool TScientificGraph::fnFFT(bool dBV_result,bool Window,int iGraphNumberF, void (*callback)(size_t cnt,size_t maxcnt)) // apply FFT to data. returns true if OK, false if failed.
 {// real fft on data - assumes time steps are equal and in secs
  // actual FFT is done by KISS FFT
  // average value is subtracted from y values before fft & replaced afterwards to help dynamic range.
  // returns power spectrum (correctly scaled).
  // if dBV is true returns result in dBV (ie 20*log10(magnitude))
- // if Hanning is true use a Hanning (Hann) window - this is the recommended general purpose window at https://download.ni.com/evaluation/pxi/Understanding%20FFTs%20and%20Windowing.pdf
- //    which says "In general, the Hanning window is satisfactory in 95 percent of cases. It has good frequency resolution and reduced spectral leakage. "
+ // if Window is true use a Nuttall Fig 12 Window
  //  Note we still need to create a copy for rin as its size can be larger than y_vals[]
  SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
  size_t iCount=pAGraph->nos_vals ;
@@ -2840,14 +2806,23 @@ bool TScientificGraph::fnFFT(bool dBV_result,bool Hanning,int iGraphNumberF, voi
   // y_av=0; /* uncomment to see the impact of removing the DC component - for test data in csvfun2.csv it makes little difference.
   // setup input array for fft
   for (i=0;i<iCount;++i)
-	{if(Hanning)
-		{// need to apply Hann(ing) window - see Numerical Recipees or wikipedia for more details.
-		 double window=0.5*(1.0-cos(6.283185307179586476925286766559*(double)i/(double)nfft));// 6.28... = 2*PI
-		 rin[i] = (float)(window*(pAGraph->y_vals[i] - y_av));
+	{if(Window)
+		{
+		 /* Nuttall Window Fig 12 sidelobes at <= -93.32dB  18dB/octave sidelobe decay. From "Some Windows with Very Good Sidelobe Behaviour", Albert H. Nuttall, 1981  https://zenodo.org/records/1280930 */
+		 /* From the test results here this appears to be the best general purpose Window  */
+#define PI_m2  6.283185307179586476925286766559 /* 2*PI */
+		 double window=0.355768
+					   -0.487396*cos(PI_m2*(double)i/(double)nfft)
+					   +0.144232*cos(2.0*PI_m2*(double)i/(double)nfft)
+					   -0.012604*cos(3.0*PI_m2*(double)i/(double)nfft)  ;
+		 rin[i] = (kiss_fft_scalar)(window*(pAGraph->y_vals[i] - y_av));
+#undef PI_m2
+
 		}
 	 else
 		{
-		 rin[i] =(float)( pAGraph->y_vals[i] - y_av);
+		 /* no window - need to keep this option as it gives the correct magnitudes (at least with calculated input data) - windowed functions spread the energy over multiple bins */
+		 rin[i] =(kiss_fft_scalar)( pAGraph->y_vals[i] - y_av);
 		}
 	}
  // rest of rin array needs to be filled with zero - this has already been done by calloc()
@@ -2859,11 +2834,26 @@ bool TScientificGraph::fnFFT(bool dBV_result,bool Hanning,int iGraphNumberF, voi
  }
  if(callback!=NULL)
 	(*callback)(3,4); // update on progress  - crude but fft is quick
- rprintf(" results from kiss_fftr: (%g,%g), (%g,%g), (%g,%g) ...\n "
+ rprintf(" results from fftr: (%g,%g), (%g,%g), (%g,%g) ...\n"
 			, sout[0].r , sout[0].i
 			, sout[1].r , sout[1].i
 			, sout[2].r , sout[2].i);
 
+ // find miny (<>0) - used to put sensible limit on log10(y)    [ log(0)= -infinity ]
+ double miny=1e-36,maxy=0;   // set just in case all data is 0
+ bool miny_set=false;
+ for(i=0;i<(nfft/2)+1 && i<iCount;++i)
+	{x=sout[i].r;
+	 y=sout[i].i;
+	 y=sqrt(x*x+y*y);
+	 y/=nfft;// scaling factor from fft
+	 //if(i==0) y+=fabs(y_av); // put average value back in again. Needs to be fabs() as we have magnitude of conmplex numbers which is >=0.  Cannot do this as makes FFT (constant 10)=20dB at all frequencies!
+	 if(i!=0 && i!= nfft/2) y*=1.4142135623730950488016887242097; /* mult by sqrt(2) to account for energy in the -ve frequency range */
+	 if(!miny_set && (float)y>0.0f) {miny=y; miny_set=true;}
+	 else if(y<miny && (float)y>0.0f ) miny=y;
+	 if(y>maxy) maxy=y;
+	}
+ miny=max(miny,maxy*FLT_EPSILON) ; //   FLT_EPSILON=1.19e-7 to reflect resolution of a float 20log10(FLT_EPSILON)= -138dB
  // now need to put result back - there are less values to put back (due to Nyquist limit) - but we increased the fft size to get an efficient fft so also check against iCount just in case
  freq=0;
  for (i=0;i<(nfft/2)+1 && i<iCount;++i,freq+=freq_step)
@@ -2892,13 +2882,13 @@ bool TScientificGraph::fnFFT(bool dBV_result,bool Hanning,int iGraphNumberF, voi
 	 y=sqrt(x*x+y*y);
 #endif
 	 y/=nfft;// scaling factor from fft
-     if(i==0) y+=fabs(y_av); // put average value back in again. Needs to be fabs() as we have magnitude of conmplex numbers which is >=0.
+	 if(i==0) y+=fabs(y_av); // put average value back in again. Needs to be fabs() as we have magnitude of conmplex numbers which is >=0.
 	 // for the line below dc and max freq are only in 1 bin, but all other frequencies the resultant power is split between 2 bins.
 	 if(i!=0 && i!= nfft/2) y*=1.4142135623730950488016887242097; /* mult by sqrt(2) to account for energy in the -ve frequency range */
 	 if(dBV_result)
 		{// want result in db(V)
-		 if(y<=0) y=20.0*-45.0; // 1.4e-45 is the min (denormalised) value for a float
-		 else y=20*log10(y);// convert result to dBV
+		 if(y<miny) y=miny; // clip at smallest non-zero value in array
+		 y=20*log10(y);// convert result to dBV
 		}
 	 pAGraph->y_vals[i]=(float)y;  // |result|
 	 pAGraph->x_vals[i]=(float)freq; // freq in Hz, starting at DC
@@ -2914,9 +2904,169 @@ bool TScientificGraph::fnFFT(bool dBV_result,bool Hanning,int iGraphNumberF, voi
 	 pAGraph->y_vals=(float *)realloc(pAGraph->y_vals,sizeof(float)*pAGraph->nos_vals);
 	 pAGraph->size_vals_arrays =pAGraph->nos_vals; // new size of arrays
 	}
-
  return true; // good return
 }
+
+bool TScientificGraph::fnCepstrum(int iGraphNumberF, void (*callback)(size_t cnt,size_t maxcnt)) // apply Power Cepstrum  to data. returns true if OK, false if failed.
+{// Real cepstrum on data - assumes time steps are equal and in secs
+// see https://en.wikipedia.org/wiki/Cepstrum
+ // This version does FFT takes log(|freq|) then does inverse fft
+ // actual FFT/inverse FFT is done by KISS FFT
+ // in more detail:
+ // Apply Nuttall Fig 12 and remove average from input
+ // calculate FFT
+ // clip minimum |y| values (avoids loge(0) [ = -infinity], but also used to keep dynamic range sensible so sidelobes don't become an issue )
+ // calculate loge(|y|)
+ // remove average value
+ // calculate inverse fft
+ // shrink size of output
+ //  Note we still need to create a copy for rin as its size can be larger than y_vals[]
+
+
+ SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
+ size_t iCount=pAGraph->nos_vals ;
+ double x,y;
+ double y_av;
+ size_t i,nfft;
+ nfft=kiss_fftr_next_fast_size_real(iCount);// get sensible (ie fast) (larger) size for fft - this will be even as required by fftr()
+ kiss_fftr_cfg  kiss_fftr_state,kiss_fftri_state;
+ kiss_fft_scalar *rin;
+ kiss_fft_cpx *sout;
+ if(iCount<=2) return false; // need more than 2 points to be able to do an fft
+ rprintf("Starting Cepstrum Analysis\n");
+ rin=(kiss_fft_scalar *)calloc(nfft+2,sizeof(kiss_fft_scalar)); // kiss_fft_scalar is float by default
+ sout=(kiss_fft_cpx *)calloc(nfft,sizeof(kiss_fft_cpx));     // output is complex
+ if(sout==NULL)
+	{if(rin!=NULL) free(rin);
+	 rprintf(" Sorry- not enough ram for FFT in Cepstrum calculation\n");
+	 return false;
+	}
+ kiss_fftr_state = kiss_fftr_alloc(nfft,0,NULL,NULL);
+ if(kiss_fftr_state==NULL)
+	{free(rin);
+	 free(sout);
+	 rprintf(" Sorry- not enough ram for FFT in Cepstrum calculation\n");
+	 return false;
+	}
+ if(callback!=NULL)
+	(*callback)(0,4); // update on progress  - crude but fft is quick
+  // need average y as we remove this before the fft
+  y_av=pAGraph->y_vals[0];
+  for (i=1;i<iCount;++i)
+	{
+	 y=pAGraph->y_vals[i];
+	 y_av+=(y-y_av)/(double)(i+1); // i+1 is correct
+	}
+  rprintf(" fft(nfft=%u,iCount=%u): y average=%g\n",nfft,iCount,y_av);
+  for (i=0;i<iCount;++i)
+	{
+	 /* Nuttall Fig 12 Window. Sidelobes at <= -93.32dB  18dB/octave sidelobe decay. From "Some Windows with Very Good Sidelobe Behaviour", Albert H. Nuttall, 1981  https://zenodo.org/records/1280930 */
+	 /* This Window gives the best results for the test data as the very low sidelobes minimise "leakage" into Cepstrum */
+#define PI_m2  6.283185307179586476925286766559 /* 2*PI */
+	 double window=0.355768
+					-0.487396*cos(PI_m2*(double)i/(double)nfft)
+					+0.144232*cos(2.0*PI_m2*(double)i/(double)nfft)
+					-0.012604*cos(3.0*PI_m2*(double)i/(double)nfft)  ;
+	 rin[i] = (kiss_fft_scalar)(window*(pAGraph->y_vals[i] - y_av));
+#undef PI_m2
+	}
+ // rest of rin array needs to be filled with zero - this has already been done by calloc()
+ if(callback!=NULL)
+	(*callback)(1,4); // update on progress  - crude but fft is quick
+ {time_t start_t=clock();
+  kiss_fftr(kiss_fftr_state,rin,sout); // actually do fft
+  rprintf(" fft completed in %g secs\n",(clock()-start_t)/(double)CLOCKS_PER_SEC);
+ }
+ rprintf(" results from fftr: (%g,%g), (%g,%g), (%g,%g) ...\n"
+			, sout[0].r , sout[0].i
+			, sout[1].r , sout[1].i
+			, sout[2].r , sout[2].i);
+ if(callback!=NULL)
+	(*callback)(2,4); // update on progress  - crude but fft is quick
+
+ // find miny (<>0) - used to put sensible limit on log10(y)    [ as log(0)= -infinity ]
+ double miny=1e-36,maxy=0;   // set just in case all data is 0
+ bool miny_set=false;
+ for(i=0;i<(nfft/2)+1 && i<iCount;++i)
+	{x=sout[i].r;
+	 y=sout[i].i;
+	 y=sqrt(x*x+y*y);
+	 y/=nfft;// scaling factor from fft
+	 //if(i==0) y+=fabs(y_av); // put average value back in again. Needs to be fabs() as we have magnitude of conmplex numbers which is >=0.  Cannot do this as makes FFT (constant 10)=20dB at all frequencies!
+	 if(i!=0 && i!= nfft/2) y*=1.4142135623730950488016887242097; /* mult by sqrt(2) to account for energy in the -ve frequency range */
+	 if(!miny_set && (float)y>0.0f) {miny=y; miny_set=true;}
+	 else if(y<miny && (float)y>0.0f ) miny=y;
+	 if(y>maxy) maxy=y;
+	}
+ miny=max(miny,maxy*FLT_EPSILON) ; //   FLT_EPSILON=1.19e-7 to reflect resolution of a (32bit) float 20log10(FLT_EPSILON)= -138dB below maxy
+ // now we have miny we can use it to clip |y| before taking log()
+ for(i=0;i<(nfft/2)+1 && i<iCount;++i)
+	{x=sout[i].r;
+	 y=sout[i].i;
+#if 0  /* for complex cepstrum we calculate log|x|, and arg(x) for phase - this does not give as good results as real cepstrum */
+	 sout[i].i=atan2(y,x); //  for z=a+bi, the phase angle, can be found using the four-quadrant arctangent function, atan2(b,a)
+#else /* for real cepstrum */
+	 sout[i].i=0;
+#endif
+	 y=sqrt(x*x+y*y);
+	 y/=nfft;// scaling factor from fft
+	 // want log(|y|)
+	 if(y<miny) y=miny;  // avoid log(0) , but also clips to provide a sensible "noise floor"
+	 y=log(y);  // log base e [ log10() for log base 10 ]
+	 sout[i].r=(kiss_fft_scalar)y;
+	}
+
+  // need average y as we remove this before the inverse fft (note taking log(||) means average is not zero )
+  y_av=sout[0].r;
+  for(i=1;i<(nfft/2)+1;++i)
+	{
+	 y=sout[i].r;
+	 y_av+=(y-y_av)/(double)(i+1); // i+1 is correct
+	}
+  // now remove average
+  for(i=0;i<(nfft/2)+1;++i)
+	{
+	 sout[i].r-=y_av;
+	}
+
+ /* now just do inverse fft */
+ kiss_fftri_state = kiss_fftr_alloc(nfft,1,NULL,NULL);  // 1 means inverse
+ if(kiss_fftr_state==NULL)
+	{free(rin);
+	 free(sout);
+	 rprintf(" Sorry- not enough ram for inverse FFT in Cepstrum calculation\n");
+	 return false;
+	}
+ if(callback!=NULL)
+	(*callback)(3,4); // update on progress  - crude but fft is quick
+  {time_t start_t=clock();
+   kiss_fftri(kiss_fftri_state,sout,rin); // actually do inverse fft converts complex to real
+   rprintf(" inverse fft completed in %g secs\n",(clock()-start_t)/(double)CLOCKS_PER_SEC);
+  }
+
+ // now put result back  - use abs(value) as per https://flothesof.github.io/cepstrum-pitch-tracking.html
+ for (i=0;i<iCount;++i)
+	{
+	 pAGraph->y_vals[i]=(float)(fabs(rin[i]) /(double)nfft); // its not clear if /(double)nfft is needed as done after fft
+	}
+
+ free(rin);    // free up dynamic memory used
+ free(sout);
+ free(kiss_fftr_state);
+ free(kiss_fftri_state);
+ kiss_fft_cleanup(); // final cleanup for fft functions
+ // resize output
+ if((nfft/2)+1<iCount)
+	{
+	 pAGraph->nos_vals=(nfft/2)+1; // shrink array to number of values put back (this does NOT actually change size of arrays).
+	 pAGraph->x_vals=(float *)realloc(pAGraph->x_vals,sizeof(float)*pAGraph->nos_vals);  // resize arrays
+	 pAGraph->y_vals=(float *)realloc(pAGraph->y_vals,sizeof(float)*pAGraph->nos_vals);
+	 pAGraph->size_vals_arrays =pAGraph->nos_vals; // new size of arrays
+	}
+ rprintf("Finished Cepstrum Analysis\n");
+ return true;
+}
+
 
 void TScientificGraph::compress_y(int iGraphNumberF) // compress by deleting points with equal y values except for 1st and last in a row
 {// needs to be done on sorted x values
@@ -2968,128 +3118,87 @@ void TScientificGraph::compress_y(int iGraphNumberF) // compress by deleting poi
  pAGraph->size_vals_arrays =j;// new size of arrays
 }
 
-void TScientificGraph::fix_dupx(int iGraphNumberF) // if we have duplicate x values because we ran out of resolution try and "fixup" by replacing then with average
+void TScientificGraph::fix_dupx(int iGraphNumberF) // if we have duplicate x values because we ran out of resolution try and "fixup" by replacing then with min/max
 { // makes just 1 pass over the array of points, with 2 pointers i (to the item being tested) and j (j<=i) where items will be moved to (current end of compressed list)
  // at end items >=j need to be deleted (that is done at the end of this function)
- double lasty,lastx,x,y,miny,maxy,sumy;
+ // Warning - this is done on traces individually but for identical y values we want to keep set of corresponding x values together (from different traces), so
+ // ordering decisions must give consistent results between traces (we might save the traces as a csv file)
+ // This code does NOT achieve this (it can delete sets of x values and re-order the remainder) - so this code is **** NOT **** currently used
+ double x,y,miny=0,maxy=0;
  SGraph *pAGraph = ((SGraph*) pHistory->Items[iGraphNumberF]);
  size_t iCount=pAGraph->nos_vals ;
  size_t i,j;
- size_t count_same=0,start_i=0;
  bool skipx=false; // set to true while we are skipping equal x values
  if(iCount<2) return; // not enough data in graph to process
- y=lasty=miny=maxy=sumy=pAGraph->y_vals[0];
- x=lastx=pAGraph->x_vals[0];
- for (i=j=1; i<iCount; i++)  // for all items in list except 1st, i is where we read from, j is where we write to
+
+ for (j=0,i=0; i<iCount; i++)  // for all items in list, i is where we read from, j is where we write to
 		{
 		 y=pAGraph->y_vals[i];
 		 x=pAGraph->x_vals[i];
-		 if(x==lastx)
+		 if(i<iCount-1 && x==pAGraph->x_vals[i+1])
                 {// in block of repeats
 				 if(!skipx)
-					{lasty=miny=maxy=sumy=pAGraph->y_vals[i-1];   // 1st point in set of equal x values
-					 lastx=x;
-					 count_same=1;
-					 start_i=i-1;// start of "run"
+					{miny=maxy=y;   // 1st point in set of equal x values
 					 skipx=true;
 					}
-				 // update stats for "run"
-				 if(y<miny) miny=y;
-				 if(y>maxy) maxy=y;
-				 sumy+=y;
-				 count_same++;
-				 if(i!=iCount-1) continue; // keep going till we find the end of the block (or the end of the array)
+				 else
+					{ // update stats for "run"
+					 if(y<miny) miny=y;
+					 if(y>maxy) maxy=y;
+					}
+				 continue; // keep going till we find the end of the block (or the end of the array)
                 }
 		 if(skipx)
-				{// we have skipped some values, but x has now changed, so must now decide what to do
-				 if(start_i==0 && i<iCount-1)
-					{// at very start of file but there are some more points after AND file looks like steadily increasinmg or decreasing
-					 if(maxy<=y /* increasing*/ || miny>=y /* decreasing */)
-						{
-						 pAGraph->y_vals[j]=(float)(sumy/(double)count_same);// use average y
-						 pAGraph->x_vals[j]=(float)lastx;
-						 ++j;
-						}
-					 else
-						{// add in 2 points - miny, maxy
-						 pAGraph->y_vals[j]=(float)(miny);
-						 pAGraph->x_vals[j]=(float)lastx;
-						 ++j;
-						 pAGraph->y_vals[j]=(float)(maxy);
-						 pAGraph->x_vals[j]=(float)lastx;
-						 ++j;
-						}
-					}
-				 else if(start_i>0 && i<iCount-1)
-					{// in the middle of the file, not at the very start of file but there are some more points after
-					 double ybefore_run= pAGraph->y_vals[start_i-1];
-					 if((maxy<=y && miny>=ybefore_run) || (maxy<=ybefore_run && miny>=y ))
-						{  // increasing or decreasing
-						 pAGraph->y_vals[j]=(float)(sumy/(double)count_same);// use average y
-						 pAGraph->x_vals[j]=(float)lastx;
-						 ++j;
-						}
-					 else
-						{// add in 2 points - miny, maxy
-						 pAGraph->y_vals[j]=(float)(miny);
-						 pAGraph->x_vals[j]=(float)lastx;
-						 ++j;
-						 pAGraph->y_vals[j]=(float)(maxy);
-						 pAGraph->x_vals[j]=(float)lastx;
-						 ++j;
-						}
-					}
-				 else if(start_i>0 && i==iCount-1)
-					{// at the end of the file,some points before
-					 double ybefore_run= pAGraph->y_vals[start_i-1] ;
-					 if(miny>=ybefore_run /* increasing*/ || maxy<=ybefore_run /* decreasing */)
-						{
-						 pAGraph->y_vals[j]=(float)(sumy/(double)count_same);// use average y
-						 pAGraph->x_vals[j]=(float)lastx;
-						 ++j;
-						}
-					 else
-						{// add in 2 points - miny, maxy
-						 pAGraph->y_vals[j]=(float)(miny);
-						 pAGraph->x_vals[j]=(float)lastx;
-						 ++j;
-						 pAGraph->y_vals[j]=(float)(maxy);
-						 pAGraph->x_vals[j]=(float)lastx;
-						 ++j;
-						}
-					}
-				 else
-					{// some other case .. add in 2 points - miny, maxy
+				{// we have skipped some values, but x is about to change (or we are at the end of the array)
+				 if(y<miny) miny=y; // update min/max for the last point in the run
+				 if(y>maxy) maxy=y;
+				 // add in 2 points - miny, maxy ideally at very slightly different x values, order to try and follow trend in graph
+				 if(i<iCount-1 &&  pAGraph->y_vals[i+1] >maxy && nextafterfp((float)x)<pAGraph->x_vals[i+1])
+					{// y values increasing  min then max follows this trend
 					 pAGraph->y_vals[j]=(float)(miny);
-					 pAGraph->x_vals[j]=(float)lastx;
+					 pAGraph->x_vals[j]=(float)x;
 					 ++j;
 					 pAGraph->y_vals[j]=(float)(maxy);
-					 pAGraph->x_vals[j]=(float)lastx;
+					 pAGraph->x_vals[j]=nextafterfp((float)x);
 					 ++j;
 					}
-				 if(i!=iCount-1)skipx=false;   // don't clear flag at the end as we have already processed the last point
+				 else if(i<iCount-1 &&  pAGraph->y_vals[i+1] <miny && nextafterfp((float)x)<pAGraph->x_vals[i+1])
+					{// y values decreasing , put max then min
+					 pAGraph->y_vals[j]=(float)(maxy);
+					 pAGraph->x_vals[j]=(float)x;
+					 ++j;
+					 pAGraph->y_vals[j]=(float)(miny);
+					 pAGraph->x_vals[j]=nextafterfp((float)x);
+					 ++j;
+					}
+				 else
+					{ // put at same x value
+					 pAGraph->y_vals[j]=(float)(miny);
+					 pAGraph->x_vals[j]=(float)x;
+					 ++j;
+					 pAGraph->y_vals[j]=(float)(maxy);
+					 pAGraph->x_vals[j]=(float)x;
+					 ++j;
+					}
+				 skipx=false;
 				}
 		 else
 			{// no values skipped
-			 pAGraph->y_vals[j]=(float)lasty;// y value is different, copy point over
-			 pAGraph->x_vals[j]=(float)lastx;
+			 pAGraph->y_vals[j]=(float)y;// copy point over as i might not equal j
+			 pAGraph->x_vals[j]=(float)x;
 			 ++j;
 			}
-         lasty=y;
-         lastx=x;
 		}
- if(!skipx)
-	{// need to add in final point  if we were not still in a constant run when the end was reached
-	 pAGraph->y_vals[j]=(float)y;
-	 pAGraph->x_vals[j]=(float)x;
-	 ++j;
-	}
+
  // now delete values not used    [ have used array elements from 0 to j-1 ]
  rprintf(" Optimising duplicate x values: %u point(s) removed from trace\n %u points were read from file, optimised size=%u which is %2.1f%% of the original size\n",iCount-j,iCount,j,100.0*(double)j/(double)iCount);
- pAGraph->nos_vals=j;// resize array that holds points  (frees up memory space in that as well)
- pAGraph->x_vals=(float *)realloc(pAGraph->x_vals,sizeof(float)*j);  // resize arrays
- pAGraph->y_vals=(float *)realloc(pAGraph->y_vals,sizeof(float)*j);
- pAGraph->size_vals_arrays =j;// new size of arrays
+ if(j!=iCount)
+	{// resize arrays as new size is smaller
+	 pAGraph->nos_vals=j;// resize array that holds points  (frees up memory space in that as well)
+	 pAGraph->x_vals=(float *)realloc(pAGraph->x_vals,sizeof(float)*j);  // resize arrays
+	 pAGraph->y_vals=(float *)realloc(pAGraph->y_vals,sizeof(float)*j);
+	 pAGraph->size_vals_arrays =j;// new size of arrays
+	}
 }
 
 
@@ -3493,11 +3602,11 @@ void TScientificGraph::fnTextOut(double dx, double dy, AnsiString Text,
   ix=(int)((double)iBitmapWidth*dx);        //calculates coordinates from
   iy=(int)((double)iBitmapHeight*dy);        //percentage values dx,dy
 
-  pBitmap->Canvas->Font->Size=iSize;        //settings
+  pBitmap->Canvas->Font->Size=(int)(iSize*font_size_mult_ppi);        //settings
   pBitmap->Canvas->Font->Color=Color;
   pBitmap->Canvas->Font->Style=TFontStyles()<<Style;
   pBitmap->Canvas->TextOut(ix,iy,Text);     //text out
-  pBitmap->Canvas->Font->Size=8;
+  pBitmap->Canvas->Font->Size=(int)(8.0f*font_size_mult_ppi);
   pBitmap->Canvas->Font->Style=TFontStyles();
 }
 //------------------------------------------------------------------------------
@@ -3509,10 +3618,10 @@ void TScientificGraph::fnTextOut(double dx, double dy, AnsiString Text,
   ix=(int)((double)iBitmapWidth*dx);        //see above
   iy=(int)((double)iBitmapHeight*dy);
 
-  pBitmap->Canvas->Font->Size=iSize;
+  pBitmap->Canvas->Font->Size=(int)(iSize*font_size_mult_ppi);
   pBitmap->Canvas->Font->Color=Color;
   pBitmap->Canvas->TextOut(ix,iy,Text);
-  pBitmap->Canvas->Font->Size=8;
+  pBitmap->Canvas->Font->Size=(int)(8.0f*font_size_mult_ppi);
 }
 //------------------------------------------------------------------------------
 void TScientificGraph::fnSetCaption(AnsiString Caption, int iGraphNumberF)
@@ -3536,9 +3645,9 @@ void TScientificGraph::fnAutoScale()
 
   if (iNumberOfGraphs>0)
   {
-    // there might not be an Items[0] if the length is zero
-    dXMax=dYMax=-MAXFLOAT;
-	dXMin=dYMin=MAXFLOAT;
+	// there might not be an Items[0] if the length is zero
+	dXMax=dYMax=-FLT_MAX;
+	dXMin=dYMin=FLT_MAX;
     X_for_minY=X_for_maxY=dXMin;
 
   }
@@ -3669,7 +3778,7 @@ double TScientificGraph::fnMakeANiceNumber(double d)
 {
   double dExponent;
   double dBase;
-  const double MINd=MINFLOAT/100.0;   // avoid maths errors that would happen if we tried to take to log of 0. As we use floats to store data from csv file MINFLOAT/100 should be OK
+  const double MINd=FLT_MIN/100.0;   // avoid maths errors that would happen if we tried to take to log of 0. As we use floats to store data from csv file MINFLOAT/100 should be OK
   if(d<MINd) d=MINd; // avoid maths errors that would happen if we tried to take to log of 0. As we use floats to store data from csv file MINFLOAT shold be OK
   dExponent=floor(log10(d));                      //make d a x.0Ey or
   dBase=d/pow(10,dExponent);                      // x.5Ey or x.25Ey or x.75Ey
@@ -3786,8 +3895,8 @@ void TScientificGraph::fnPaintDataPoint(TRect Rect, unsigned char ucStyle)
 //------------------------------------------------------------------------------
 void TScientificGraph::fnCheckScales()
 {  // check scales are sensible, and if not fix them. Scales are doubles, but we store x,y points as floats so can limit range based on floats
-  if(sScaleX.dMax> MAXFLOAT) sScaleX.dMax=MAXFLOAT;
-  if(sScaleX.dMin< -MAXFLOAT) sScaleX.dMin=-MAXFLOAT;
+  if(sScaleX.dMax> FLT_MAX) sScaleX.dMax=FLT_MAX;
+  if(sScaleX.dMin< -FLT_MAX) sScaleX.dMin=-FLT_MAX;
 #if 1
   if(sScaleX.dMax-nextafterfp((float)sScaleX.dMin)<=0)
 		{sScaleX.dMax= nextafterfp((float)sScaleX.dMin); // limit amount of zoom
@@ -3803,8 +3912,8 @@ void TScientificGraph::fnCheckScales()
          sScaleX.dMin =t;
         }
 
-  if(sScaleY.dMax> MAXFLOAT) sScaleY.dMax=MAXFLOAT;
-  if(sScaleY.dMin< -MAXFLOAT) sScaleY.dMin=-MAXFLOAT;
+  if(sScaleY.dMax> FLT_MAX) sScaleY.dMax=FLT_MAX;
+  if(sScaleY.dMin< -FLT_MAX) sScaleY.dMin=-FLT_MAX;
 #if 1
   if(sScaleY.dMax-nextafterfp((float)sScaleY.dMin)<=0)
         {sScaleY.dMax= nextafterfp((float)sScaleY.dMin); // limit amount of zoom
@@ -3906,17 +4015,22 @@ bool TScientificGraph::SaveCSV(char *filename,char *x_axis_name, double xmin, do
 		}
 	  xj= xGraph->x_vals[j];
 	  if(xj<xmin || xj>xmax) continue; // outside of range to save
-	  fprintf(fp,"%.9g",xj);    // printf x value first. %.9g (9sf) gives max resolution for a float
+	  if(roundf(xj)==xj && xj>=-100000000 && xj<=100000000 )
+		{// x value is an integer with a reasonable number of sf - print it as such
+		 fprintf(fp,"%.0f",xj);
+		}
+	  else
+		fprintf(fp,"%.7g",xj);    // printf x value first. %.9g (9sf) gives max resolution for a float    27/8/2025 changed to %.7g as 7sf is abs max for float as 2^24=16,777,216  (8sf starts introducing round loop errors)
 	  for (int i=0; i<iNumberOfGraphs; i++)  // now print y values for all traces
 		{aGraph=(SGraph*) pHistory->Items[i];
-		 if(i==0)  fprintf(fp,",%.9g",aGraph->y_vals[j]); // trace 0: can always just print 1st y value as that trace provides x values
+		 if(i==0)  fprintf(fp,",%.7g",aGraph->y_vals[j]); // trace 0: can always just print 1st y value as that trace provides x values
 		 else if(j<aGraph->nos_vals && aGraph->x_vals[j]==xj)
-			fprintf(fp,",%.9g",aGraph->y_vals[j]);// if x value matches trace 0 then just print matching y value (this is faster than always interpolating)
+			fprintf(fp,",%.7g",aGraph->y_vals[j]);// if x value matches trace 0 then just print matching y value (this is faster than always interpolating)
 		 else
 			{// need to interpolate to get correct y value
 			 // float interp1D(float *xa, float *ya, int size, float x, bool clip);
 			 float yj=interp1D_f(aGraph->x_vals,aGraph->y_vals,aGraph->nos_vals,xj,true);
-			 fprintf(fp,",%.9g",yj); // interpolated value
+			 fprintf(fp,",%.7g",yj); // interpolated value
 			}
 		}
 	  fprintf(fp,"\n");

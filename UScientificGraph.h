@@ -164,6 +164,7 @@ public:
   void fnLinreg(enum LinregType type,int iGraphNumberF, void (*callback)(size_t cnt,size_t maxcnt)); // apply 1st order linear regression (y=mx+c) to graph in place
   bool fnPolyreg(unsigned int order,int iGraphNumberF, void (*callback)(size_t cnt,size_t maxcnt)); // fit polynomial of specified order regression to graph in place
   bool fnFFT(bool dBV_result,bool Hanning,int iGraphNumberF, void (*callback)(size_t cnt,size_t maxcnt)); // apply FFT to data. returns true if OK, false if failed.
+  bool fnCepstrum(int iGraphNumberF, void (*callback)(size_t cnt,size_t maxcnt)); // apply Power Cepstrum  to data. returns true if OK, false if failed.
   void compress_y(int iGraphNumberF); // compress by deleting points with equal y values except for 1st and last in a row
   void fix_dupx(int iGraphNumberF); // "fix" equal x values
   void deriv_filter(unsigned int diff_order,int iGraphNumberF); // smoothed derivative

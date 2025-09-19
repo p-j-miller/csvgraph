@@ -165,16 +165,50 @@
 //                   1j - new median code optimised, and errors of approximate algorithms bounded
 //                   1k - cumulate average changed to Kalman filter as that's more useful.
 //                   1L - improved Kalman filter implementation
+// 4v2 21/11/2024   added Power Cepstrum "filter"
+//                   2b - removed hanning filters as seem to have an unwanted effect on result
+//                   2c - bug found when duplicate x values are removed - found on file logout-compare-all-inorder.csv which only has 10 points , would not normally be visible.
+//                        code changed to always display y min/max of a range of equal x values (previoulsy it might display 1 point with average)
+//                   2f - 1st version with Target Platform "Windows 64-bit (Modern)"
+//                      - call to fix_dupx() deleted as even with fix from 4v2c doing a save as csv file on the traces gives strange results when its used (and its 1 less question for user to answer when traces are plotted)
+//                      - on csvsave, x values that are integers between +/-100,000,000 are saved as integers (otherwise are limited to 7 sig figs as that's resolution of a float)
+//                      - file icon recreated using C++builder icon creator from csvgraph-icon4.svg - starting with a svg file gives better scaling for different sizes of icon.
+//                   2g - Memory usage was always 0MB - now gives a similar number to that show by task Manager
+//                   2h - icons on csvgraph windows updated to match file new file icon
+//                      - more work on cepstrum filter - this now works correctly
+//                   2i - tried double datatype for FFT's  - made no difference so went back to float
+//                      - added flat top window to FFT in cepstrum analysis - which gave much better results
+//                   2j - tweaked fft and cepstrum to deal better with harmonics with (extremely) low amplitudes
+//                      - added display of 1/X on right click which is useful for Cepstrum analysis as 1/X is frequency.
+//                      - swapped to Nuttall Fig 12 Window for FFT and Cepstrum analysis as gives very low sidelobes with ~ the same peak width as the Hanning Window.
+//                   2k - Tidied up FFT/cepstrum Windowing code (deleted options that are not used)
+//                      - added progress updates to Cepstrum code (its extremely quick - fft is multi-threaded code - so its hard to see this)
+//                   2l - minor tweaks.
+//                   2m - fixed compilation errors for 32 bit build.
+//					 2x - 1st 4v2 version that appears to fully work with resizing fonts, changing display ppi, multiple screens at different resolutions, "poping out" panel 2, etc.
+//						- maximum font size setable from GUI is 30 point (was 19) with other elements within the CSVGraph window resizing automatically as the font sizes changes.
+//							[ previously fixed size "margins" were used set to allow for max. font size which wasted space with small fonts and made display PPI changes harder]
+//                   2ze - finally got moving between monitors at different PPI's and changing PPI's of monitors (almost) fully working,
+//							but in some cases undocked panel2 needs to be selected using the mouse for the font sizes to be applied.
+//                   2zf - tried using a periodic timer to make all cases automatic - but still did not work.
+//                   2zg - Tried simpler approach for panel 2 - just making it invisible and expanding panel1 (and reversing this to restore it) - Works well!
+//                   2zh - values for xticks only printed if they will actually fit (previous changes meant they could overlap or go off the right)
+//                   2zi - minor tweaks to "boxes" on GUI to make them line up. Minor edits to "about" text.
+//                   2zk - Title now is "(64x)","(64 bit)" or "(32 bit)" depending on target platform selected.
+//                       - numbers for y axis "ticks" now printed by snprintf with number of significant digits matched to display resizing
+//                       - Changed to "FFT windowed" rather that "Nuttall Fig 12 Window" for filter name.
 //
+//                   => github release of 4v2
 // TO DO:
 //
 // WARNING : in builder 11 with 64 bit code generation long double is only 8 bytes (the same as double!).
+//           with C++builder 12 "Windows 64-bit(Modern)" target does have __float128 type, but long double is still 8 bytes (the same as double).
 //
-// Note if executable is called (eg) csvgraph64.exe then manual needs to be called csvgraph64.pdf
+// Note if executable is called (e.g.) csvgraph64.exe then manual needs to be called csvgraph64.pdf
 //
 //---------------------------------------------------------------------------
 /*----------------------------------------------------------------------------
- * Copyright (c) 2019,2020,2021,2022,2023,2024 Peter Miller
+ * Copyright (c) 2019,2020,2021,2022,2023,2024,2025 Peter Miller
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -224,17 +258,18 @@
 #include <sys\stat.h>
 #include <stdio.h>
 #include <string.h>
-#include <alloc.h>
+//#include <alloc.h>
 #include <windows.h>
 #include <commdlg.h>    // to use GetOpenFileNameA
 #include <dos.h>
 #include <stdlib.h>
 #include <float.h>
-#include <values.h>
+//#include <values.h>
 #include "matrix.h" /* must come before include of multiple-lin-reg.h */
 #include "multiple-lin-reg-fn.h"
 #include "time_local.h"
 #include "getfloat.h"
+#include <psapi.h> /* for PROCESS_MEMORY_COUNTERS_EX2 */
 
 
 #if 1
@@ -246,9 +281,13 @@
 extern TForm1 *Form1;
 extern const char * Prog_Name;
 #ifdef _WIN64
-const char * Prog_Name="CSVgraph (Github) 4v1 (64 bit)";   // needs to be global as used in about box as well.
+ #ifdef _UCRT
+  const char * Prog_Name="CSVgraph (Github) 4v2 (64x)";   // Add "x" to flag latest compiler. needs to be global as used in about box as well.
+ #else
+ const char * Prog_Name="CSVgraph (Github) 4v2 (64 bit)";   // needs to be global as used in about box as well.
+ #endif
 #else
-const char * Prog_Name="CSVgraph (Github) 4v1 (32 bit)";   // needs to be global as used in about box as well.
+const char * Prog_Name="CSVgraph (Github) 4v2 (32 bit)";   // needs to be global as used in about box as well.
 #endif
 #if 1 /* if 1 then use fast_strtof() rather than atof() for floating point conversion. Note in this application this is only slightly faster (1-5%) */
 extern "C" float fast_strtof(const char *s,char **endptr); // if endptr != NULL returns 1st character thats not in the number
@@ -262,6 +301,8 @@ extern "C" float fast_strtof(const char *s,char **endptr); // if endptr != NULL 
 
 #define P_UNUSED(x) (void)x; /* a way to avoid warning unused parameter messages from the compiler */
 
+extern float font_size_mult_ppi; // scaling factor for font sizes to correct for screen ppi
+float font_size_mult_ppi=1.0;
 
 /* next 2 function used to support conversion to unicode vcl see https://blogs.embarcadero.com/migrating-legacy-c-builder-apps-to-c-builder-10-seattle/
 */
@@ -534,197 +575,32 @@ void __fastcall TPlotWindow::CreateParams(TCreateParams &Params)
 #endif        
 }
 
-static int initial_ClientWidth,initial_ClientHeight,initial_Panel1_Width,initial_Panel1_Height; // sizes when form created
-
+static float initial_ppi_scaling=1.0;   // scaling factor at startup - needed for title !
+static int initial_ppi=96;
 //---------------------------------------------------------------------------
-// #define HIGH_DPI /* if true then application has high dpi set in project properties: application -> enable high dpi */
-// #define BASE_WIDTH 1609   /* sizes assumed when windows created with form designer */
-#define BASE_PWIDTH 1300  /* base panel1 width */
-#define BASE_HEIGHT 980
 
-#if 1       /* version that works with possibility to detach panel 2 */
+
 __fastcall TPlotWindow::TPlotWindow(TComponent* Owner) : TForm(Owner)
 {
   Shape1->Visible = false;                   //mouse scaling rect
   Caption = Prog_Name;                            //window caption
   FilterType->ItemIndex=0; // select 1st item (none) otherwise no item is selected.
   // save initial sizes [ used when we resize]
-  initial_ClientWidth=ClientWidth;
-  initial_ClientHeight=ClientHeight;
-   // initial_ClientWidth=1591 initial_ClientHeight=980 initial_Panel1_Width=1300 initial_Panel1_Height=980
-
-  Panel2->Width=Edit_y->Left + Edit_y->Width ; // make sure panel 2 is wide enough to fit widest (far right) item
-  Panel2->Left=ClientWidth-Panel2->Width ;
-
-  Panel1->Width  =Panel2->Left-Panel1->Left;    // resize if necessary so graph fits in leaving space for controls on right
-  Panel1->Height =initial_ClientHeight;
+  //rprintf("TPlotWindow(): Screen DPI=%u, GetCurrentPPI() gives %d\n",Screen->PixelsPerInch,GetCurrentPPI());
+  initial_ppi=GetCurrentPPI();
+  font_size_mult_ppi=initial_ppi/96.0f; // scaling factor for font sizes to correct for screen ppi
+  initial_ppi_scaling=font_size_mult_ppi; // also need initial value
+  //rprintf("  ClientWidth=%d ClientHeight=%d Panel1->Width=%d Panel1->ClientWidth=%d Panel2->Width=%d    \n",ClientWidth,ClientHeight, Panel1->Width,Panel1->ClientWidth,Panel2->Width);
   iBitmapHeight=Panel1->ClientHeight;        //fit TScientificGraph-Bitmap in
   iBitmapWidth=Panel1->ClientWidth;          //TImage1-object in Panel1
 											 //init ScientificGraph with Bitmap-
 											 //size
-  initial_Panel1_Width=iBitmapWidth;
-  initial_Panel1_Height=iBitmapHeight;
-
-  // rprintf("initial_Panel1_Width=iBitmapWidth=%d initial_Panel1_Height=iBitmapHeight=%d\n",initial_Panel1_Width,initial_Panel1_Height);
-
-
- #if 0
-  // code below attempts to realign right control panel but this does not work
-  // TRect control_area(ClientLeft,Panel1->Top,Panel1->Left+ClientWidth,Panel1->Top+Panel1->Height);// Left, Top, Right, Bottom
-  TRect control_area=ClientRect;
-  TPlotWindow::AlignControls(NULL,control_area) ;
-#endif
   pScientificGraph = new TScientificGraph(iBitmapWidth,iBitmapHeight);
-#ifdef WHITE_BACKGROUND
-  pScientificGraph->ColBackGround = clWhite;                           //set colours, white background
-  pScientificGraph->ColGrid = clGray	;
-  pScientificGraph->ColAxis = clDkGray	;
-  pScientificGraph->ColText = clBlack;
-  Edit_title->Color=pScientificGraph->ColBackGround ;    // needs to be the same as the background colour
-  Edit_title->Font->Color= pScientificGraph->ColText;
-  Label1->Font->Color= pScientificGraph->ColText;
-  Label2->Font->Color= pScientificGraph->ColText;
-  Color=clBtnFace ;
-#else
-  pScientificGraph->ColBackGround = clBlack;                           //set colours, Black background
-  pScientificGraph->ColGrid = clOlive;
-  pScientificGraph->ColAxis = clRed;
-  pScientificGraph->ColText = clYellow;
-  Edit_title->Color=pScientificGraph->ColBackGround ;    // needs to be the same as the background colour
-  Edit_title->Font->Color= pScientificGraph->ColText;
-  Label1->Font->Color= pScientificGraph->ColText;
-  Label2->Font->Color= pScientificGraph->ColText;
-  Color=clBtnFace ;
-#endif
-#define   dLegendStartX_val 0.3  /* start position for graph ledgends X and Y */
-#define   dLegendStartY_val 0.99
-#if 1  /* scale positions based on size */
- // 0.1*initial_Panel1_Width/Panel1->ClientWidth;
-  pScientificGraph->fLeftBorder = 0.1f*BASE_PWIDTH/initial_Panel1_Width;      //Borders of Plot in Bitmap in %/100  was 0.2
-  Edit_title->Width=Panel1->Width-Edit_title->Left-20; // allow to go to (nearly) the far edge  (Title is centered)
-  pScientificGraph->fBottomBorder = 0.1f*BASE_HEIGHT/initial_Panel1_Height;   // was 0.25
-  pScientificGraph->dLegendStartX=dLegendStartX_val; // Top left positions of trace legends in %/100 in Plot was 0.8 - don't need this to change if user rescaled main window
-  pScientificGraph->dLegendStartY=dLegendStartY_val; // was 0.95
-#else
-  pScientificGraph->fLeftBorder = 0.1;      //Borders of Plot in Bitmap in %/100  was 0.2
-  pScientificGraph->fBottomBorder = 0.1;   // was 0.25
-  pScientificGraph->dLegendStartX=dLegendStartX_val;     //Legend position in %/100 in Plot was 0.8
-  pScientificGraph->dLegendStartY=dLegendStartY_val;    // was 0.95
-#endif
+
   pScientificGraph->bZeroLine=true;        //zero line in plot
   Edit_x->Text=default_x_label;            // set default x label
   Edit_y->Text=default_y_label;            // set default y label
-  fnReDraw();                               //redraw plot
-}
-#else
-  // original code does not work with panel 2 present when text is not 100%
-__fastcall TPlotWindow::TPlotWindow(TComponent* Owner) : TForm(Owner)
-{
-  int ofset= (ClientWidth-BASE_WIDTH);  // adjust for change in width
-  Shape1->Visible = false;                   //mouse scaling rect
-  Caption = Prog_Name;                            //window caption
-  // save initial sizes [ used when we resize]
-  initial_ClientWidth=ClientWidth;
-  initial_ClientHeight=ClientHeight;
-   // initial_ClientWidth=1591 initial_ClientHeight=980 initial_Panel1_Width=1300 initial_Panel1_Height=980
-  Panel1->Width  =Panel1->ClientWidth+(ofset);    // resize if necessary so graph fits in leaving space for controls on right
-  Panel1->Height =initial_ClientHeight;
-  iBitmapHeight=Panel1->ClientHeight;        //fit TScientificGraph-Bitmap in
-  iBitmapWidth=Panel1->ClientWidth;          //TImage1-object in Panel1
-											 //init ScientificGraph with Bitmap-
-											 //size
-  initial_Panel1_Width=iBitmapWidth;
-  initial_Panel1_Height=iBitmapHeight;
 
-  // rprintf("initial_Panel1_Width=iBitmapWidth=%d initial_Panel1_Height=iBitmapHeight=%d\n",initial_Panel1_Width,initial_Panel1_Height);
-  if(ofset!=0)
-	{
-#if 0
-	 rprintf("initial_ClientWidth=%d initial_ClientHeight=%d initial_Panel1_Width=%d initial_Panel1_Height=%d, ofset=%d\n",
-		initial_ClientWidth,initial_ClientHeight,initial_Panel1_Width,initial_Panel1_Height,ofset);
-	 rprintf("ListBoxX: top=%d left=%d height=%d width=%d\n",ListBoxX->Top,ListBoxX->Left , ListBoxX->Height , ListBoxX->Width );
-#endif
-	 if(ofset<0)
-		{// not room for all controls on the right bar, disable ones that are not essential , and move the remainder up
-		 int voffset=Label6->Top ; // this must be subtracted from Top of remaining visible items to move them up
-		 RadioGroup3->Visible =false;
-		 RadioGroup2->Visible =false;
-		 CheckBox3->Visible =false;
-		 CheckBox1->Visible =false;
-		 Label5->Visible =false;
-		 Label11->Visible =false;
-		 SpinEdit_Fontsize->Visible =false;
-		 Label6->Top-=voffset;
-		 Edit_y->Top-=voffset;
-		 Label7->Top-=voffset;
-		 Edit_x->Top-=voffset;
-		 Label8->Top-=voffset;
-		 StaticText_filename->Top-=voffset;
-		 Xcol_type->Top-=voffset;
-		 Label3->Top-=voffset;
-		 Edit_xcol->Top-=voffset;
-		 Label9->Top-=voffset;
-		 Edit_Xoffset->Top-=voffset;
-		 ListBoxX->Top-=voffset;
-		 Label4->Top-=voffset;
-		 Edit_ycol->Top-=voffset;
-		 ListBoxY->Top-=voffset;
-		 FilterType->Top-=voffset;
-		 CheckBox_Compress->Top-=voffset;
-		 Label10->Top-=voffset;
-		 Edit_median_len->Top-=voffset;
-		 Button_Filename->Top-=voffset;
-		 Button_add_trace->Top-=voffset;
-		 Button_clear_all_traces->Top-=voffset;
-		 StatusText->Top-=voffset;
-		 Label15->Top-=voffset;
-		 Label16->Top-=voffset;
-		 Edit_skip_lines->Top-=voffset;
-		}
-	 // move all controls in bar on right
-	 RadioGroup3->Left+=ofset;
-	 RadioGroup2->Left+=ofset;
-	 CheckBox3->Left+=ofset;
-	 CheckBox1->Left+=ofset;
-	 Label5->Left+=ofset;
-	 Label11->Left+=ofset;
-	 SpinEdit_Fontsize->Left+=ofset;
-	 Label6->Left+=ofset;
-	 Edit_y->Left+=ofset;
-	 Label7->Left+=ofset;
-	 Edit_x->Left+=ofset;
-	 Label8->Left+=ofset;
-	 StaticText_filename->Left+=ofset;
-	 Xcol_type->Left+=ofset;
-	 Label3->Left+=ofset;
-	 Edit_xcol->Left +=ofset;
-	 Label9->Left+=ofset;
-	 Edit_Xoffset->Left+=ofset;
-	 ListBoxX->Left += ofset;
-	 Label4->Left+=ofset;
-	 Edit_ycol->Left +=ofset;
-	 ListBoxY->Left +=ofset;
-	 FilterType->Left +=ofset;
-	 CheckBox_Compress->Left +=ofset;
-	 Label10->Left+=ofset;
-	 Edit_median_len->Left +=ofset;
-	 Button_Filename->Left +=ofset;
-	 Button_add_trace->Left +=ofset;
-	 Button_clear_all_traces->Left +=ofset;
-	 StatusText->Left +=ofset;
-	 Label5->Left+=ofset;
-	 Label6->Left+=ofset;
-	 Edit_skip_lines->Left+=ofset;
-	 // rprintf("updated ListBoxX: top=%d left=%d height=%d width=%d\n",ListBoxX->Top,ListBoxX->Left , ListBoxX->Height , ListBoxX->Width );
-	}
-
- #if 0
-  // code below attempts to realign right control panel but this does not work
-  // TRect control_area(ClientLeft,Panel1->Top,Panel1->Left+ClientWidth,Panel1->Top+Panel1->Height);// Left, Top, Right, Bottom
-  TRect control_area=ClientRect;
-  TPlotWindow::AlignControls(NULL,control_area) ;
-#endif
-  pScientificGraph = new TScientificGraph(iBitmapWidth,iBitmapHeight);
 #ifdef WHITE_BACKGROUND
   pScientificGraph->ColBackGround = clWhite;                           //set colours, white background
   pScientificGraph->ColGrid = clGray	;
@@ -746,24 +622,10 @@ __fastcall TPlotWindow::TPlotWindow(TComponent* Owner) : TForm(Owner)
   Label2->Font->Color= pScientificGraph->ColText;
   Color=clBtnFace ;
 #endif
-#if 1  /* scale positions based on size */
- // 0.1*initial_Panel1_Width/Panel1->ClientWidth;
-  pScientificGraph->fLeftBorder = 0.1*BASE_PWIDTH/initial_Panel1_Width;      //Borders of Plot in Bitmap in %/100  was 0.2
-  pScientificGraph->fBottomBorder = 0.1*BASE_HEIGHT/initial_Panel1_Height;   // was 0.25
-  pScientificGraph->dLegendStartX=dLegendStartX_val; // Top left positions of trace legends in %/100 in Plot was 0.8 - don't need this to change if user rescaled main window
-  pScientificGraph->dLegendStartY=dLegendStartY_val; // was 0.95
-#else
-  pScientificGraph->fLeftBorder = 0.1;      //Borders of Plot in Bitmap in %/100  was 0.2
-  pScientificGraph->fBottomBorder = 0.1;   // was 0.25
-  pScientificGraph->dLegendStartX=dLegendStartX_val;     //Legend position in %/100 in Plot was 0.8
-  pScientificGraph->dLegendStartY=dLegendStartY_val;    // was 0.95
-#endif
-  pScientificGraph->bZeroLine=true;        //zero line in plot
-  Edit_x->Text=default_x_label;            // set default x label
-  Edit_y->Text=default_y_label;            // set default x label
-  fnReDraw();                               //redraw plot
+
+  FormResize(Owner); // do the same as when window is resized - avoids the need for duplicated code
 }
-#endif
+
 //---------------------------------------------------------------------------
 void __fastcall TPlotWindow::FormDestroy(TObject *Sender)
 { P_UNUSED(Sender);
@@ -874,8 +736,11 @@ void __fastcall TPlotWindow::AutoScaleExecute(TObject *Sender)
 #define RT_CLICK_Mode pmXor      /* has to be XOR as we want to be able to erase line be redrawing it */
 #define RT_CLICK_Color clWhite   /* white also seems to be the best choice for visibility */
 #define RT_CLICK_A_size 6        /* length of arrow, 0 means no arrow drawn on end of line */
+static bool Mouse_Rt_Pressed=false; // set when right mouse key pressed (and its valid inside graph)
+
 static void Mouse_line(TImage * I1,int a,int b,int d,int e)
 {// draw line for right mouse key from x=a,y=b to x=d,y=e
+ if(!Mouse_Rt_Pressed) return;
  I1->Canvas->Pen->Width=RT_CLICK_Width;
  I1->Canvas->Pen->Style=RT_CLICK_Style;
  I1->Canvas->Pen->Mode=RT_CLICK_Mode;
@@ -1009,14 +874,13 @@ void __fastcall TPlotWindow::Image1MouseMove(TObject *Sender,
 { P_UNUSED(Sender);
   double dKoordX,dKoordY;
   AnsiString AString;
-  
   if (pScientificGraph->fnPoint2Koord(X,Y,dKoordX,dKoordY))
   {
 #if 1 /* 1 for normal use, 0 for debugging */
 	AString="(";                                          //position of mouse in "graph" units
-	AString+=FloatToStrF(dKoordX,ffGeneral,10,2);         //precision of printing  was 7 , updated to 10 to match max resolution on graph axes
-    AString+=";";
-    AString+=FloatToStrF(dKoordY,ffGeneral,10,2);
+	AString+=FloatToStrF(dKoordX,ffGeneral,8,2);         //precision of printing  was 10 , 8 is max resolution of a float (2^24= 16,777,216)
+	AString+=";";
+    AString+=FloatToStrF(dKoordY,ffGeneral,8,2);
     AString+=")";
 #else
     AString="(";                                         //momentary cursor
@@ -1041,7 +905,12 @@ void __fastcall TPlotWindow::Image1MouseMove(TObject *Sender,
   if (/*Shape1->Visible && */ (Shift.Contains(ssLeft) || Shift.Contains(ssRight)))  //select. rect. visible and a mouse key pressed
   {
     if(Shift.Contains(ssRight) )
-        { // Right mouse button shows a line : first delete previous line
+		{ // Right mouse button shows a line : first delete previous line
+		 if(!Mouse_Rt_Pressed)
+			{
+			 return; // right button pressed event not seen - ignore this
+			}
+		 //Panel1->LockDrawing();
          Mouse_line(Image1,iShape1X,iShape1Y,Shape1->Left,Shape1->Top);
         }
     if (X<pScientificGraph->fnLeftBorder())
@@ -1056,7 +925,8 @@ void __fastcall TPlotWindow::Image1MouseMove(TObject *Sender,
         { // Right mouse button shows a line : add new line
          Shape1->Left=X;// remember end of line so we can erase it!
          Shape1->Top=Y;
-         Mouse_line(Image1,iShape1X,iShape1Y,X,Y);
+		 Mouse_line(Image1,iShape1X,iShape1Y,X,Y);
+		 //Panel1->UnlockDrawing();
         }
     else
      {// left mouse button pressed - draw a rectangle
@@ -1114,7 +984,8 @@ void __fastcall TPlotWindow::Image1MouseUp(TObject *Sender,
   else if(Button==mbRight)
         {// right mouse button => show co-ords and size of selection in messagebox.
          char buf[200];
-         double xmin,xmax,ymin,ymax;
+		 double xmin,xmax,ymin,ymax;
+		 if(!Mouse_Rt_Pressed) return;
          pScientificGraph->fnPoint2Koord(Shape1->Left,Shape1->Top,dX1,dY1);       //calculate coordinates  use end of line already drawn
          pScientificGraph->fnPoint2Koord(iShape1X,iShape1Y,dX2,dY2);
          if(dX1<dX2) {xmin=dX1; xmax=dX2;}
@@ -1123,8 +994,11 @@ void __fastcall TPlotWindow::Image1MouseUp(TObject *Sender,
          else {ymin=dY2; ymax=dY1;}
          buf[0]=0;
          if(xmin==xmax && ymin==ymax)
-                {// user pressed and released right mouse button on a point without moving mouse
-                 snprintf(buf,sizeof(buf),"X = %g\nY = %g",xmin,ymin);
+				{// user pressed and released right mouse button on a point without moving mouse
+				 if(xmin!=0)
+                    snprintf(buf,sizeof(buf),"X = %g\n1/X = %g\nY = %g",xmin,1.0/xmin,ymin);
+				 else
+					snprintf(buf,sizeof(buf),"X = %g\nY = %g",xmin,ymin);
                 }
          else if(xmin==xmax)
                 { // only y changed
@@ -1142,7 +1016,8 @@ void __fastcall TPlotWindow::Image1MouseUp(TObject *Sender,
          ShowMessage(buf);
          // Right mouse button showed a line : we need to delete this now
          Mouse_line(Image1,iShape1X,iShape1Y,Shape1->Left,Shape1->Top);
-         Shape1->Visible=false;
+		 Shape1->Visible=false;
+		 Mouse_Rt_Pressed=false;
         }
   else
    {// if mouse not moved
@@ -1152,8 +1027,7 @@ void __fastcall TPlotWindow::Image1MouseUp(TObject *Sender,
 //---------------------------------------------------------------------------
 void __fastcall TPlotWindow::Image1MouseDown(TObject *Sender,
       TMouseButton Button, TShiftState Shift, int X, int Y)
-{ // P_UNUSED(Sender);
-  // P_UNUSED(Button);
+{
   P_UNUSED(Shift);
   if(Button==mbMiddle)
         {
@@ -1165,41 +1039,48 @@ void __fastcall TPlotWindow::Image1MouseDown(TObject *Sender,
   if(Shape1->Visible==true)
         {Shape1->Visible=false ; // should not happen, but just in case...
         }
+  else if(Button==mbLeft && X>pScientificGraph->fnRightBorder())
+		{visible1Click(Sender); // left click on far right of panel 1 -> make panel2 change state
+		}
   else
-  {
-     if (X<pScientificGraph->fnLeftBorder())        //point has to be in plot
-        {X=pScientificGraph->fnLeftBorder();}
-    if (X>pScientificGraph->fnRightBorder())
-        {X=pScientificGraph->fnRightBorder();}
-    if (Y<pScientificGraph->fnTopBorder())
-        {Y=pScientificGraph->fnTopBorder();}
-    if (Y>pScientificGraph->fnBottomBorder())
-        {Y=pScientificGraph->fnBottomBorder();}
-    Shape1->Top=Y;                        //start position for selection rectangle/line
-    iShape1Y=Y;                           //save start position
-    Shape1->Left=X;
-    iShape1X=X;
-    Shape1->Height=0;
-    Shape1->Width=0;
-    if(Button==mbLeft) Shape1->Visible=true;                 //show  box only for left mouse press
-    else if(Button==mbRight)
-        {// make initial point visible
-         Mouse_line(Image1,iShape1X,iShape1Y,Shape1->Left,Shape1->Top);
-        }
-  }
+	   {
+		if (X<pScientificGraph->fnLeftBorder())        //point has to be in plot
+			{X=pScientificGraph->fnLeftBorder();}
+		if (X>pScientificGraph->fnRightBorder())
+			{X=pScientificGraph->fnRightBorder();}
+		if (Y<pScientificGraph->fnTopBorder())
+			{Y=pScientificGraph->fnTopBorder();}
+		if (Y>pScientificGraph->fnBottomBorder())
+			{Y=pScientificGraph->fnBottomBorder();}
+		Shape1->Top=Y;                        //start position for selection rectangle/line
+		iShape1Y=Y;                           //save start position
+		Shape1->Left=X;
+		iShape1X=X;
+		Shape1->Height=0;
+		Shape1->Width=0;
+		if(Button==mbLeft) Shape1->Visible=true;                 //show  box only for left mouse press
+		else if(Button==mbRight)
+			{// make initial point visible
+			 Mouse_Rt_Pressed=true;
+			 Mouse_line(Image1,iShape1X,iShape1Y,Shape1->Left,Shape1->Top);
+			}
+	   }
 }
 //---------------------------------------------------------------------------
 void TPlotWindow::fnReDraw()
-{
+{ //Panel1->LockDrawing();
+  //Panel2->LockDrawing();
   pScientificGraph->fnSetGrids(CheckBox1->Checked);             //show grids?
 
   pScientificGraph->fnCheckScales();                            //range checking
   pScientificGraph->fnOptimizeGrids();                          //opt. grids
-                                                                //and ticks
+																//and ticks
   pScientificGraph->fnScales2Size();                            //set scales as
-                                                                //size
+																//size
   pScientificGraph->fnPaint();                                  //repaint
   Image1->Picture->Assign(pScientificGraph->pBitmap);           //assign
+  //Panel2->UnlockDrawing();
+  //Panel1->UnlockDrawing();
 }
 
 //------------------------------------------------------------------------------
@@ -1610,6 +1491,7 @@ try{
    bool is_filter=strstr(FString.c_str(),"Filter")!= NULL ;  // true if "filter" appears in the text
    bool is_splineF=strstr(FString.c_str(),"Smoothing spline Filter")!= NULL ; // Spline smoothing
    bool is_fft=strstr(FString.c_str(),"FFT")!= NULL;  // true if "FFT" appears in the text
+   bool is_cepstrum=strstr(FString.c_str(),"Cepstrum")!= NULL;  // true if "Cepstrum" appears in the text
    bool is_order=strstr(FString.c_str(),"order:")!= NULL
 				 || strstr(FString.c_str(),"Savitzky Golay smoothing")!= NULL
 				 || strstr(FString.c_str(),"Derivative (dy/dx)")!= NULL
@@ -1770,6 +1652,10 @@ try{
 							{pScientificGraph->XLabel="Frequency"; // x=linenumber in file
 							 Edit_x->Text="Frequency";
 							}
+						else if(is_cepstrum)
+							{pScientificGraph->XLabel="Quefrency"; // x=linenumber in file
+							 Edit_x->Text="Quefrency";
+							}
 						else
 							{pScientificGraph->XLabel="Line number"; // x=linenumber in file
 							 Edit_x->Text="Line number";
@@ -1781,6 +1667,10 @@ try{
 							{
 							 pScientificGraph->XLabel="Frequency (Hz)";
 							 Edit_x->Text="Frequency (Hz)";
+							}
+						else if(is_cepstrum)
+							{pScientificGraph->XLabel="Quefrency (secs)"; // x=linenumber in file
+							 Edit_x->Text="Quefrency (secs)";
 							}
 						else
 							{
@@ -1794,6 +1684,10 @@ try{
 							 pScientificGraph->XLabel="Frequency";
 							 Edit_x->Text="Frequency";
 							}
+						else if(is_cepstrum)
+							{pScientificGraph->XLabel="Quefrency (mins)"; // x=linenumber in file
+							 Edit_x->Text="Quefrency (mins)";
+							}
 						else
 							{
 							 pScientificGraph->XLabel="Time (mins)";
@@ -1805,6 +1699,10 @@ try{
 							{  // frequency, but not Hz!
 							 pScientificGraph->XLabel="Frequency";
 							 Edit_x->Text="Frequency";
+							}
+						else if(is_cepstrum)
+							{pScientificGraph->XLabel="Quefrency (hours)"; // x=linenumber in file
+							 Edit_x->Text="Quefrency (hours)";
 							}
 						else
 							{
@@ -1818,6 +1716,10 @@ try{
 							 pScientificGraph->XLabel="Frequency";
 							 Edit_x->Text="Frequency";
 							}
+						else if(is_cepstrum)
+							{pScientificGraph->XLabel="Quefrency (days)"; // x=linenumber in file
+							 Edit_x->Text="Quefrency (days)";
+							}
 						else
 							{
 							 pScientificGraph->XLabel="Time (days)";
@@ -1828,6 +1730,10 @@ try{
 						if(is_fft)
 							{pScientificGraph->XLabel="Frequency"; // x=linenumber in file
 							 Edit_x->Text="Frequency";
+							}
+						else if(is_cepstrum)
+							{pScientificGraph->XLabel="Quefrency"; // x=linenumber in file
+							 Edit_x->Text="Quefrency";
 							}
 						else
 							{
@@ -2564,7 +2470,10 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 				 }
 			}
 		}
-#if 1
+#if 0
+	/* warning - if this code is enabled some x values may be removed (with their y values) and some sets of y values that originally appeared on one line of the csvfile may appear on different lines of a saved csv file
+	   its therefore recommended NOT to enable this code - duplicate x values should display sensibly without it
+	*/
 	if(found_eq_xvals)
 		{
 		 if(dupXmessage==0)   // IDYES!=0 and IDNO!=0, so we only ask user once for every set of traces added
@@ -2848,6 +2757,14 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
 						 ShowMessage("Warning: FFT failed - adding original trace to graph");
 						}
 				break;
+		case 35: // bool TScientificGraph::fnCepstrum(int iGraphNumberF, void (*callback)(size_t cnt,size_t maxcnt)) // apply Power Cepstrum  to data. returns true if OK, false if failed.
+				// Power Cepstrum
+				StatusText->Caption=FString;
+				if(!pScientificGraph->fnCepstrum(iGraph,filter_callback))
+						{StatusText->Caption="Real Cepstrum failed";
+						 ShowMessage("Warning: Real Cepstrum failed - adding original trace to graph");
+						}
+				break;
 		}
   if(*ys!=',')
 	{// if this is the final trace then rescale & actually plot, otherwise skip this step to save time
@@ -2891,7 +2808,54 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
    if(s) free(s);
    if(date_time_fmt!=NULL) {free(date_time_fmt); date_time_fmt=NULL;}
 // #define DEBUG_RAM_USED /* when defined use rprintf to give "user" more info */
-#if 0 /* for 64 bit compiles this always gives 2.5MB  */
+#if 1  /* use Windows API to get information about the memory usage of a specified process - see    https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-getprocessmemoryinfo */
+	/* This does not exactly match what task manager says, but its a similar number [ and seems to be the best match possible]    */
+   PROCESS_MEMORY_COUNTERS_EX pmc;
+   HANDLE hProcess;
+   double dram_used=0;
+   hProcess=GetCurrentProcess();// get handle to current process
+   if ( GetProcessMemoryInfo( hProcess,(PROCESS_MEMORY_COUNTERS*) &pmc, sizeof(pmc)) )
+		{   // all sizes in bytes
+#ifdef DEBUG_RAM_USED
+			rprintf( "\tPageFaultCount: 0x%08X\n", pmc.PageFaultCount );
+			rprintf( "\tPeakWorkingSetSize: 0x%08X = %.1f MB\n",
+					  pmc.PeakWorkingSetSize,pmc.PeakWorkingSetSize/(1024.0*1024.0) );
+			rprintf( "\tWorkingSetSize: 0x%08X = %.1f MB\n", pmc.WorkingSetSize, pmc.WorkingSetSize/(1024.0*1024.0) );
+			rprintf( "\tQuotaPeakPagedPoolUsage: 0x%08X = %.1f MB\n",
+					  pmc.QuotaPeakPagedPoolUsage,pmc.QuotaPeakPagedPoolUsage/(1024.0*1024.0) );
+			rprintf( "\tQuotaPagedPoolUsage: 0x%08X = %.1f MB\n",
+					  pmc.QuotaPagedPoolUsage,pmc.QuotaPagedPoolUsage/(1024.0*1024.0) );
+			rprintf( "\tQuotaPeakNonPagedPoolUsage: 0x%08X = %.1f MB\n",
+					  pmc.QuotaPeakNonPagedPoolUsage,pmc.QuotaPeakNonPagedPoolUsage/(1024.0*1024.0) );
+			rprintf( "\tQuotaNonPagedPoolUsage: 0x%08X = %.1f MB\n",
+					  pmc.QuotaNonPagedPoolUsage,pmc.QuotaNonPagedPoolUsage/(1024.0*1024.0) );
+			rprintf( "\tPagefileUsage: 0x%08X = %.1f MB\n", pmc.PagefileUsage,pmc.PagefileUsage/(1024.0*1024.0) );
+			rprintf( "\tPeakPagefileUsage: 0x%08X = %.1f MB\n",
+					  pmc.PeakPagefileUsage,pmc.PeakPagefileUsage/(1024.0*1024.0) );
+			rprintf( "\tPrivateUsage: 0x%08X = %.1f MB\n", pmc.PrivateUsage, pmc.PrivateUsage/(1024.0*1024.0) );
+
+#endif
+			dram_used=pmc.PrivateUsage/(1024.0*1024.0);  // convert to MB
+		}
+	else
+		{rprintf("Cannot get RAM usage - GetProcessMemoryInfo() returned an error\n");
+        }
+
+   if(nos_traces_added>1)
+		{
+		 snprintf(cstring,sizeof(cstring),"Added %d traces in %.3f secs. %.1f MB ram used",nos_traces_added,(double)(end_t-start_t)/(double)CLOCKS_PER_SEC,dram_used);
+
+		}
+  else if(yexpr)
+		{
+		 snprintf(cstring,sizeof(cstring),"Added trace in %.3f secs. %.1f MB ram used",(end_t-start_t)/(double)CLOCKS_PER_SEC,dram_used);
+		}
+	else
+		{
+		 snprintf(cstring,sizeof(cstring),"Added column %d in %.3f secs. %.1f MB ram used",ycol,(end_t-start_t)/(double)CLOCKS_PER_SEC,dram_used);
+		}
+
+#elif 0 /* for 64 bit compiles this always gives 2.5MB  */
    TMemoryMap  mmap;
    GetMemoryMap(mmap);
    unsigned int ram_used=0;    // in 64kbytes chunks
@@ -2904,18 +2868,18 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
    dram_used=ram_used*64.0/1024.0;  // convert to MB
    if(nos_traces_added>1)
 		{
-		 snprintf(cstring,sizeof(cstring),"Added %d traces in %.0f secs. %.1f MB ram used",nos_traces_added,(end_t-start_t)/CLK_TCK,dram_used);
+		 snprintf(cstring,sizeof(cstring),"Added %d traces in %.0f secs. %.1f MB ram used",nos_traces_added,(double)(end_t-start_t)/(double)CLOCKS_PER_SEC,dram_used);
 
 		}
   else if(yexpr)
 		{
-		 snprintf(cstring,sizeof(cstring),"Added trace in %.1f secs. %.1f MB ram used",(end_t-start_t)/CLK_TCK,dram_used);
+		 snprintf(cstring,sizeof(cstring),"Added trace in %.1f secs. %.1f MB ram used",(end_t-start_t)/(double)CLOCKS_PER_SEC,dram_used);
 		}
 	else
 		{
-		 snprintf(cstring,sizeof(cstring),"Added column %d in %1f secs. %.1f MB ram used",ycol,(end_t-start_t)/CLK_TCK,dram_used);
+		 snprintf(cstring,sizeof(cstring),"Added column %d in %1f secs. %.1f MB ram used",ycol,(end_t-start_t)/(double)CLOCKS_PER_SEC,dram_used);
 		}
-#elif 1 /* this returns 125MB when task manager gives 136.8MB - but as it only returns RAM used this is sensible */
+#elif 0 /* this returns 125MB when task manager gives 136.8MB - but as it only returns RAM used this is sensible */
   TMemoryManagerState memstatus;
   // TSmallBlockTypeState bs;
   double ram_used=0;
@@ -2938,32 +2902,32 @@ repeatcomma: // sorry for this !!!, come back here to add next trace if we find 
   dram_used=(ram_used+dram_used)/(1024.0*1024.0); // convert to MB
   if(nos_traces_added>1)
 		{
-		 snprintf(cstring,sizeof(cstring),"Added %d traces in %.0f secs. %.0fMB ram used",nos_traces_added,(end_t-start_t)/CLK_TCK,dram_used);
+		 snprintf(cstring,sizeof(cstring),"Added %d traces in %.0f secs. %.0fMB ram used",nos_traces_added,(end_t-start_t)/(double)CLOCKS_PER_SEC,dram_used);
 
 		}
   else if(yexpr)
 		{
-		 snprintf(cstring,sizeof(cstring),"Added trace in %.1f secs. %.0fMB ram used",(end_t-start_t)/CLK_TCK,dram_used);
+		 snprintf(cstring,sizeof(cstring),"Added trace in %.1f secs. %.0fMB ram used",(end_t-start_t)/(double)CLOCKS_PER_SEC,dram_used);
 		}
 	else
 		{
-		 snprintf(cstring,sizeof(cstring),"Added column %d in %1f secs. %.0fMB ram used",ycol,(end_t-start_t)/CLK_TCK,dram_used);
+		 snprintf(cstring,sizeof(cstring),"Added column %d in %1f secs. %.0fMB ram used",ycol,(end_t-start_t)/(double)CLOCKS_PER_SEC,dram_used);
 		}
 
 #else     /* THeapStatus is deprecated - this returns 357MB when task manager gives 358.3 MB */
   THeapStatus heapstatus=GetHeapStatus();
   if(nos_traces_added>1)
 		{
-		 snprintf(cstring,sizeof(cstring),"Added %d traces in %.0f secs. %uMB ram used",nos_traces_added,(end_t-start_t)/CLK_TCK,heapstatus.TotalAddrSpace/(1024*1024));
+		 snprintf(cstring,sizeof(cstring),"Added %d traces in %.0f secs. %zuMB ram used",nos_traces_added,(end_t-start_t)/(double)CLOCKS_PER_SEC,heapstatus.TotalAddrSpace/(1024*1024));
 
 		}
   else if(yexpr)
 		{
-		 snprintf(cstring,sizeof(cstring),"Added trace in %.1f secs. %uMB ram used",(end_t-start_t)/CLK_TCK,heapstatus.TotalAddrSpace/(1024*1024));
+		 snprintf(cstring,sizeof(cstring),"Added trace in %.1f secs. %zuMB ram used",(end_t-start_t)/(double)CLOCKS_PER_SEC,heapstatus.TotalAddrSpace/(1024*1024));
 		}
 	else
 		{
-		 snprintf(cstring,sizeof(cstring),"Added column %d in %1f secs. %uMB ram used",ycol,(end_t-start_t)/CLK_TCK,heapstatus.TotalAddrSpace/(1024*1024));
+		 snprintf(cstring,sizeof(cstring),"Added column %d in %1f secs. %zuMB ram used",ycol,(end_t-start_t)/(double)CLOCKS_PER_SEC,heapstatus.TotalAddrSpace/(1024*1024));
 		}
 #endif
   rprintf("%s\n\n",cstring);
@@ -3460,7 +3424,7 @@ void __fastcall TPlotWindow::Edit_yChange(TObject *Sender)
 #else
  /* let user split label into 2 parts by embeddeding \n in the text. Part goes into Ylabel1 and the rest onto YLabel2 */
  if(Edit_y->Text.Pos("\\n")>0)
-        { // label is long - split into 2 lines on the 1st space
+        { // split into 2 lines at \n
           int i=Edit_y->Text.Pos("\\n") ;
           int l= Edit_y->Text.Length();
           pScientificGraph->YLabel1=Edit_y->Text.SubString(1,i-1);
@@ -3472,7 +3436,7 @@ void __fastcall TPlotWindow::Edit_yChange(TObject *Sender)
          pScientificGraph->YLabel2="";
         }
 #endif
- fnReDraw();
+ FormResize(Sender); // may change from 1 line to 2 which might need resizing
 }
 //---------------------------------------------------------------------------
 
@@ -3551,7 +3515,7 @@ void __fastcall TPlotWindow::FormCreate(TObject *Sender)
 
 void __fastcall TPlotWindow::Edit_titleChange(TObject *Sender)
 { P_UNUSED(Sender);
-  Edit_title->Font->Size= pScientificGraph-> aTextSize;   // set correct size of text (same as X and Y axis titles)
+  Edit_title->Font->Size=(int)(pScientificGraph->aTextSize*initial_ppi_scaling); // only seems to need correcting for initial ppi
 }
 //---------------------------------------------------------------------------
 
@@ -3620,7 +3584,8 @@ void __fastcall TPlotWindow::ButtonSave1Click(TObject *Sender)
 #if 1
 			// see https://docwiki.embarcadero.com/Libraries/Sydney/en/Vcl.Graphics.TWICImage.ImageFormat
 			// and https://learn.microsoft.com/en-us/windows/win32/wic/native-wic-codecs
-			 std::auto_ptr<TWICImage> image(new TWICImage());
+			 std::unique_ptr<TWICImage> image(new TWICImage());
+			 // TWICImage *image=new TWICImage;      // needs a matchng delete image
 			 image->Assign(Image1->Picture->Bitmap);
 			 if(extn=="bmp")
 				{image->ImageFormat=wifBmp;
@@ -3737,7 +3702,7 @@ void __fastcall TPlotWindow::SaveDataAs1Click(TObject *Sender)
   if(FileSaveDialogCSV->Execute()) // get a filename     was SavePictureDialog1->Execute()
 		{// save_filename=FileSaveDialogCSV->FileName;
 		 save_filename = Utf8Of(FileSaveDialogCSV->FileName.c_str());
-		 if(pScientificGraph->SaveCSV(save_filename.c_str(),Utf8Of(Edit_x->Text.c_str()),-MAXDOUBLE,MAXDOUBLE))   // use x axis title as name of 1st column in csv file
+		 if(pScientificGraph->SaveCSV(save_filename.c_str(),Utf8Of(Edit_x->Text.c_str()),-HUGE_VAL,HUGE_VAL))   // use x axis title as name of 1st column in csv file
 				{ShowMessage("CSV save completed OK");
 				}
 		}
@@ -3836,178 +3801,164 @@ void __fastcall TPlotWindow::FormMouseWheelUp(TObject *Sender,
 
 extern int zoom_fun_level;  // used to keep track of level of recursion in zoom function (allows partial display refresh for speed in multiple zooms)
 
-#if 1
+static void scale_button(TBitBtn *BitBtnx, int cppi )
+{
+  /* resize images on a button to cppi - see https://zarko-gajic.iz.hr/making-the-glyph-property-high-dpi-aware-for-tbitbtn-and-tspeedbutton/ */
+  if(BitBtnx->Glyph==NULL) return; // nothing to do if no Glyph on button
+  if(BitBtnx->Tag==0) BitBtnx->Tag=96; // assume initially at 96ppi
+  // int cppi=GetCurrentPPI();
+  if(BitBtnx->Tag!=cppi)
+	{// size has changed
+	   // see  https://docwiki.embarcadero.com/Libraries/Sydney/en/Vcl.Graphics.TBitmap_Properties
+	 // enum DECLSPEC_DENUM TPixelFormat : unsigned char { pfDevice, pf1bit, pf4bit, pf8bit, pf15bit, pf16bit, pf24bit, pf32bit, pfCustom };
+	 BitBtnx->Glyph->Transparent=false; // may not have any effect?
+	 BitBtnx->Glyph->TransparentMode=tmFixed;
+	 BitBtnx->Glyph->PixelFormat=(enum TPixelFormat )7; // this is the format we will end up on after resize below - needed as RGB(240,240,240) is not available in original format
+	 TColor TransparentColor= BitBtnx->Glyph->TransparentColor;
+	 if((TransparentColor&0xffffff)!= (TColor(RGB(123,234,57)) & 0xffffff) )
+		{// "fixup" transparent pixels to match button background - only needs to be done once
+		 for (int y = 0; y < BitBtnx->Glyph->Height; y++)
+			{
+			 for (int x = 0; x < BitBtnx->Glyph->Width; x++)
+				  {
+				   if(BitBtnx->Glyph->Canvas->Pixels[x][y]==(TransparentColor&0xffffff))
+					  BitBtnx->Glyph->Canvas->Pixels[x][y]=TColor(RGB(253,253,253)); // make transparent= grey(253,253,253) with styles enabled and Windows selected, without styles it should be grey (240,240,240)
+				  }
+			}
+		 }
+	 // see https://docwiki.embarcadero.com/Libraries/Sydney/en/Vcl.Graphics.TWICImage.ImageFormat
+	 // and https://learn.microsoft.com/en-us/windows/win32/wic/native-wic-codecs
+	 // https://docwiki.embarcadero.com/Libraries/Sydney/en/Vcl.Graphics.TWICImageInterpolationMode
+     // https://docwiki.embarcadero.com/Libraries/Sydney/en/Vcl.Graphics.TWICImage.CreateScaledCopy
+	 // std::unique_ptr<TWICImage> image(new TWICImage());
+	 TWICImage* WICImage = new TWICImage();
+	 TWICImage* scaledWICImage = new TWICImage();
+	 int ng=1;
+	 int oldppi=(int)(BitBtnx->Tag); // current ppi and we need to change to cppi
+	 ng=BitBtnx->NumGlyphs;
+	 int NewWidth=  MulDiv(BitBtnx->Glyph->Width,cppi,oldppi); // BitBtn10->Glyph->Width*cppi/(double)oldppi+0.5;
+	 int NewHeight= MulDiv(BitBtnx->Glyph->Height,cppi,oldppi);  // BitBtn10->Glyph->Height*cppi/(double)oldppi+0.5;
+	 BitBtnx->Glyph->Transparent=false;   // see  https://docwiki.embarcadero.com/Libraries/Sydney/en/Vcl.Graphics.TBitmap_Properties
+	 WICImage->Assign(BitBtnx->Glyph);
+	 scaledWICImage=WICImage->CreateScaledCopy(NewWidth,NewHeight,wipmHighQualityCubic);     // Actually do the resize ! default is wipmHighQualityCubic , tried wipmFant   wipmLinear
+	 BitBtnx->Glyph->Assign(scaledWICImage);
+	 BitBtnx->Glyph->Transparent=false;   // see  https://docwiki.embarcadero.com/Libraries/Sydney/en/Vcl.Graphics.TBitmap_Properties
+	 BitBtnx->Glyph->TransparentMode=tmFixed;
+	 BitBtnx->Glyph->TransparentColor=TColor(RGB(123,234,57)); // unlikely colour!
+	 BitBtnx->Tag=cppi;  // new ppi
+	 delete WICImage;
+	 delete scaledWICImage;
+	}
+}
+
 // new version for use with undockable panel 2
  void __fastcall TPlotWindow::FormResize(TObject *Sender)
 {
  /* resize of whole window, most movement of contents is automatic, here we fix the things that are not automatic */
  P_UNUSED(Sender);
- //int new_width, new_height ;
+
  if(pScientificGraph == NULL || pScientificGraph->pBitmap==NULL) return; // exiting - ignore the resize
- if(Panel2->Floating)
+ VertScrollBar->Position=0;  // make scroll bar at top on resize
+ font_size_mult_ppi=GetCurrentPPI()/96.0f; // scaling factor for font sizes to correct for screen ppi
+ Edit_title->Font->Size=(int)(pScientificGraph->aTextSize*initial_ppi_scaling); // only seems to need correcting for initial ppi
+
+ if(!Panel2->Visible)
 	{  // if panel 2 is floating panel 1 takes up all the space
-        // rprintf("resizing panel 1 as panel 2 undocked\n");
 		Panel1->Width =ClientWidth;
-		Panel1->Height = ClientHeight<initial_Panel1_Height? initial_Panel1_Height : ClientHeight;
+		Panel1->Height = ClientHeight;
 	}
   else
 	{// use basically the same code as at startup - give panel 2 all the space it needs and panel 1 has the rest
-	 Panel2->Width=Edit_y->Left + Edit_y->Width ; // make sure panel 2 is wide enough to fit widest (far right) item
-	 Panel2->Left=ClientWidth-Panel2->Width ;
-	 Panel2->Height = ClientHeight<initial_Panel1_Height? initial_Panel1_Height : ClientHeight;
+	 int needed_width=Edit_y->Left + Edit_y->Width ; // make sure panel 2 is wide enough to fit widest (far right) item
+	 if(Label16->Left + Label16->Width > needed_width)  needed_width=Label16->Left + Label16->Width ;
+	 Time_from0->Width=(int)(130.0f*GetCurrentPPI()/96.0f); // was 109 it does not have an autosize property
+	 if(Time_from0->Left+Time_from0->Width > needed_width) needed_width=Time_from0->Left+Time_from0->Width;
+	 CheckBox_Compress->Width=(int)(130.0f*GetCurrentPPI()/96.0f); // was 123 it does not have an autosize property
+	 if(CheckBox_Compress->Left+CheckBox_Compress->Width > needed_width) needed_width=CheckBox_Compress->Left+CheckBox_Compress->Width;
+	 Panel2->Width=needed_width ; // make sure panel 2 is wide enough to fit widest (far right) item
+	 Panel2->Left=ClientWidth-needed_width ;
+	 Panel2->Height =  ClientHeight;
 	 Panel1->Width  =Panel2->Left-Panel1->Left;    // resize if necessary so graph fits in leaving space for controls on right
-	 Panel1->Height = ClientHeight<initial_Panel1_Height? initial_Panel1_Height : ClientHeight;
-	}
+
+	 Panel1->Height=ClientHeight; // height of main window
+	 if(Panel2->Height> Panel1->Height)
+		Panel1->Height=Panel2->Height;
+	 }
+  Panel1->ClientHeight=Panel1->Height-1; // same difference as initially was  -(1041-982)
+  Panel1->ClientWidth=Panel1->Width; // was  -(1306-1290)
 
   Edit_title->Width=Panel1->Width-Edit_title->Left-20; // allow to go to (nearly) the far edge  (Title is centered)
-
+  //rprintf("FormResize: Edit_title->Height=%d,Edit_title->Top=%d,Edit_title->Font->Height=%d\n",Edit_title->Height,Edit_title->Top,Edit_title->Font->Height);
  /* scale positions based on size */
+  // do left side border 1st
 
-  pScientificGraph->fLeftBorder = 0.1f*BASE_PWIDTH/Panel1->ClientWidth;      //Borders of Plot in Bitmap in %/100  was 0.2
-  pScientificGraph->fBottomBorder = 0.1f*BASE_HEIGHT/Panel1->ClientHeight;   // was 0.25
+  pScientificGraph->pBitmap->Canvas->Font->Size=(int)(pScientificGraph->iTextSize*font_size_mult_ppi);
+  int off2=pScientificGraph->pBitmap->Canvas->TextWidth("-0.000000000000");  // needs to be done with Font Size = iTextSize   "-0...." is 15 chars in total
+  int Itextht=pScientificGraph->pBitmap->Canvas->TextHeight("0");  // height of numeric "tick" values
+  pScientificGraph->pBitmap->Canvas->Font->Size=(int)(pScientificGraph->aTextSize*font_size_mult_ppi);
+  int Ltextht=pScientificGraph->pBitmap->Canvas->TextHeight("0g");  // height of Legend text
+  Edit_title->Height= Ltextht+(int)(2.0f*font_size_mult_ppi);  // leave a small gap
+  Edit_title->Refresh();
+  // rprintf("FormResize(): Screen DPI=%u\n",GetCurrentPPI());    // was Screen->PixelsPerInch
+  // rprintf(" iTextsize=%d actual height=%d pixels aTextSize=%d in pixels=%d\n",pScientificGraph->iTextSize,Itextht,pScientificGraph->aTextSize,Ltextht);
+  int off1;
+  if(pScientificGraph->YLabel2=="")
+	{off1=off2+Ltextht; // only 1 line of Y label text
+	 if(BitBtn5->Left+BitBtn5->Width>Ltextht) off1=off2+BitBtn5->Left+BitBtn5->Width; /* button is wider than Axis title */
+	}
+  else
+	{off1=off2+2*Ltextht; // needs to be done with Font Size = aTextSize , as text is vertical here need to add Height of 2nd line
+	 if(BitBtn5->Left+BitBtn5->Width>2*Ltextht) off1=off2+BitBtn5->Left+BitBtn5->Width; /* button is wider than Axis title */
+	}
+  pScientificGraph->fLeftBorder = (float)off1/Panel1->ClientWidth;      //Borders of Plot in Bitmap in %/100 to allow space for scale marking" and 2 lines of Y axis title
+  // now do bottom border - needs space for tick legend (height), Axis title(height) (and not  a "button"  as that is subtracted from height below)
+  off1=Itextht+Ltextht+ButtonPlotToClipboard->Height; //  remember 0,0 is top left
+  off2=Panel1->ClientHeight-ButtonPlotToClipboard->Top;
+  pScientificGraph->fBottomBorder =  (float)(Itextht+Ltextht+5/* *font_size_mult_ppi */)/(Panel1->ClientHeight-off1);
+  pScientificGraph->fTopBorder=(float)(5*font_size_mult_ppi+Edit_title->Height)/(Panel1->ClientHeight-off1); // make sure there is space for "Title" at the top of the screen
 
   /* actually resize bitmap */
-  Image1->Height=Panel1->ClientHeight;        //fit TScientificGraph-Bitmap in
-  Image1->Width=Panel1->ClientWidth;          //TImage1-object in Panel1
-  iBitmapHeight=Panel1->ClientHeight;
-  iBitmapWidth=Panel1->ClientWidth;
+  Image1->Left=BitBtn5->Width+BitBtn5->Left;
+  Image1->Height=Panel1->ClientHeight-off1;        //fit TScientificGraph-Bitmap in
+  Image1->Width=Panel1->ClientWidth-Image1->Left;          //TImage1-object in Panel1
+  // rprintf(" resize:Image1->Height=%d Panel1->ClientHeight-Edit_title->Height=%d\n",Image1->Height,Panel1->ClientHeight-Edit_title->Height );
+  iBitmapHeight=Panel1->ClientHeight-off2; //  was Panel1->ClientHeight-ButtonPlotToClipboard->Height;
+  iBitmapWidth=Image1->Width;
   pScientificGraph->resize_bitmap(iBitmapWidth, iBitmapHeight);   // change actual size of bitmap
-  if(zoom_fun_level==0)
-	{// no recursion (yet)
-	 zoom_fun_level=1;   // tell fnPaint() depth of recursion
-	 while(zoom_fun_level)
-		{if(zoom_fun_level==1)
-			{pScientificGraph->fnPaint();                    //repaint (note this might be slow, so if another resize event occurs we abort fnPaint())
-			 Image1->Picture->Assign(pScientificGraph->pBitmap);           //assign
-			}
-		  else
-			{Image1->Picture->Assign(pScientificGraph->pBitmap);           //assign
-			 Application->ProcessMessages(); /* allow windows to update (but not go idle) - potentially causes recursion ! */
-			}
-		 zoom_fun_level--;
-		}
-	 }
-  else zoom_fun_level++;// flag zoom level changed
-}
-#else
- // old version that worked with undocked displays
-void __fastcall TPlotWindow::FormResize(TObject *Sender)
-{
- /* resize of whole window, most movement of contents is automatic, here we fix the things that are not automatic */
- P_UNUSED(Sender);
- int new_width, new_height ;
- // initial_ClientWidth=1591 initial_ClientHeight=980 initial_Panel1_Width=1300 initial_Panel1_Height=980
- new_width =initial_Panel1_Width+(ClientWidth-initial_ClientWidth);
- new_height =initial_Panel1_Height+(ClientHeight-initial_ClientHeight);
- if( new_width<100) return; // min allowed width of graph
- if(new_height<initial_Panel1_Height) new_height = initial_Panel1_Height; // scroll bar will appear if this happens so no point in reducing graph size as right "panel" will not shrink
- Panel1->Width  =new_width;
- Panel1->Height =new_height;
-#if 1  /* scale positions based on size */
- if(pScientificGraph != NULL && pScientificGraph->pBitmap!=NULL)
-	{
-	 pScientificGraph->fLeftBorder = 0.1*BASE_PWIDTH/Panel1->ClientWidth;      //Borders of Plot in Bitmap in %/100  was 0.2
-	 pScientificGraph->fBottomBorder = 0.1*BASE_HEIGHT/Panel1->ClientHeight;   // was 0.25
-	 // pScientificGraph->dLegendStartX=0.6*BASE_PWIDTH/Panel1->ClientWidth;     //Legend position in %/100 in Plot was 0.8
-	 // pScientificGraph->dLegendStartY=0.99*BASE_HEIGHT/Panel1->ClientHeight;    // was 0.95
-	}
-#endif
-#if 1  /* actually resize bitmap */
-  Image1->Height=Panel1->ClientHeight;        //fit TScientificGraph-Bitmap in
-  Image1->Width=Panel1->ClientWidth;          //TImage1-object in Panel1
-  iBitmapHeight=Panel1->ClientHeight;        //fit TScientificGraph-Bitmap in
-  iBitmapWidth=Panel1->ClientWidth;          //TImage1-object in Panel1
-											 //init ScientificGraph with Bitmap-
-											 //size    #
-  if(pScientificGraph != NULL && pScientificGraph->pBitmap!=NULL)
-		{// make sure pBitmap is valid before we use it
-		 pScientificGraph->resize_bitmap(iBitmapWidth, iBitmapHeight);   // change actual size of bitmap
-		 if(zoom_fun_level==0)
-				{// no recursion (yet)
-				 zoom_fun_level=1;   // tell fnPaint() depth of recursion
-				 while(zoom_fun_level)
-						{if(zoom_fun_level==1)
-								{pScientificGraph->fnPaint();                    //repaint (note this might be slow, so if another resize event occurs we abort fnPaint())
-								 Image1->Picture->Assign(pScientificGraph->pBitmap);           //assign
-								}
-						 else
-								{Image1->Picture->Assign(pScientificGraph->pBitmap);           //assign
-								 Application->ProcessMessages(); /* allow windows to update (but not go idle) - potentially causes recursion ! */
-								}
-						 zoom_fun_level--;
-						}
-				}
-		 else zoom_fun_level++;// flag zoom level changed
-		}
-#else  /* just rescale fixed size bitmap */
- Image1->Height =978+(new_height-980);
- Image1->Width =1298+(new_width-1591);
-#endif
- // Image1->Picture->Assign(pScientificGraph->pBitmap);
-}
-#endif
-//---------------------------------------------------------------------------
 
-static bool firstpanel2undock=true;
+   /* resize images on buttons - see https://zarko-gajic.iz.hr/making-the-glyph-property-high-dpi-aware-for-tbitbtn-and-tspeedbutton/ */
+  int cppi=GetCurrentPPI();
+  scale_button(BitBtn2, cppi );
+  scale_button(BitBtn3, cppi );
+  scale_button(BitBtn4, cppi );
+  scale_button(BitBtn5, cppi );
+  scale_button(BitBtn6, cppi );
+  scale_button(BitBtn7, cppi );
+  scale_button(BitBtn8, cppi );
+  scale_button(BitBtn9, cppi );
+  scale_button(BitBtn10, cppi );
 
-void __fastcall TPlotWindow::Panel2EndDock(TObject *Sender, TObject *Target, int X,
-		  int Y)
-{P_UNUSED(Target);
- P_UNUSED(X);
- P_UNUSED(Y);
- // undock of panel2 (the main control panel)  - Note the Undock() event does not appear to be called so do it this way instead
-
-#if 0
- if(Panel2->Floating)
-	{SetFocus();
-	}
-#endif
- if(firstpanel2undock)
-	{ if(Panel2->Floating)
-		{firstpanel2undock=false;
-		 // rprintf("Undock!\n");
-		 // initial_Panel1_Width+=Panel2->Width ; // panel 1  (the graph) can now take all the space on the form
-		 Panel3->Visible =true; // enable menu item so can make visible again if user clicks "X".
-		 Panel3->Enabled =true;
-		 visible1->Visible =true; // enable menu item so can make visible again if user clicks "X".
-		 visible1->Enabled =true;
-		 Panel2->AutoSize =false; // needs to be false to see scroll bars
-		 Panel2->AutoScroll =true; // enable scroll bars
-		 FormResize(Sender); // do the rest of the work for a form resize
-		 Application->ProcessMessages();
-#if 0    /* horiz scroll bar does not work very well..   */
-		 rprintf("Panel2->VertScrollBar->Size=%d\n",(int)(Panel2->VertScrollBar->Size));
-		 rprintf("Panel2: Width=%d Left=%d Top=%d Height=%d\n", Panel2->Width,Panel2->Left,Panel2->Top,Panel2->Height);
-		 //Panel2->Width=Panel2->Width+20;
-		 Panel2->HorzScrollBar->Range=Panel2->Width;   // +20 to allow for vertical scroll bar
-         Panel2->HorzScrollBar->Visible=true;
-		 Application->ProcessMessages();
-#endif
-		}
-	}
+  fnReDraw(); // redraw screen (needed to update text as size may have changed) , this triggers a call to fnPaint()
 }
+
 //---------------------------------------------------------------------------
 
 
 
-void __fastcall TPlotWindow::Panel2Resize(TObject *Sender)
-{P_UNUSED(Sender);
-#if 0
- if(Panel2->Floating  )
-	{Panel2->AutoSize =false;
-	 Panel2->AutoScroll =true; // enable scroll bars
-	}
-#endif
-}
-//---------------------------------------------------------------------------
+
 
 
 
 void __fastcall TPlotWindow::visible1Click(TObject *Sender)
-{P_UNUSED(Sender);
- // menu item panel/visible clicked    , make panel 2 visible again
- if(Panel2->Floating && !Panel2->Visible )
-    Panel2->Visible =true;
+{//P_UNUSED(Sender);
+ // menu item panel/hide/show right panel
+  Panel2->Visible =!Panel2->Visible;
+  Panel2->Enabled =!Panel2->Enabled;
+  if(Panel2->Visible)
+	visible1->Caption="Hide right panel";
+  else
+	visible1->Caption="Show right panel";
+  FormResize(Sender);
 }
 //---------------------------------------------------------------------------
 
@@ -4112,8 +4063,7 @@ void __fastcall TPlotWindow::SpinEdit_FontsizeChange(TObject *Sender)
 {
  P_UNUSED(Sender);
  pScientificGraph->aTextSize=SpinEdit_Fontsize->Value;   // set size of text for axis titles and main title
- Edit_title->Font->Size=SpinEdit_Fontsize->Value;
- fnReDraw(); // redraw screen with new font size
+ FormResize(Owner); // do the same as when window is resized - avoids the need for duplicated code. Here needed as nargins will change
 }
 //---------------------------------------------------------------------------
 
@@ -4134,4 +4084,25 @@ void __fastcall TPlotWindow::FormGetSiteInfo(TObject *Sender, TControl *DockClie
  CanDock=false;// no docking allowed
 }
 //---------------------------------------------------------------------------
+
+
+void __fastcall TPlotWindow::FormBeforeMonitorDpiChanged(TObject *Sender, int OldDPI,
+		  int NewDPI)
+{P_UNUSED(Sender);
+ P_UNUSED(OldDPI);
+ P_UNUSED(NewDPI);
+#if 0
+	 if(Sender==Panel1) rprintf("DPI changed Panel1\n");
+	 if(Sender==Panel2) rprintf("DPI changed Panel2\n");
+	 if(Sender==Form1->pPlotWindow) rprintf("DPI changing from %d to %d : PlotWindow\n",OldDPI,NewDPI);  // only this one shown as only the PlotWindow has this event (i.e. panel 1 and docked panel2) - and then only when the main PlotWindow is on a screen thats impacted
+#endif
+ // make sure vertical scollbar at top  !
+	 VertScrollBar->Position=0;
+}
+//---------------------------------------------------------------------------
+
+
+
+
+
 

@@ -1,22 +1,35 @@
 Cvsgraph is a portable program which does not need installation.
+
 Copy the file csvgraph.exe to any location on your computer (or run it from a USB-stick or similar).
-If you wish the Help/Manual function to work then copy csvgraph.pdf to the same directory (location) as csvgraph.exe.
+From version 3.2 two versions are available, 32-bit and 64-bit – please select the version that 
+matches the operating system version you are running. This can be found in settings – System –
+About under system type. If you are unsure the 32-bit version will run on both versions of the 
+operating system but will be limited to using 4GB of memory (which will be adequate for all but 
+extremely large files).
+In version 4v2 and above three versions are available, the “64x” version has been compiled with a 
+more recent version of the compiler/linker and now uses the UCRT (Universal C Runtime) runtime. 
+The UCRT should be present on all computers running Windows 10 or 11 and is available for 
+previous versions back to Windows XP – see for example https://learn.microsoft.com/en￾us/cpp/windows/universal-crt-deployment?view=msvc-170 .
+ Adding a trace from a 12GB csv file was 32% faster with the 64x version compared to the 64-bit version 
+ (this file was too big to load with the 32-bit version) so using the 64x version is recommended.
+Functionality should be identical on all 3 versions. 
+Please report any issues with via github as usual.
+
+If you wish the Help/Manual function to work then copy csvgraph.pdf to the same directory 
+(location) as csvgraph.exe. If you change the name of csvgraph.exe (e.g., to csvgraph64.exe) then the 
+name of the pdf file also has to change (to csvgraph64.pdf in the case).
+
 A shortcut on your desktop makes it simple to execute csvgraph.
-The first time you run csvgraph you may see a Windows warning “The Publisher could not be verified. Are you sure you want to run this software”
-(or similar), you can either run anyway (the executable from github should be safe) or compile your own executable from the source files (see below).
-You may also get a similar message from your pdf reader the first time you use Menu/Help/Manual function, again you can accept this as you know why the pdf reader was invoked.
+
+The first time you run csvgraph you may see a Windows warning “The Publisher could not be 
+verified. Are you sure you want to run this software” (or similar), you can either run anyway (the 
+executable from github - https://github.com/p-j-miller/csvgraph should be safe) or compile your 
+own executable from the source files (a free version of the required Builder C++ compiler is available 
+at www.embarcadero.com/products/cbuilder/starter ). Builder C++ 10.4 is required to build the 64-
+bit version. As of version 3.7, csvgraph is built with Builder C++ 11.3, while version 4v1 and above is 
+built with Builder C++ 12.1.
+
+You may also get a similar message from your pdf reader the first time you use Menu/Help/Manual 
+function, again you can accept this as you know why the pdf reader was invoked.
 
 See the file LICENSE for details but csvgraph is free for both commercial and non-commercial use.
-
-csvgraph.exe runs on Windows (10 32 or 64 bit - it will possibly run on earlier versions of Windows back to Vista but this is untested).
-It will probably also run on Linux under Wine, but this is also untested on recent versions of csvgraph.
-
-
-The source code was compiled with Embarcadero® C++Builder 10.2 - a suitable project file is included in the archive. It should compile with no errors or warnings.
-It should be easy to move to a more recent version of C++Builder (at least for a 32 bit Windows target), but equally it would not be very hard to revert to earlier versions (back to Builder C++ V5) if necessary. 
-A free version of the required Builder C++ compiler is available at https://www.embarcadero.com/products/cbuilder/starter
-
-Many parts of the source code could be of interest if you don't use C++Builder - for example atof.c is part of ya-sprintf see https://github.com/p-j-miller/ya-sprintf
-expr-code.cpp contains many routines that are generally useful (and most of this file is pure C) - including a fast general expression evaluator for expressions stored in strings.
-UScientificGraph.cpp contains an efficient median filter implementation and a polynomial fit implementation both of which work well with a very large number of data points and the implementations for these are believed to be novel. 
-It also contains a fast line clipping algorithm that allows "infinite" zoom in/out. 
