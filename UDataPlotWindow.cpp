@@ -282,12 +282,12 @@ extern TForm1 *Form1;
 extern const char * Prog_Name;
 #ifdef _WIN64
  #ifdef _UCRT
-  const char * Prog_Name="CSVgraph (Github) 4v2 (64x)";   // Add "x" to flag latest compiler. needs to be global as used in about box as well.
+  const char * Prog_Name="CSVgraph (Github) 4v3 (64x)";   // Add "x" to flag latest compiler. needs to be global as used in about box as well.
  #else
- const char * Prog_Name="CSVgraph (Github) 4v2 (64 bit)";   // needs to be global as used in about box as well.
+ const char * Prog_Name="CSVgraph (Github) 4v3 (64 bit)";   // needs to be global as used in about box as well.
  #endif
 #else
-const char * Prog_Name="CSVgraph (Github) 4v2 (32 bit)";   // needs to be global as used in about box as well.
+const char * Prog_Name="CSVgraph (Github) 4v3 (32 bit)";   // needs to be global as used in about box as well.
 #endif
 #if 1 /* if 1 then use fast_strtof() rather than atof() for floating point conversion. Note in this application this is only slightly faster (1-5%) */
 extern "C" float fast_strtof(const char *s,char **endptr); // if endptr != NULL returns 1st character thats not in the number

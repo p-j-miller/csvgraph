@@ -3930,7 +3930,7 @@ void TScientificGraph::fnCheckScales()
         }
 }
 
-
+#include "ya-dconvert.h"      /* fast float->string conversion */
 
 bool TScientificGraph::SaveCSV(char *filename,char *x_axis_name, double xmin, double xmax)
 {          // save data into specified csv filename - only save xvalues in defined range
@@ -4003,6 +4003,45 @@ bool TScientificGraph::SaveCSV(char *filename,char *x_axis_name, double xmin, do
 	}
  fprintf(fp,"\n"); // end of header line
  // now print out main csv file
+ #if 1 /* new approach using ya-dconvert's ya_shortf() - this is much faster (> 5* faster on a 5GB file), round loop exact and creates smaller files (~ 1GB smaler on test with 5GB initial file) */
+ const size_t max_opline_length=(1+iNumberOfGraphs)*16+10; // 1 line : max of 15 chars/float(16 incl trailing '0') + comma (making 16 excl '0') and \n at end . x value + iNumberOfGraphs y values
+ char lbuf[max_opline_length];
+ char *lp;  // pointer into above buffer moves forward as line is built up
+ xGraph=(SGraph*) pHistory->Items[0];
+ for (j=0; j<xGraph->nos_vals; j++)
+	{float xj;
+	if((j&0x0ffff)==0 && (clock()-lastT)>= CLOCKS_PER_SEC)
+		{// display progress  every second
+		 lastT=clock();
+		 snprintf(cstr,sizeof(cstr),"csv save: %.0f%% complete",100.0*(double)j/(double)(xGraph->nos_vals));
+		 Form1->pPlotWindow->StatusText->Caption=cstr;
+		 Application->ProcessMessages(); /* allow windows to update (but not go idle) */
+		}
+	  xj= xGraph->x_vals[j];
+	  if(xj<xmin || xj>xmax) continue; // outside of range to save
+	  lp=lbuf; // line pointer/buffer
+	  lp=ya_shortf(lp,xj); // x value
+	  for (int i=0; i<iNumberOfGraphs; i++)  // now print y values for all traces
+		{aGraph=(SGraph*) pHistory->Items[i];
+		*lp++=','; // comma before each value
+		 if(i==0)  lp=ya_shortf(lp,aGraph->y_vals[j]); // trace 0: can always just print 1st y value as that trace provides x values
+		 else if(j<aGraph->nos_vals && aGraph->x_vals[j]==xj)
+			lp=ya_shortf(lp,aGraph->y_vals[j]);// if x value matches trace 0 then just print matching y value (this is faster than always interpolating)
+		 else
+			{// need to interpolate to get correct y value
+			 // float interp1D(float *xa, float *ya, int size, float x, bool clip);
+			 float yj=interp1D_f(aGraph->x_vals,aGraph->y_vals,aGraph->nos_vals,xj,true);
+			 lp=ya_shortf(lp,yj); // interpolated value
+			}
+		}
+	  *lp++='\n';
+	  if(lp-lbuf>max_opline_length)
+		{rprintf("Internal error while writing csv file - line %d had %d characters but lbuf size only %d\n",(int)j,(int)(lp-lbuf),(int)max_opline_length);
+		 break;
+		}
+	  fwrite(lbuf,1,lp-lbuf,fp);// write out line
+	}
+ #else /* original code */
  xGraph=(SGraph*) pHistory->Items[0];
  for (j=0; j<xGraph->nos_vals; j++)
 	{float xj;
@@ -4035,6 +4074,7 @@ bool TScientificGraph::SaveCSV(char *filename,char *x_axis_name, double xmin, do
 		}
 	  fprintf(fp,"\n");
 	}
+#endif
  fclose(fp);
  snprintf(cstr,sizeof(cstr),"csv save: finished in %.1f secs",(clock()-start_t)/(double)CLOCKS_PER_SEC);
  Form1->pPlotWindow->StatusText->Caption=cstr;

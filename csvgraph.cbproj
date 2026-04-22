@@ -82,8 +82,8 @@
         <AllPackageLibs>rtl.lib;vcl.lib;vclx.lib;vclimg.lib;VclSmp.lib</AllPackageLibs>
         <Icon_MainIcon>$(BDS)\bin\cbuilder_PROJECTICON.ico</Icon_MainIcon>
         <ProjectType>CppVCLApplication</ProjectType>
-        <ILINK_LibraryPath>..\Common-files\;C:\PMi\builder-10v1-projects\csv-graph\;$(ILINK_LibraryPath)</ILINK_LibraryPath>
-        <IncludePath>..\Common-files\;C:\PMi\builder-10v1-projects\csv-graph\;$(IncludePath)</IncludePath>
+        <ILINK_LibraryPath>D:\dev-cpp-files\ya-sprintf\;D:\dev-cpp-files\u2_64-128bits-with-two-u64\;D:\dev-cpp-files\double-double\;D:\dev-cpp-files\atof-and-ftoa\;..\Common-files\;C:\PMi\builder-10v1-projects\csv-graph\;$(ILINK_LibraryPath)</ILINK_LibraryPath>
+        <IncludePath>D:\dev-cpp-files\ya-sprintf\;D:\dev-cpp-files\u2_64-128bits-with-two-u64\;D:\dev-cpp-files\double-double\;D:\dev-cpp-files\atof-and-ftoa\;..\Common-files\;C:\PMi\builder-10v1-projects\csv-graph\;$(IncludePath)</IncludePath>
         <_TCHARMapping>wchar_t</_TCHARMapping>
         <Multithreaded>true</Multithreaded>
         <DCC_CBuilderOutput>JPHNE</DCC_CBuilderOutput>
@@ -205,7 +205,7 @@
     <PropertyGroup Condition="'$(Cfg_2_Win64)'!=''">
         <LinkPackageStatics>rtl.lib;vcl.lib;vclx.lib;vclimg.lib;VclSmp.lib</LinkPackageStatics>
         <VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>
-        <VerInfo_Keys>CompanyName=Peter Miller;FileDescription=$(MSBuildProjectName);FileVersion=4.2.0.33;InternalName=csvgraph;LegalCopyright=Peter Miller 2025;LegalTrademarks=;OriginalFilename=;ProgramID=com.embarcadero.$(MSBuildProjectName);ProductName=$(MSBuildProjectName);ProductVersion=4.2.0.0;Comments=</VerInfo_Keys>
+        <VerInfo_Keys>CompanyName=Peter Miller;FileDescription=$(MSBuildProjectName);FileVersion=4.2.0.37;InternalName=csvgraph;LegalCopyright=Peter Miller 2025;LegalTrademarks=;OriginalFilename=;ProgramID=com.embarcadero.$(MSBuildProjectName);ProductName=$(MSBuildProjectName);ProductVersion=4.2.0.0;Comments=</VerInfo_Keys>
         <BCC_AllWarnings>true</BCC_AllWarnings>
         <BCC_SelectedWarnings>false</BCC_SelectedWarnings>
         <BCC_UserSuppliedOptions>-Wno-c++98-compat -Wno-double-promotion -Wno-old-style-cast -Wno-float-equal -Wno-date-time -Wno-exit-time-destructors -Wno-global-constructors -Wno-padded -Wno-missing-noreturn  -Wno-c++98-compat-pedantic</BCC_UserSuppliedOptions>
@@ -219,18 +219,18 @@
         <VerInfo_AutoIncVersion>true</VerInfo_AutoIncVersion>
         <AppDPIAwarenessMode>PerMonitorV2</AppDPIAwarenessMode>
         <Icon_MainIcon>$(ProjectName).Artwork\Windows\AppIcon.ico</Icon_MainIcon>
-        <VerInfo_Build>33</VerInfo_Build>
+        <VerInfo_Build>37</VerInfo_Build>
         <VerInfo_Locale>1033</VerInfo_Locale>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_2_Win64x)'!=''">
         <AppDPIAwarenessMode>PerMonitorV2</AppDPIAwarenessMode>
         <LinkPackageStatics>rtl.lib;vcl.lib;vclx.lib;vclimg.lib;VclSmp.lib</LinkPackageStatics>
         <VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>
-        <VerInfo_Keys>CompanyName=;FileDescription=$(MSBuildProjectName);FileVersion=4.2.0.6;InternalName=;LegalCopyright=Peter Miller 2025;LegalTrademarks=;OriginalFilename=;ProgramID=com.embarcadero.$(MSBuildProjectName);ProductName=$(MSBuildProjectName);ProductVersion=4.2.0.0;Comments=</VerInfo_Keys>
+        <VerInfo_Keys>CompanyName=;FileDescription=$(MSBuildProjectName);FileVersion=4.2.0.11;InternalName=;LegalCopyright=Peter Miller 2025;LegalTrademarks=;OriginalFilename=;ProgramID=com.embarcadero.$(MSBuildProjectName);ProductName=$(MSBuildProjectName);ProductVersion=4.2.0.0;Comments=</VerInfo_Keys>
         <VerInfo_MajorVer>4</VerInfo_MajorVer>
         <VerInfo_MinorVer>2</VerInfo_MinorVer>
         <VerInfo_AutoIncVersion>true</VerInfo_AutoIncVersion>
-        <VerInfo_Build>6</VerInfo_Build>
+        <VerInfo_Build>11</VerInfo_Build>
         <Debugger_CWD>D:\builder-10-3-progs\csv-graph-github</Debugger_CWD>
         <BCC_AllWarnings>false</BCC_AllWarnings>
         <BCC_SelectedWarnings>true</BCC_SelectedWarnings>
@@ -238,12 +238,6 @@
         <VerInfo_Locale>1033</VerInfo_Locale>
     </PropertyGroup>
     <ItemGroup>
-        <CppCompile Include="..\Common-files\atof.c">
-            <BuildOrder>19</BuildOrder>
-        </CppCompile>
-        <CppCompile Include="..\Common-files\double-double.c">
-            <BuildOrder>23</BuildOrder>
-        </CppCompile>
         <CppCompile Include="..\Common-files\expr-code.c">
             <BuildOrder>13</BuildOrder>
         </CppCompile>
@@ -323,10 +317,22 @@
             <DependentOn>UScientificGraph.h</DependentOn>
             <BuildOrder>10</BuildOrder>
         </CppCompile>
-        <FormResources Include="Unit1.dfm"/>
-        <FormResources Include="UScalesWindow.dfm"/>
+        <CppCompile Include="D:\dev-cpp-files\atof-and-ftoa\atof.c">
+            <BuildOrder>22</BuildOrder>
+        </CppCompile>
+        <CppCompile Include="D:\dev-cpp-files\double-double\double-double.c">
+            <BuildOrder>23</BuildOrder>
+        </CppCompile>
+        <CppCompile Include="D:\dev-cpp-files\u2_64-128bits-with-two-u64\u2_64.c">
+            <BuildOrder>24</BuildOrder>
+        </CppCompile>
+        <CppCompile Include="D:\dev-cpp-files\ya-sprintf\ya-dconvert.c">
+            <BuildOrder>25</BuildOrder>
+        </CppCompile>
         <FormResources Include="About.dfm"/>
         <FormResources Include="UDataPlotWindow.dfm"/>
+        <FormResources Include="Unit1.dfm"/>
+        <FormResources Include="UScalesWindow.dfm"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>

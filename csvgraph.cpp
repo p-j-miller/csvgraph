@@ -30,9 +30,9 @@
 //---------------------------------------------------------------------------
 #include <Vcl.Styles.hpp>
 #include <Vcl.Themes.hpp>
-USEFORM("About.cpp", AboutBox);
-USEFORM("UScalesWindow.cpp", ScalesWindow);
 USEFORM("Unit1.cpp", Form1);
+USEFORM("UScalesWindow.cpp", ScalesWindow);
+USEFORM("About.cpp", AboutBox);
 USEFORM("UDataPlotWindow.cpp", PlotWindow);
 //---------------------------------------------------------------------------
 USEFORM("Unit1.cpp", Form1)
