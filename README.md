@@ -158,6 +158,17 @@ A side effect of this is that the font size for the axis titles can now be set o
 The right hand controls panel can now be hidden/restored with a left mouse click (previoulsy 
 it had to be first undocked , then it could be hidden). 
 
+4v3 22/4/2026
+
+There is no new functionality in 4v3.
+
+The latest version of ya_sprintf (2v3) from https://github.com/p-j-miller/ya-sprintf is now 
+used, in particular the function ya_shortf() is used in “save as CSV” which means this 
+operation is much faster (over 5* faster on large files when writing to a SSD). A side effect of 
+this change is that the CSV file created will be smaller (a file that was previously 6GB was 
+reduced to 5GB, while a 64KB file reduced to 50KB). Writing a csv file in this way and then 
+reading it back is now guaranteed to be “round trip exact” and this has been validated for all 
+possible values.
 
 # Installation
 Cvsgraph is a portable program which does not need installation.
